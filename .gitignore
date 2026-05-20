@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project data and generated artifacts
+cache/
+data/raw/
+data/interim/
+data/processed/
+outputs/
+
+# Geospatial sidecar/index files
+*.gpkg-shm
+*.gpkg-wal
+*.qix
+*.cpg
+*.prj
+*.sbn
+*.sbx
+*.shx
+
+# Logs
+*.log

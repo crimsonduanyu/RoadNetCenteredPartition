@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:wiki.openstreetmap.org)",
+      "Bash(python src/01_preprocess_roads.py)",
+      "Bash(python road_partition_beijing/src/01_preprocess_roads.py)",
+      "Bash(python -m py_compile road_partition_beijing/src/01_preprocess_roads.py)",
+      "Bash(conda run *)",
+      "Bash(cp road_partition_beijing/outputs/figures/*.png outputs/figures/)",
+      "Bash(rm road_partition_beijing/outputs/figures/*.png)",
+      "Bash(python -m py_compile src/00_download_osm.py src/01_preprocess_roads.py src/02_build_segment_relation_graph.py src/03_cluster_segments.py src/04_visualize_clusters.py src/run_pipeline.py src/utils_geo.py src/utils_graph.py)",
+      "Bash(python src/run_pipeline.py)",
+      "Bash(conda env *)",
+      "Bash(C:/Users/Administrator/miniconda3/envs/bj_road_partition/python.exe c:/Users/Administrator/Desktop/RoadNetCenteredPartition/src/01_preprocess_roads.py)",
+      "Bash(mkdir -p .vscode)",
+      "Bash(C:/Users/Administrator/miniconda3/envs/bj_road_partition/python.exe src/04_visualize_clusters.py)",
+      "Bash(/c/Users/Administrator/miniconda3/envs/bj_road_partition/python.exe src/04_visualize_clusters.py)",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Administrator\\\\miniconda3\\\\envs\\\\bj_road_partition\\\\python.exe src\\\\04_visualize_clusters.py\")",
+      "Bash(rm -f outputs/figures/*.png)",
+      "Bash(python src/04_visualize_clusters.py)",
+      "Bash(rm -f outputs/figures/*.png && python src/04_visualize_clusters.py && ls -lh outputs/figures)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Administrator\\Desktop\\RoadNetCenteredPartition",
+      "C:\\Users\\Administrator\\Desktop\\RoadNetCenteredPartition\\outputs\\figures"
+    ]
+  }
+}

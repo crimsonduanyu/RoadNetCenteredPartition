@@ -1,0 +1,22 @@
+name: bj_road_partition
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - osmnx
+  - geopandas
+  - shapely
+  - pyproj
+  - networkx
+  - pandas
+  - numpy
+  - matplotlib
+  - scikit-learn
+  - pyyaml
+  - tqdm
+  - pyogrio
+  - rtree
+  - fiona
+  - pip
+  - pip:
+      - python-louvain

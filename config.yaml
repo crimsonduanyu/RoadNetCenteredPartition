@@ -1,0 +1,173 @@
+study_area:
+  boundary_source: "beijing_fifth_ring"
+  center_point:
+    lon: 116.4074
+    lat: 39.9042
+  harvest_bbox:
+    north: 40.08
+    south: 39.75
+    east: 116.62
+    west: 116.15
+  ring_name_patterns:
+    - "东五环"
+    - "西五环"
+    - "南五环"
+    - "北五环"
+  exclude_name_patterns:
+    - "辅路"
+  min_ring_segment_count: 100
+  min_ring_total_length_km: 80
+  min_ring_span_km: 20
+  min_boundary_area_km2: 500
+  max_boundary_area_km2: 800
+  boundary_buffer_m: 80
+  inside_length_ratio_threshold: 0.98
+  boundary_tolerance_m: 5
+  ring_overlap_tolerance_m: 20
+
+crs:
+  projected: "EPSG:32650"
+  geographic: "EPSG:4326"
+
+road_filter:
+  keep_highway:
+    - motorway
+    - trunk
+    - primary
+    - secondary
+    - tertiary
+    - unclassified
+    - residential
+    - living_street
+    - service
+    - motorway_link
+    - trunk_link
+    - primary_link
+    - secondary_link
+    - tertiary_link
+  exclude_highway:
+    - footway
+    - pedestrian
+    - path
+    - cycleway
+    - steps
+    - bridleway
+    - corridor
+    - construction
+    - proposed
+    - track
+    - road
+    - busway
+  exclude_access_values:
+    - "no"
+    - private
+    - agricultural
+    - forestry
+    - delivery
+    - permit
+    - customers
+    - emergency
+    - unknown
+    - dismount
+    - use_sidepath
+  allow_access_values:
+    - "yes"
+    - permissive
+    - destination
+  allow_designated_access_columns:
+    - taxi
+    - motorcar
+    - motor_vehicle
+    - psv
+  exclude_service_values:
+    - parking_aisle
+    - driveway
+    - drive-through
+    - emergency_access
+  connector_highway:
+    - motorway_link
+    - trunk_link
+    - primary_link
+    - secondary_link
+    - tertiary_link
+  ordinary_highway:
+    - motorway
+    - trunk
+    - primary
+    - secondary
+    - tertiary
+    - unclassified
+    - residential
+    - living_street
+    - service
+
+connector_rules:
+  max_connector_length_m: 120
+  compress_short_connectors: true
+
+continuity:
+  same_name_bonus: 2.0
+  same_osm_id_bonus: 1.5
+  same_highway_bonus: 0.5
+  angle_threshold_deg: 35
+
+graph_weights:
+  direct_adjacency_weight: 1.0
+  connector_adjacency_weight: 0.8
+  continuity_weight: 2.0
+
+semantic_graph:
+  poi:
+    enabled: true
+    input_path: "data/raw/beijing_poi_2017.csv"
+    lon_column: "大地X"
+    lat_column: "大地Y"
+    category_column: "类型1"
+    buffer_m: 100
+    density_scale_per_km: true
+  order:
+    enabled: true
+    input_path: "data/raw/beijing_order_201710.csv"
+    start_time: "2017-10-16 00:00:00"
+    end_time: "2017-10-23 00:00:00"
+    chunksize: 200000
+    max_match_distance_m: 250
+    pickup_lon_column: "starting_lng"
+    pickup_lat_column: "starting_lat"
+    dropoff_lon_column: "dest_lng"
+    dropoff_lat_column: "dest_lat"
+    time_column: "departure_time"
+    morning_peak_hours: [7, 8, 9]
+    evening_peak_hours: [17, 18, 19]
+    night_hours: [0, 1, 2, 3, 4, 22, 23]
+  similarity:
+    poi_composition_weight: 0.7
+    poi_density_weight: 0.2
+    poi_entropy_weight: 0.1
+  variants:
+    road_only:
+      poi_weight: 0.0
+      order_weight: 0.0
+    road_poi:
+      poi_weight: 1.0
+      order_weight: 0.0
+    road_poi_order:
+      poi_weight: 1.0
+      order_weight: 1.0
+
+evaluation:
+  default_variant: "road_only"
+
+clustering:
+  method: "louvain"
+  resolution: 1.2
+  random_state: 42
+
+visualization:
+  linewidth: 0.4
+  figure_dpi: 300
+  zoom_bounds:
+    west: 116.35
+    east: 116.45
+    south: 39.88
+    north: 39.96
