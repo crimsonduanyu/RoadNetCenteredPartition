@@ -171,14 +171,18 @@ def main() -> None:
     ensure_directories()
     config = load_config()
     variant = sys.argv[1] if len(sys.argv) > 1 else config.get("evaluation", {}).get("default_variant", "road_only")
+    algorithm = sys.argv[2] if len(sys.argv) > 2 else "louvain"
     if variant not in config["semantic_graph"]["variants"]:
         raise ValueError(f"Unknown graph variant '{variant}'. Expected one of {list(config['semantic_graph']['variants'])}.")
+    algorithms = config["clustering"].get("algorithms", [config["clustering"].get("method", "louvain")])
+    if algorithm not in algorithms:
+        raise ValueError(f"Unknown clustering algorithm '{algorithm}'. Expected one of {algorithms}.")
 
     linewidth = float(config["visualization"]["linewidth"])
     dpi = int(config["visualization"]["figure_dpi"])
 
     classified_path = DATA_INTERIM / "road_edges_classified.gpkg"
-    clusters_path = DATA_PROCESSED / f"segment_clusters_{variant}.gpkg"
+    clusters_path = DATA_PROCESSED / f"segment_clusters_{variant}_{algorithm}.gpkg"
     graph_path = OUTPUTS_GRAPHS / f"segment_relation_graph_{variant}.gpickle"
     boundary_path = DATA_RAW / "beijing_fifth_ring_boundary.gpkg"
 
@@ -191,8 +195,8 @@ def main() -> None:
     connectors = classified.loc[classified["segment_role"] == "connector"].copy()
 
     classification_output = OUTPUTS_FIGURES / "01_ordinary_vs_connector_segments.png"
-    clusters_output = OUTPUTS_FIGURES / f"02_segment_clusters_louvain_{variant}.png"
-    zoom_output = OUTPUTS_FIGURES / f"03_connector_compression_zoom_{variant}.png"
+    clusters_output = OUTPUTS_FIGURES / f"02_segment_clusters_{variant}_{algorithm}.png"
+    zoom_output = OUTPUTS_FIGURES / f"03_connector_compression_zoom_{variant}_{algorithm}.png"
 
     plot_classification(
         classified,
@@ -210,7 +214,7 @@ def main() -> None:
         linewidth,
         dpi,
     )
-    if variant == config.get("evaluation", {}).get("default_variant", "road_only"):
+    if variant == config.get("evaluation", {}).get("default_variant", "road_only") and algorithm == "louvain":
         shutil.copyfile(clusters_output, OUTPUTS_FIGURES / "02_segment_clusters_louvain.png")
     print(f"Saved cluster map to {clusters_output}")
     projected_bounds = project_bounds(
@@ -229,7 +233,7 @@ def main() -> None:
         dpi,
         projected_bounds,
     )
-    if variant == config.get("evaluation", {}).get("default_variant", "road_only"):
+    if variant == config.get("evaluation", {}).get("default_variant", "road_only") and algorithm == "louvain":
         shutil.copyfile(zoom_output, OUTPUTS_FIGURES / "03_connector_compression_zoom.png")
     print(f"Saved connector-compression zoom to {zoom_output}")
 

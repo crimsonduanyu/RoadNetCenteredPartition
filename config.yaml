@@ -160,7 +160,11 @@ evaluation:
 
 clustering:
   method: "louvain"
-  resolution: 1.2
+  algorithms:
+    - louvain
+    # - leiden
+    # - spectral
+  resolution: 1.
   random_state: 42
 
 visualization:

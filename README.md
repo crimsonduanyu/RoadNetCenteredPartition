@@ -111,20 +111,25 @@ The graph variants are:
 
 ### 4. Cluster segments
 
-`src/03_cluster_segments.py` applies Louvain clustering to each weighted graph variant with the same clustering parameters and saves cluster labels plus diagnostic and evaluation tables.
+`src/03_cluster_segments.py` applies the configured clustering algorithms to each weighted graph variant and saves cluster labels plus diagnostic and evaluation tables. The default experiment is a 3x3 cross comparison:
+
+- graph variants: `road_only`, `road_poi`, `road_poi_order`
+- algorithms: `louvain`, `leiden`, `spectral`
+
+Louvain and Leiden use the configured resolution and random seed. Spectral clustering uses the Louvain cluster count for the same graph variant as its target `n_clusters`.
 
 ### 5. Visualize outputs
 
 `src/04_visualize_clusters.py` creates:
 
 - ordinary vs connector segment map with Fifth Ring boundary outline;
-- clustered road segment map with Fifth Ring boundary outline for the configured default variant;
+- clustered road segment map with Fifth Ring boundary outline for the configured default graph/algorithm pair;
 - zoomed connector-compression illustration.
 
-Pass a variant name to visualize another result:
+Pass a graph variant and algorithm to visualize another result:
 
 ```bash
-python src/04_visualize_clusters.py road_poi_order
+python src/04_visualize_clusters.py road_poi_order leiden
 ```
 
 ## Connector compression
@@ -150,14 +155,16 @@ Expected artifacts include:
 - `data/processed/segment_order_features.csv`
 - `data/processed/segment_order_od_pairs.csv`
 - `data/processed/segment_relation_edges_{variant}.csv`
-- `data/processed/segment_clusters_{variant}.gpkg`
+- `data/processed/segment_clusters_{variant}_{algorithm}.gpkg`
 - `outputs/graphs/segment_relation_graph_{variant}.gpickle`
-- `outputs/tables/cluster_summary.csv`
-- `outputs/tables/road_name_split_diagnostics.csv`
+- `outputs/tables/cluster_summary_{variant}_{algorithm}.csv`
+- `outputs/tables/road_name_split_diagnostics_{variant}_{algorithm}.csv`
 - `outputs/tables/graph_variant_evaluation.csv`
+- `outputs/tables/graph_algorithm_evaluation.csv`
+- `outputs/tables/graph_algorithm_ranked_summary.csv`
 - `outputs/figures/01_ordinary_vs_connector_segments.png`
-- `outputs/figures/02_segment_clusters_louvain_{variant}.png`
-- `outputs/figures/03_connector_compression_zoom_{variant}.png`
+- `outputs/figures/02_segment_clusters_{variant}_{algorithm}.png`
+- `outputs/figures/03_connector_compression_zoom_{variant}_{algorithm}.png`
 
 ## Validation signals
 
@@ -181,7 +188,7 @@ A successful run should print at least:
 - number of continuity-enhanced edges;
 - number of POI-weighted and order-weighted edges per graph variant;
 - number of clusters;
-- graph variant evaluation metrics;
+- graph variant x algorithm evaluation metrics;
 - top 10 largest clusters by total road length.
 
 ## Known limitations

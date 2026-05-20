@@ -12,6 +12,9 @@ dependencies:
   - numpy
   - matplotlib
   - scikit-learn
+  - scipy
+  - python-igraph
+  - leidenalg
   - pyyaml
   - tqdm
   - pyogrio
