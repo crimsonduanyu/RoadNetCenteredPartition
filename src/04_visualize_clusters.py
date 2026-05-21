@@ -125,6 +125,80 @@ def plot_classification(edges: gpd.GeoDataFrame, boundary: gpd.GeoDataFrame, out
     save_image(image, output_path)
 
 
+def centroid_lookup(segments: gpd.GeoDataFrame) -> dict[str, tuple[float, float]]:
+    centroids = segments.set_index("seg_id").geometry.centroid
+    return {str(seg_id): (float(point.x), float(point.y)) for seg_id, point in centroids.items()}
+
+
+def draw_graph_edge_layer(
+    draw: ImageDraw.ImageDraw,
+    graph,
+    centroids: dict[str, tuple[float, float]],
+    transform,
+    color,
+    width: int,
+    layer: str,
+) -> None:
+    for seg_a, seg_b, attrs in graph.edges(data=True):
+        if layer == "connector" and not attrs.get("has_connector"):
+            continue
+        if layer == "continuity" and (attrs.get("has_connector") or not attrs.get("has_continuity")):
+            continue
+        if layer == "direct" and (attrs.get("has_connector") or attrs.get("has_continuity") or not attrs.get("has_direct")):
+            continue
+        point_a = centroids.get(str(seg_a))
+        point_b = centroids.get(str(seg_b))
+        if point_a is None or point_b is None:
+            continue
+        draw.line([transform(*point_a), transform(*point_b)], fill=color, width=width)
+
+
+def plot_relation_graph(
+    ordinary: gpd.GeoDataFrame,
+    connectors: gpd.GeoDataFrame,
+    graph,
+    boundary: gpd.GeoDataFrame,
+    output_path,
+    linewidth: float,
+    dpi: int,
+) -> None:
+    size_px = int(12 * dpi)
+    image, draw, transform = make_canvas(gdf_bounds(boundary), size_px)
+    centroids = centroid_lookup(ordinary)
+
+    draw_graph_edge_layer(
+        draw,
+        graph,
+        centroids,
+        transform,
+        rgba("#756bb1", 28),
+        line_width_px(0.22, dpi),
+        "direct",
+    )
+    draw_graph_edge_layer(
+        draw,
+        graph,
+        centroids,
+        transform,
+        rgba("#31a354", 42),
+        line_width_px(0.28, dpi),
+        "continuity",
+    )
+    draw_graph_edge_layer(
+        draw,
+        graph,
+        centroids,
+        transform,
+        rgba("#2b8cbe", 70),
+        line_width_px(0.35, dpi),
+        "connector",
+    )
+    draw_lines(draw, ordinary.geometry, transform, rgba("#4a4a4a", 80), line_width_px(linewidth, dpi, 0.7))
+    draw_lines(draw, connectors.geometry, transform, rgba("#e66101", 190), line_width_px(linewidth, dpi, 1.2))
+    plot_boundary(draw, boundary, transform, dpi)
+    save_image(image, output_path)
+
+
 def plot_clusters(clusters: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame, boundary: gpd.GeoDataFrame, output_path, linewidth: float, dpi: int) -> None:
     size_px = int(12 * dpi)
     image, draw, transform = make_canvas(gdf_bounds(boundary), size_px)
@@ -167,46 +241,49 @@ def plot_zoom(clusters: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame, graph, b
     save_image(image, output_path)
 
 
-def main() -> None:
-    config = load_config()
-    ensure_scope_directories(config)
-    paths = get_scope_paths(config)
-    variant = sys.argv[1] if len(sys.argv) > 1 else config.get("evaluation", {}).get("default_variant", "road_only")
-    algorithm = sys.argv[2] if len(sys.argv) > 2 else "louvain"
-    if variant not in config["semantic_graph"]["variants"]:
-        raise ValueError(f"Unknown graph variant '{variant}'. Expected one of {list(config['semantic_graph']['variants'])}.")
+def load_graph(paths: dict, variant: str):
+    graph_path = paths["outputs_graphs"] / f"segment_relation_graph_{variant}.gpickle"
+    with graph_path.open("rb") as handle:
+        return pickle.load(handle)
+
+
+def selected_jobs(config: dict) -> tuple[list[str], list[str], bool]:
+    variants = list(config["semantic_graph"]["variants"])
     algorithms = config["clustering"].get("algorithms", [config["clustering"].get("method", "louvain")])
+    if len(sys.argv) == 1:
+        return variants, algorithms, True
+    if len(sys.argv) > 3:
+        raise ValueError("Usage: python src/04_visualize_clusters.py [graph_variant] [algorithm]")
+
+    variant = sys.argv[1]
+    if variant not in variants:
+        raise ValueError(f"Unknown graph variant '{variant}'. Expected one of {variants}.")
+    algorithm = sys.argv[2] if len(sys.argv) > 2 else "louvain"
     if algorithm not in algorithms:
         raise ValueError(f"Unknown clustering algorithm '{algorithm}'. Expected one of {algorithms}.")
+    return [variant], [algorithm], False
 
-    linewidth = float(config["visualization"]["linewidth"])
-    dpi = int(config["visualization"]["figure_dpi"])
 
-    classified_path = paths["classified_edges"]
+def render_cluster_outputs(
+    variant: str,
+    algorithm: str,
+    config: dict,
+    paths: dict,
+    connectors: gpd.GeoDataFrame,
+    boundary: gpd.GeoDataFrame,
+    graph,
+    linewidth: float,
+    dpi: int,
+) -> bool:
     clusters_path = paths["data_processed"] / f"segment_clusters_{variant}_{algorithm}.gpkg"
-    graph_path = paths["outputs_graphs"] / f"segment_relation_graph_{variant}.gpickle"
-    boundary_path = paths["boundary"]
+    if not clusters_path.exists():
+        print(f"Skipping {variant}/{algorithm}: missing cluster file {clusters_path}")
+        return False
 
-    classified = gpd.read_file(classified_path)
     clusters = gpd.read_file(clusters_path)
-    boundary = gpd.read_file(boundary_path)
-    with graph_path.open("rb") as handle:
-        graph = pickle.load(handle)
-
-    connectors = classified.loc[classified["segment_role"] == "connector"].copy()
-
-    classification_output = paths["outputs_figures"] / "01_ordinary_vs_connector_segments.png"
     clusters_output = paths["outputs_figures"] / f"02_segment_clusters_{variant}_{algorithm}.png"
     zoom_output = paths["outputs_figures"] / f"03_connector_compression_zoom_{variant}_{algorithm}.png"
 
-    plot_classification(
-        classified,
-        boundary,
-        classification_output,
-        linewidth,
-        dpi,
-    )
-    print(f"Saved classification map to {classification_output}")
     plot_clusters(
         clusters,
         connectors,
@@ -215,9 +292,8 @@ def main() -> None:
         linewidth,
         dpi,
     )
-    if variant == config.get("evaluation", {}).get("default_variant", "road_only") and algorithm == "louvain":
-        shutil.copyfile(clusters_output, paths["outputs_figures"] / "02_segment_clusters_louvain.png")
     print(f"Saved cluster map to {clusters_output}")
+
     projected_bounds = project_bounds(
         config["visualization"]["zoom_bounds"],
         config["crs"]["geographic"],
@@ -234,11 +310,67 @@ def main() -> None:
         dpi,
         projected_bounds,
     )
-    if variant == config.get("evaluation", {}).get("default_variant", "road_only") and algorithm == "louvain":
-        shutil.copyfile(zoom_output, paths["outputs_figures"] / "03_connector_compression_zoom.png")
     print(f"Saved connector-compression zoom to {zoom_output}")
 
-    print(f"Saved figures to {paths['outputs_figures']}")
+    default_variant = config.get("evaluation", {}).get("default_variant", "road_only")
+    if variant == default_variant and algorithm == "louvain":
+        shutil.copyfile(clusters_output, paths["outputs_figures"] / "02_segment_clusters_louvain.png")
+        shutil.copyfile(zoom_output, paths["outputs_figures"] / "03_connector_compression_zoom.png")
+    return True
+
+
+def main() -> None:
+    config = load_config()
+    ensure_scope_directories(config)
+    paths = get_scope_paths(config)
+    variants, algorithms, batch_mode = selected_jobs(config)
+
+    linewidth = float(config["visualization"]["linewidth"])
+    dpi = int(config["visualization"]["figure_dpi"])
+
+    classified = gpd.read_file(paths["classified_edges"])
+    boundary = gpd.read_file(paths["boundary"])
+    ordinary = classified.loc[classified["segment_role"] == "ordinary"].copy()
+    connectors = classified.loc[classified["segment_role"] == "connector"].copy()
+
+    classification_output = paths["outputs_figures"] / "01_ordinary_vs_connector_segments.png"
+    plot_classification(classified, boundary, classification_output, linewidth, dpi)
+    print(f"Saved classification map to {classification_output}")
+
+    rendered_count = 0
+    graph_cache = {}
+    for variant in variants:
+        graph = load_graph(paths, variant)
+        graph_cache[variant] = graph
+
+        relation_graph_output = paths["outputs_figures"] / f"01_relation_graph_{variant}.png"
+        plot_relation_graph(
+            ordinary,
+            connectors,
+            graph,
+            boundary,
+            relation_graph_output,
+            linewidth,
+            dpi,
+        )
+        print(f"Saved relation graph map to {relation_graph_output}")
+
+        for algorithm in algorithms:
+            rendered = render_cluster_outputs(
+                variant,
+                algorithm,
+                config,
+                paths,
+                connectors,
+                boundary,
+                graph_cache[variant],
+                linewidth,
+                dpi,
+            )
+            rendered_count += int(rendered)
+
+    mode = "batch" if batch_mode else "single"
+    print(f"Saved {rendered_count} {mode} cluster visualization set(s) to {paths['outputs_figures']}")
 
 
 if __name__ == "__main__":

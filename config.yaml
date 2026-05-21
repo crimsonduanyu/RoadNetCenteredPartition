@@ -200,10 +200,17 @@ clustering:
   method: "louvain"
   algorithms:
     - louvain
-    # - leiden
-    # - spectral
+    - leiden
+    - skater
+    - metis
   resolution: .8
   random_state: 42
+  target_clusters: 137
+  skater:
+    dissimilarity: "inverse_weight"
+  metis:
+    balance_on: "segment_count"
+    edge_weight_scale: 1000
 
 visualization:
   linewidth: 0.4

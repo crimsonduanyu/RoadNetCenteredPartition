@@ -8,9 +8,6 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from community import community_louvain
-from scipy.sparse import csgraph
-from scipy.sparse.linalg import eigsh
-from sklearn.cluster import KMeans
 
 from utils_geo import ensure_scope_directories, get_scope_paths, load_config
 
@@ -98,32 +95,174 @@ def run_leiden(graph: nx.Graph, config: dict, target_cluster_count: int | None =
     return {node: int(memberships[index]) for index, node in enumerate(nodes)}
 
 
-def run_spectral(graph: nx.Graph, config: dict, target_cluster_count: int | None = None) -> dict[str, int]:
-    if target_cluster_count is None or target_cluster_count <= 1:
-        raise ValueError("Spectral clustering requires a target cluster count greater than 1.")
+def configured_target_clusters(config: dict, target_cluster_count: int | None = None) -> int:
+    if target_cluster_count is not None:
+        return int(target_cluster_count)
+    if "target_clusters" not in config["clustering"]:
+        raise ValueError("Fixed-K algorithms require clustering.target_clusters in config.yaml.")
+    target = int(config["clustering"]["target_clusters"])
+    if target <= 0:
+        raise ValueError("clustering.target_clusters must be a positive integer.")
+    return target
 
-    nodes = list(graph.nodes())
-    adjacency = nx.to_scipy_sparse_array(graph, nodelist=nodes, weight="weight", format="csr", dtype=float)
-    laplacian = csgraph.laplacian(adjacency, normed=True)
-    eigen_count = min(int(target_cluster_count), len(nodes) - 2)
-    if eigen_count <= 1:
-        raise ValueError("Graph is too small for spectral clustering.")
 
-    _, vectors = eigsh(laplacian, k=eigen_count, which="SM")
-    row_norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    embedding = np.divide(vectors, row_norms, out=np.zeros_like(vectors), where=row_norms > 0)
-    labels = KMeans(
-        n_clusters=int(target_cluster_count),
-        n_init=10,
-        random_state=int(config["clustering"]["random_state"]),
-    ).fit_predict(embedding)
-    return {node: int(labels[index]) for index, node in enumerate(nodes)}
+def allocate_component_cluster_counts(component_sizes: list[int], target_clusters: int) -> list[int]:
+    component_count = len(component_sizes)
+    total_nodes = sum(component_sizes)
+    if target_clusters < component_count:
+        raise ValueError(
+            f"target_clusters={target_clusters} is smaller than the graph's "
+            f"{component_count} connected components."
+        )
+    if target_clusters > total_nodes:
+        raise ValueError(f"target_clusters={target_clusters} exceeds graph node count {total_nodes}.")
+
+    allocations = [1] * component_count
+    capacities = [size - 1 for size in component_sizes]
+    remaining = target_clusters - component_count
+    if remaining == 0:
+        return allocations
+
+    raw_extras = [remaining * size / total_nodes for size in component_sizes]
+    floor_extras = [min(int(np.floor(raw)), capacity) for raw, capacity in zip(raw_extras, capacities)]
+    allocations = [allocation + extra for allocation, extra in zip(allocations, floor_extras)]
+    remaining -= sum(floor_extras)
+
+    while remaining > 0:
+        candidates = [index for index, capacity in enumerate(capacities) if allocations[index] - 1 < capacity]
+        if not candidates:
+            raise ValueError("Unable to allocate requested clusters across graph components.")
+        candidates.sort(
+            key=lambda index: (
+                raw_extras[index] - floor_extras[index],
+                component_sizes[index],
+                -index,
+            ),
+            reverse=True,
+        )
+        selected = candidates[0]
+        allocations[selected] += 1
+        floor_extras[selected] += 1
+        remaining -= 1
+
+    return allocations
+
+
+def edge_dissimilarity(attrs: dict, mode: str) -> float:
+    weight = max(float(attrs.get("weight", 1.0)), 0.0)
+    if mode == "inverse_weight":
+        return float(1.0 / (weight + 1.0e-9))
+    raise ValueError(f"Unknown SKATER dissimilarity mode '{mode}'.")
+
+
+def run_skater(graph: nx.Graph, config: dict, target_cluster_count: int | None = None) -> dict[str, int]:
+    target_clusters = configured_target_clusters(config, target_cluster_count)
+    mode = config["clustering"].get("skater", {}).get("dissimilarity", "inverse_weight")
+    components = [sorted(component) for component in nx.connected_components(graph)]
+    components.sort(key=lambda nodes: (-len(nodes), nodes[0] if nodes else ""))
+    component_allocations = allocate_component_cluster_counts([len(nodes) for nodes in components], target_clusters)
+
+    partition: dict[str, int] = {}
+    next_cluster_id = 0
+    for component_nodes, component_clusters in zip(components, component_allocations):
+        if component_clusters == 1:
+            for node in component_nodes:
+                partition[node] = next_cluster_id
+            next_cluster_id += 1
+            continue
+
+        component_graph = graph.subgraph(component_nodes).copy()
+        for _, _, attrs in component_graph.edges(data=True):
+            attrs["dissimilarity"] = edge_dissimilarity(attrs, mode)
+
+        tree = nx.minimum_spanning_tree(component_graph, weight="dissimilarity")
+        removable_edges = sorted(
+            tree.edges(data=True),
+            key=lambda edge: (
+                float(edge[2].get("dissimilarity", 0.0)),
+                str(edge[0]),
+                str(edge[1]),
+            ),
+            reverse=True,
+        )
+        for node_a, node_b, _ in removable_edges[: component_clusters - 1]:
+            tree.remove_edge(node_a, node_b)
+
+        subregions = [sorted(nodes) for nodes in nx.connected_components(tree)]
+        subregions.sort(key=lambda nodes: (-len(nodes), nodes[0] if nodes else ""))
+        if len(subregions) != component_clusters:
+            raise RuntimeError(
+                f"SKATER expected {component_clusters} clusters in a component, "
+                f"but produced {len(subregions)}."
+            )
+        for subregion in subregions:
+            for node in subregion:
+                partition[node] = next_cluster_id
+            next_cluster_id += 1
+
+    return partition
+
+
+def metis_vertex_weights(graph: nx.Graph, nodes: list[str], config: dict) -> list[int] | None:
+    balance_on = config["clustering"].get("metis", {}).get("balance_on", "segment_count")
+    if balance_on == "segment_count":
+        return None
+    if balance_on == "length":
+        lengths = [max(float(graph.nodes[node].get("length", 1.0)), 0.0) for node in nodes]
+        positive_lengths = [length for length in lengths if length > 0]
+        scale = 1000.0 / float(np.median(positive_lengths)) if positive_lengths else 1.0
+        return [max(1, int(round(length * scale))) for length in lengths]
+    raise ValueError(f"Unknown METIS balance_on mode '{balance_on}'.")
+
+
+def run_metis(graph: nx.Graph, config: dict, target_cluster_count: int | None = None) -> dict[str, int]:
+    try:
+        import pymetis
+    except ImportError as exc:
+        raise ImportError(
+            "METIS clustering requires pymetis. Install/update the bj_road_partition "
+            "environment from environment.yml."
+        ) from exc
+
+    target_clusters = configured_target_clusters(config, target_cluster_count)
+    if target_clusters > graph.number_of_nodes():
+        raise ValueError(f"target_clusters={target_clusters} exceeds graph node count {graph.number_of_nodes()}.")
+
+    nodes = sorted(graph.nodes())
+    node_to_index = {node: index for index, node in enumerate(nodes)}
+    edge_weight_scale = int(config["clustering"].get("metis", {}).get("edge_weight_scale", 1000))
+    if edge_weight_scale <= 0:
+        raise ValueError("clustering.metis.edge_weight_scale must be positive.")
+
+    xadj = [0]
+    adjncy = []
+    eweights = []
+    for node in nodes:
+        neighbors = sorted(graph.neighbors(node))
+        for neighbor in neighbors:
+            adjncy.append(node_to_index[neighbor])
+            weight = max(float(graph[node][neighbor].get("weight", 1.0)), 0.0)
+            eweights.append(max(1, int(round(weight * edge_weight_scale))))
+        xadj.append(len(adjncy))
+
+    adjacency = pymetis.CSRAdjacency(adj_starts=xadj, adjacent=adjncy)
+    result = pymetis.part_graph(
+        target_clusters,
+        adjacency=adjacency,
+        eweights=eweights,
+        vweights=metis_vertex_weights(graph, nodes, config),
+        recursive=False,
+        contiguous=False,
+    )
+    memberships = result.vertex_part if hasattr(result, "vertex_part") else result[1]
+    return {node: int(memberships[index]) for index, node in enumerate(nodes)}
 
 
 ALGORITHM_RUNNERS = {
     "louvain": run_louvain,
     "leiden": run_leiden,
-    "spectral": run_spectral,
+    "skater": run_skater,
+    "metis": run_metis,
 }
 
 
@@ -293,14 +432,11 @@ def main() -> None:
     unknown = [algorithm for algorithm in algorithms if algorithm not in ALGORITHM_RUNNERS]
     if unknown:
         raise ValueError(f"Unknown clustering algorithms: {unknown}. Expected one of {list(ALGORITHM_RUNNERS)}.")
-    if "spectral" in algorithms and "louvain" not in algorithms:
-        raise ValueError("Spectral clustering needs Louvain in clustering.algorithms to set n_clusters per graph variant.")
 
     nodes_path = paths["segment_nodes"]
     print(f"Loading segment nodes from {nodes_path}...")
     base_segments = gpd.read_file(nodes_path)
     evaluation_rows = []
-    louvain_cluster_counts: dict[str, int] = {}
 
     for graph_variant in config["semantic_graph"]["variants"]:
         graph_path = paths["outputs_graphs"] / f"segment_relation_graph_{graph_variant}.gpickle"
@@ -312,14 +448,8 @@ def main() -> None:
         edges = pd.read_csv(edge_path)
 
         for algorithm in algorithms:
-            target_cluster_count = louvain_cluster_counts.get(graph_variant)
-            if algorithm == "spectral" and target_cluster_count is None:
-                raise RuntimeError(f"Cannot run spectral before Louvain for {graph_variant}.")
-
             print(f"Running {algorithm} on {graph_variant}...")
-            partition = ALGORITHM_RUNNERS[algorithm](graph, config, target_cluster_count)
-            if algorithm == "louvain":
-                louvain_cluster_counts[graph_variant] = len(set(partition.values()))
+            partition = ALGORITHM_RUNNERS[algorithm](graph, config)
 
             segments, summary, diagnostics = save_partition_outputs(
                 graph_variant,

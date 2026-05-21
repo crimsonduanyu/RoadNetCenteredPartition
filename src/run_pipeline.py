@@ -9,11 +9,11 @@ from utils_geo import get_active_scope, load_config
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 STAGES = [
-    # "00_download_osm.py",
-    "01_preprocess_roads.py",
-    "02_build_poi_features.py",
-    "02_build_order_features.py",
-    "02_build_segment_relation_graph.py",
+    # # "00_download_osm.py",
+    # "01_preprocess_roads.py",
+    # "02_build_poi_features.py",
+    # "02_build_order_features.py",
+    # "02_build_segment_relation_graph.py",
     "03_cluster_segments.py",
     "04_visualize_clusters.py",
     "05_benchmark_clusters.py",

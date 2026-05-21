@@ -119,12 +119,12 @@ The graph variants are:
 
 ### 4. Cluster segments
 
-`src/03_cluster_segments.py` applies the configured clustering algorithms to each weighted graph variant and saves cluster labels plus diagnostic and evaluation tables. The default experiment is a 3x3 cross comparison:
+`src/03_cluster_segments.py` applies the configured clustering algorithms to each weighted graph variant and saves cluster labels plus diagnostic and evaluation tables. The default experiment is a 3x4 cross comparison:
 
 - graph variants: `road_only`, `road_poi`, `road_poi_order`
-- algorithms: `louvain`, `leiden`, `spectral`
+- algorithms: `louvain`, `leiden`, `skater`, `metis`
 
-Louvain and Leiden use the configured resolution and random seed. Spectral clustering uses the Louvain cluster count for the same graph variant as its target `n_clusters`.
+Louvain and Leiden use the configured resolution and random seed. SKATER and METIS use the configured fixed `target_clusters` value.
 
 ### 5. Visualize outputs
 

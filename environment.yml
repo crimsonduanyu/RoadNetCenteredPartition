@@ -15,6 +15,7 @@ dependencies:
   - scipy
   - python-igraph
   - leidenalg
+  - pymetis
   - pyyaml
   - tqdm
   - pyogrio

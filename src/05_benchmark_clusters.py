@@ -39,8 +39,12 @@ def clustering_params(config: dict, algorithm: str) -> str:
     params: dict[str, object] = {"random_state": config["clustering"].get("random_state")}
     if algorithm in {"louvain", "leiden"}:
         params["resolution"] = config["clustering"].get("resolution")
-    if algorithm == "spectral":
-        params["target_cluster_count"] = "louvain_same_variant"
+    if algorithm in {"skater", "metis"}:
+        params["target_clusters"] = config["clustering"].get("target_clusters")
+    if algorithm == "skater":
+        params.update(config["clustering"].get("skater", {}))
+    if algorithm == "metis":
+        params.update(config["clustering"].get("metis", {}))
     return json.dumps(params, ensure_ascii=False, sort_keys=True)
 
 
