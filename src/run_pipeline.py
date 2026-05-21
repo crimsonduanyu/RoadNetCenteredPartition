@@ -16,6 +16,7 @@ STAGES = [
     "02_build_segment_relation_graph.py",
     "03_cluster_segments.py",
     "04_visualize_clusters.py",
+    "05_benchmark_clusters.py",
 ]
 
 

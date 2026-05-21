@@ -114,6 +114,7 @@ def get_scope_paths(config: dict[str, Any]) -> dict[str, Path]:
         "poi_category_mapping": dirs["data_processed"] / "poi_category_mapping.csv",
         "order_features": dirs["data_processed"] / "segment_order_features.csv",
         "order_od_pairs": dirs["data_processed"] / "segment_order_od_pairs.csv",
+        "order_od_hourly": dirs["data_processed"] / "segment_order_od_hourly.csv",
     }
 
 
