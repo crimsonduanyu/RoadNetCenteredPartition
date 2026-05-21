@@ -26,6 +26,8 @@ class MetricThresholds:
     small_cluster_min_length_m: float = 1000.0
     small_cluster_min_orders: float = 100.0
     min_order_total: float = 100.0
+    capacity_min_ratio: float = 0.5
+    capacity_max_ratio: float = 1.5
     effective_od_min_flow: float = 10.0
     elongation_threshold: float = 10.0
     large_diameter_threshold_m: float = 30000.0
@@ -606,6 +608,15 @@ def compute_benchmark_metrics(
         | (cluster_table["order_total"].fillna(np.inf) < thresholds.small_cluster_min_orders)
     )
     low_order_mask = cluster_table["order_total"].fillna(np.inf) < thresholds.min_order_total
+    order_totals = pd.to_numeric(cluster_table["order_total"], errors="coerce").dropna()
+    if order_totals.empty or float(order_totals.sum()) <= EPS:
+        target_order_capacity = float("nan")
+        capacity_violation_ratio = float("nan")
+    else:
+        target_order_capacity = float(order_totals.sum() / max(len(order_totals), 1))
+        capacity_min = thresholds.capacity_min_ratio * target_order_capacity
+        capacity_max = thresholds.capacity_max_ratio * target_order_capacity
+        capacity_violation_ratio = float(((order_totals < capacity_min) | (order_totals > capacity_max)).mean())
 
     row: dict[str, Any] = {
         "graph_variant": graph_variant,
@@ -640,6 +651,8 @@ def compute_benchmark_metrics(
             "poi_count_cv": coefficient_of_variation(cluster_table["poi_total"]),
             "clusters_below_min_order": int(low_order_mask.sum()) if len(low_order_mask) else 0,
             "ratio_clusters_below_min_order": float(low_order_mask.mean()) if len(low_order_mask) else float("nan"),
+            "target_order_capacity": target_order_capacity,
+            "capacity_violation_ratio": capacity_violation_ratio,
         }
     )
 

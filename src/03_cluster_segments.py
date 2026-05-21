@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from community import community_louvain
 
+from adaptive_clustering import run_demand_network_voronoi, run_demand_region_growing
 from utils_geo import ensure_scope_directories, get_scope_paths, load_config
 
 
@@ -263,6 +264,8 @@ ALGORITHM_RUNNERS = {
     "leiden": run_leiden,
     "skater": run_skater,
     "metis": run_metis,
+    "demand_network_voronoi": run_demand_network_voronoi,
+    "demand_region_growing": run_demand_region_growing,
 }
 
 

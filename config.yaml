@@ -203,6 +203,8 @@ clustering:
     - leiden
     - skater
     - metis
+    - demand_network_voronoi
+    - demand_region_growing
   resolution: .8
   random_state: 42
   target_clusters: 137
@@ -211,6 +213,23 @@ clustering:
   metis:
     balance_on: "segment_count"
     edge_weight_scale: 1000
+  adaptive:
+    seed_theta: 0.75
+    capacity_min_ratio: 0.5
+    capacity_max_ratio: 1.5
+    edge_cost_epsilon: 1.0e-6
+    alpha_conn: 1.0
+    beta_poi: 0.5
+    gamma_order: 0.5
+    eta_continuity: 1.0
+    lambda_capacity: 1.0
+    lambda_shape: 0.2
+    shape_distance_scale_m: 3000.0
+    local_search_passes: 2
+    local_search_tolerance: 1.0e-9
+    lambda_cut: 1.0
+    lambda_semantic_cut: 0.5
+    lambda_local_capacity: 1.0
 
 visualization:
   linewidth: 0.4

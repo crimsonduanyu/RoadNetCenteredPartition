@@ -21,6 +21,8 @@ CORE_PREVIEW_COLUMNS = [
     "weighted_mean_dominant_cluster_share",
     "mean_compactness",
     "road_length_cv",
+    "order_count_cv",
+    "capacity_violation_ratio",
     "poi_wss_per_segment",
     "order_wss_per_segment",
     "od_sparsity",
@@ -45,6 +47,9 @@ def clustering_params(config: dict, algorithm: str) -> str:
         params.update(config["clustering"].get("skater", {}))
     if algorithm == "metis":
         params.update(config["clustering"].get("metis", {}))
+    if algorithm in {"demand_network_voronoi", "demand_region_growing"}:
+        params["target_clusters"] = config["clustering"].get("target_clusters")
+        params.update(config["clustering"].get("adaptive", {}))
     return json.dumps(params, ensure_ascii=False, sort_keys=True)
 
 
