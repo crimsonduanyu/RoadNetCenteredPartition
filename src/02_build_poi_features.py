@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
-from utils_geo import DATA_INTERIM, DATA_PROCESSED, PROJECT_ROOT, ensure_directories, load_config, project_gdf
+from utils_geo import PROJECT_ROOT, ensure_scope_directories, get_scope_paths, load_config, project_gdf
 
 
 def normalized_entropy(counts: np.ndarray) -> float:
@@ -23,13 +23,14 @@ def normalized_entropy(counts: np.ndarray) -> float:
 
 
 def main() -> None:
-    ensure_directories()
     config = load_config()
+    ensure_scope_directories(config)
+    paths = get_scope_paths(config)
     poi_config = config["semantic_graph"]["poi"]
 
-    segments_path = DATA_INTERIM / "road_edges_classified.gpkg"
-    output_path = DATA_PROCESSED / "segment_poi_features.csv"
-    category_map_path = DATA_PROCESSED / "poi_category_mapping.csv"
+    segments_path = paths["classified_edges"]
+    output_path = paths["poi_features"]
+    category_map_path = paths["poi_category_mapping"]
 
     print(f"Loading classified roads from {segments_path}...")
     segments = gpd.read_file(segments_path)

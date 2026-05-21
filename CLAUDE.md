@@ -48,7 +48,7 @@ This is a Python geospatial pipeline for road-centered semantic partitioning of 
 Pipeline stages are intentionally sequential and file-based:
 
 1. `src/00_download_osm.py` queries OSM in a configured harvest bbox, extracts Fifth Ring road segments by configured Chinese name patterns, polygonizes the ring to select the inner Beijing boundary, then downloads the drivable OSM network within that polygon.
-2. `src/01_preprocess_roads.py` reads raw OSM edges plus the saved Fifth Ring boundary and ring linework, normalizes OSM list-like fields, projects to the configured metric CRS, strictly keeps roads inside the Fifth Ring plus overlapping named Fifth Ring segments, filters motor-vehicle roads with explicit highway/access/service rules, assigns stable `seg_id` values, and classifies each edge as `ordinary` or `connector` based on highway class and max connector length.
+2. `src/01_preprocess_roads.py` reads shared raw OSM edges plus the active scope boundary and ring linework, normalizes OSM list-like fields, projects to the configured metric CRS, strictly keeps roads inside the active ring plus overlapping named boundary ring segments, filters motor-vehicle roads with explicit highway/access/service rules, assigns stable `seg_id` values, and classifies each edge as `ordinary` or `connector` based on highway class and max connector length.
 3. `src/02_build_segment_relation_graph.py` writes ordinary segments as graph nodes, builds weighted undirected relation edges for direct topological adjacency and connector-mediated adjacency, then boosts edge weights with same-road continuity signals: shared name, shared OSM way id, shared highway class, and small bearing difference.
 4. `src/03_cluster_segments.py` applies Louvain clustering from `python-louvain` to the weighted NetworkX relation graph and writes clustered GeoPackage/CSV outputs plus diagnostic summary tables.
 5. `src/04_visualize_clusters.py` renders the classification map, clustered road map, and connector-compression zoom figure.
@@ -65,13 +65,13 @@ Shared utilities are split by domain:
 The scripts create required output directories automatically. Important intermediate and final artifacts are:
 
 - `data/raw/`: Fifth Ring segments/boundary, raw OSM graph, raw edge/node GeoPackages.
-- `data/interim/road_edges_classified.gpkg`: filtered and role-classified road edges.
-- `data/processed/segment_nodes.gpkg`: ordinary segment graph nodes.
-- `data/processed/segment_relation_edges.csv`: serialized weighted relation edges.
-- `outputs/graphs/segment_relation_graph.gpickle`: NetworkX graph consumed by clustering and visualization.
-- `data/processed/segment_clusters.gpkg` and `.csv`: clustered ordinary segments.
-- `outputs/tables/`: cluster summary and road-name split diagnostics.
-- `outputs/figures/`: generated map figures.
+- `data/interim/<active_scope>/road_edges_classified.gpkg`: filtered and role-classified road edges.
+- `data/processed/<active_scope>/segment_nodes.gpkg`: ordinary segment graph nodes.
+- `data/processed/<active_scope>/segment_relation_edges.csv`: serialized weighted relation edges.
+- `outputs/<active_scope>/graphs/segment_relation_graph.gpickle`: NetworkX graph consumed by clustering and visualization.
+- `data/processed/<active_scope>/segment_clusters.gpkg` and `.csv`: clustered ordinary segments.
+- `outputs/<active_scope>/tables/`: cluster summary and road-name split diagnostics.
+- `outputs/<active_scope>/figures/`: generated map figures.
 
 ## Operational notes
 

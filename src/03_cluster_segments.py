@@ -12,7 +12,7 @@ from scipy.sparse import csgraph
 from scipy.sparse.linalg import eigsh
 from sklearn.cluster import KMeans
 
-from utils_geo import DATA_PROCESSED, OUTPUTS_GRAPHS, OUTPUTS_TABLES, ensure_directories, load_config
+from utils_geo import ensure_scope_directories, get_scope_paths, load_config
 
 
 def dominant_value(series: pd.Series):
@@ -169,8 +169,8 @@ def intra_edge_similarity(edges: pd.DataFrame, partition: dict[str, int], simila
     return float(values.mean())
 
 
-def cluster_od_sparsity(partition: dict[str, int]) -> float:
-    od_path = DATA_PROCESSED / "segment_order_od_pairs.csv"
+def cluster_od_sparsity(partition: dict[str, int], paths: dict) -> float:
+    od_path = paths["order_od_pairs"]
     if not od_path.exists():
         return 0.0
     od = pd.read_csv(od_path)
@@ -199,6 +199,7 @@ def evaluate_partition(
     partition: dict[str, int],
     summary: pd.DataFrame,
     diagnostics: pd.DataFrame,
+    paths: dict,
 ) -> dict:
     connected_ratio, mean_components = cluster_connectivity_ratio(graph, partition)
     total_lengths = summary["total_length_m"].astype(float)
@@ -220,7 +221,7 @@ def evaluate_partition(
         "max_clusters_per_named_road": int(named_road_splits.max()) if not named_road_splits.empty else 0,
         "poi_intra_edge_homogeneity": intra_edge_similarity(edges, partition, "poi_similarity"),
         "order_intra_edge_homogeneity": intra_edge_similarity(edges, partition, "order_similarity"),
-        "cluster_od_sparsity": cluster_od_sparsity(partition),
+        "cluster_od_sparsity": cluster_od_sparsity(partition, paths),
     }
 
 
@@ -252,12 +253,13 @@ def save_partition_outputs(
     base_segments: gpd.GeoDataFrame,
     partition: dict[str, int],
     config: dict,
+    paths: dict,
 ) -> tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame]:
     label = f"{graph_variant}_{algorithm}"
-    clusters_path = DATA_PROCESSED / f"segment_clusters_{label}.gpkg"
-    clusters_csv_path = DATA_PROCESSED / f"segment_clusters_{label}.csv"
-    summary_path = OUTPUTS_TABLES / f"cluster_summary_{label}.csv"
-    diagnostics_path = OUTPUTS_TABLES / f"road_name_split_diagnostics_{label}.csv"
+    clusters_path = paths["data_processed"] / f"segment_clusters_{label}.gpkg"
+    clusters_csv_path = paths["data_processed"] / f"segment_clusters_{label}.csv"
+    summary_path = paths["outputs_tables"] / f"cluster_summary_{label}.csv"
+    diagnostics_path = paths["outputs_tables"] / f"road_name_split_diagnostics_{label}.csv"
 
     segments = base_segments.copy()
     segments["cluster_id"] = segments["seg_id"].map(partition)
@@ -271,10 +273,10 @@ def save_partition_outputs(
 
     default_variant = config.get("evaluation", {}).get("default_variant", "road_only")
     if graph_variant == default_variant and algorithm == "louvain":
-        segments.to_file(DATA_PROCESSED / "segment_clusters.gpkg", driver="GPKG")
-        segments.drop(columns="geometry").to_csv(DATA_PROCESSED / "segment_clusters.csv", index=False)
-        summary.to_csv(OUTPUTS_TABLES / "cluster_summary.csv", index=False)
-        diagnostics.to_csv(OUTPUTS_TABLES / "road_name_split_diagnostics.csv", index=False)
+        segments.to_file(paths["data_processed"] / "segment_clusters.gpkg", driver="GPKG")
+        segments.drop(columns="geometry").to_csv(paths["data_processed"] / "segment_clusters.csv", index=False)
+        summary.to_csv(paths["outputs_tables"] / "cluster_summary.csv", index=False)
+        diagnostics.to_csv(paths["outputs_tables"] / "road_name_split_diagnostics.csv", index=False)
 
     print(f"{label} clustering completed")
     print(f"number of clusters: {segments['cluster_id'].nunique():,}")
@@ -283,8 +285,9 @@ def save_partition_outputs(
 
 
 def main() -> None:
-    ensure_directories()
     config = load_config()
+    ensure_scope_directories(config)
+    paths = get_scope_paths(config)
 
     algorithms = config["clustering"].get("algorithms", [config["clustering"].get("method", "louvain")])
     unknown = [algorithm for algorithm in algorithms if algorithm not in ALGORITHM_RUNNERS]
@@ -293,15 +296,15 @@ def main() -> None:
     if "spectral" in algorithms and "louvain" not in algorithms:
         raise ValueError("Spectral clustering needs Louvain in clustering.algorithms to set n_clusters per graph variant.")
 
-    nodes_path = DATA_PROCESSED / "segment_nodes.gpkg"
+    nodes_path = paths["segment_nodes"]
     print(f"Loading segment nodes from {nodes_path}...")
     base_segments = gpd.read_file(nodes_path)
     evaluation_rows = []
     louvain_cluster_counts: dict[str, int] = {}
 
     for graph_variant in config["semantic_graph"]["variants"]:
-        graph_path = OUTPUTS_GRAPHS / f"segment_relation_graph_{graph_variant}.gpickle"
-        edge_path = DATA_PROCESSED / f"segment_relation_edges_{graph_variant}.csv"
+        graph_path = paths["outputs_graphs"] / f"segment_relation_graph_{graph_variant}.gpickle"
+        edge_path = paths["data_processed"] / f"segment_relation_edges_{graph_variant}.csv"
 
         print(f"Loading {graph_variant} graph from {graph_path}...")
         with graph_path.open("rb") as handle:
@@ -324,6 +327,7 @@ def main() -> None:
                 base_segments,
                 partition,
                 config,
+                paths,
             )
             evaluation_rows.append(
                 evaluate_partition(
@@ -335,21 +339,22 @@ def main() -> None:
                     partition,
                     summary,
                     diagnostics,
+                    paths,
                 )
             )
 
     evaluation = pd.DataFrame(evaluation_rows)
-    evaluation_path = OUTPUTS_TABLES / "graph_algorithm_evaluation.csv"
+    evaluation_path = paths["outputs_tables"] / "graph_algorithm_evaluation.csv"
     evaluation.to_csv(evaluation_path, index=False)
-    comparison_path = OUTPUTS_TABLES / "comparison_evaluation.csv"
+    comparison_path = paths["outputs_tables"] / "comparison_evaluation.csv"
     evaluation.to_csv(comparison_path, index=False)
     ranked = build_ranked_summary(evaluation)
-    ranked_path = OUTPUTS_TABLES / "graph_algorithm_ranked_summary.csv"
+    ranked_path = paths["outputs_tables"] / "graph_algorithm_ranked_summary.csv"
     ranked.to_csv(ranked_path, index=False)
 
     louvain_only = evaluation.loc[evaluation["algorithm"] == "louvain"].rename(columns={"graph_variant": "variant"})
     louvain_only = louvain_only.drop(columns=["algorithm"])
-    louvain_only.to_csv(OUTPUTS_TABLES / "graph_variant_evaluation.csv", index=False)
+    louvain_only.to_csv(paths["outputs_tables"] / "graph_variant_evaluation.csv", index=False)
 
     print(f"Saved graph algorithm evaluation to {evaluation_path}")
     print(f"Saved comparison evaluation to {comparison_path}")

@@ -10,7 +10,7 @@ import numpy as np
 import networkx as nx
 import pandas as pd
 
-from utils_geo import DATA_INTERIM, DATA_PROCESSED, DATA_RAW, OUTPUTS_GRAPHS, angle_diff, compute_bearing, ensure_directories, load_config, validate_boundary_polygon
+from utils_geo import angle_diff, compute_bearing, ensure_scope_directories, get_active_scope, get_scope_paths, load_config, validate_boundary_polygon
 from utils_graph import build_incident_index, ensure_edge_record, iter_incident_pairs, serialize_edge_records
 
 
@@ -59,8 +59,8 @@ def bounded_inverse_difference(value_a: float, value_b: float, scale: float) -> 
     return float(max(0.0, 1.0 - abs(value_a - value_b) / scale))
 
 
-def load_poi_similarity_inputs(config: dict, segment_ids: list[str]) -> dict[str, dict] | None:
-    path = DATA_PROCESSED / "segment_poi_features.csv"
+def load_poi_similarity_inputs(paths: dict, config: dict, segment_ids: list[str]) -> dict[str, dict] | None:
+    path = paths["poi_features"]
     if not path.exists():
         print(f"POI feature file not found at {path}; POI similarity will be zero.")
         return None
@@ -90,8 +90,8 @@ def load_poi_similarity_inputs(config: dict, segment_ids: list[str]) -> dict[str
     return inputs
 
 
-def load_order_similarity_inputs(segment_ids: list[str]) -> dict[str, dict] | None:
-    path = DATA_PROCESSED / "segment_order_features.csv"
+def load_order_similarity_inputs(paths: dict, segment_ids: list[str]) -> dict[str, dict] | None:
+    path = paths["order_features"]
     if not path.exists():
         print(f"Order feature file not found at {path}; order similarity will be zero.")
         return None
@@ -156,6 +156,7 @@ def save_variant_graph(
     variant_config: dict,
     edge_map: dict[tuple[str, str], dict],
     ordinary: gpd.GeoDataFrame,
+    paths: dict,
 ) -> tuple[nx.Graph, pd.DataFrame]:
     variant_edge_map = {}
     poi_weight = float(variant_config["poi_weight"])
@@ -187,15 +188,15 @@ def save_variant_graph(
         seg_b = attrs.pop("seg_id_b")
         graph.add_edge(seg_a, seg_b, **attrs)
 
-    edge_output_path = DATA_PROCESSED / f"segment_relation_edges_{variant_name}.csv"
-    graph_output_path = OUTPUTS_GRAPHS / f"segment_relation_graph_{variant_name}.gpickle"
+    edge_output_path = paths["data_processed"] / f"segment_relation_edges_{variant_name}.csv"
+    graph_output_path = paths["outputs_graphs"] / f"segment_relation_graph_{variant_name}.gpickle"
     relation_edges.to_csv(edge_output_path, index=False)
     with graph_output_path.open("wb") as handle:
         pickle.dump(graph, handle)
 
     if variant_name == "road_only":
-        relation_edges.to_csv(DATA_PROCESSED / "segment_relation_edges.csv", index=False)
-        shutil.copyfile(graph_output_path, OUTPUTS_GRAPHS / "segment_relation_graph.gpickle")
+        relation_edges.to_csv(paths["data_processed"] / "segment_relation_edges.csv", index=False)
+        shutil.copyfile(graph_output_path, paths["outputs_graphs"] / "segment_relation_graph.gpickle")
 
     print(f"Saved {variant_name} relation edges to {edge_output_path}")
     print(f"Saved {variant_name} graph to {graph_output_path}")
@@ -203,12 +204,14 @@ def save_variant_graph(
 
 
 def main() -> None:
-    ensure_directories()
     config = load_config()
+    ensure_scope_directories(config)
+    scope = get_active_scope(config)
+    paths = get_scope_paths(config)
 
-    classified_path = DATA_INTERIM / "road_edges_classified.gpkg"
-    boundary_path = DATA_RAW / "beijing_fifth_ring_boundary.gpkg"
-    nodes_output_path = DATA_PROCESSED / "segment_nodes.gpkg"
+    classified_path = paths["classified_edges"]
+    boundary_path = paths["boundary"]
+    nodes_output_path = paths["segment_nodes"]
 
     print(f"Loading classified edges from {classified_path}...")
     edges = gpd.read_file(classified_path)
@@ -225,8 +228,8 @@ def main() -> None:
     ordinary_by_seg_id = {record["seg_id"]: record for record in ordinary_records}
     segment_ids = ordinary["seg_id"].tolist()
     ordinary_incident = build_incident_index(ordinary_records)
-    poi_inputs = load_poi_similarity_inputs(config, segment_ids)
-    order_inputs = load_order_similarity_inputs(segment_ids)
+    poi_inputs = load_poi_similarity_inputs(paths, config, segment_ids)
+    order_inputs = load_order_similarity_inputs(paths, segment_ids)
 
     edge_map: dict[tuple[str, str], dict] = {}
     direct_pairs = set()
@@ -296,7 +299,7 @@ def main() -> None:
 
     variant_summaries = {}
     for variant_name, variant_config in config["semantic_graph"]["variants"].items():
-        graph, relation_edges = save_variant_graph(variant_name, variant_config, edge_map, ordinary)
+        graph, relation_edges = save_variant_graph(variant_name, variant_config, edge_map, ordinary, paths)
         variant_summaries[variant_name] = {
             "nodes": graph.number_of_nodes(),
             "edges": graph.number_of_edges(),
@@ -304,7 +307,7 @@ def main() -> None:
             "order_edges": int((relation_edges["order_weight"] > 0).sum()),
         }
 
-    print("segment graph is built from Fifth-Ring-retained roads only")
+    print(f"segment graph is built from {scope['label']}-retained roads only")
     print(f"number of segment graph nodes: {len(ordinary):,}")
     print(f"number of direct adjacency edges: {len(direct_pairs):,}")
     print(f"number of connector-mediated edges: {len(connector_pairs):,}")

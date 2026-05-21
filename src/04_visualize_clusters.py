@@ -9,7 +9,7 @@ import geopandas as gpd
 from PIL import Image, ImageDraw
 from shapely.geometry import LineString, MultiLineString
 
-from utils_geo import DATA_INTERIM, DATA_PROCESSED, DATA_RAW, OUTPUTS_FIGURES, OUTPUTS_GRAPHS, ensure_directories, load_config, project_bounds
+from utils_geo import ensure_scope_directories, get_scope_paths, load_config, project_bounds
 
 
 TAB20 = [
@@ -168,8 +168,9 @@ def plot_zoom(clusters: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame, graph, b
 
 
 def main() -> None:
-    ensure_directories()
     config = load_config()
+    ensure_scope_directories(config)
+    paths = get_scope_paths(config)
     variant = sys.argv[1] if len(sys.argv) > 1 else config.get("evaluation", {}).get("default_variant", "road_only")
     algorithm = sys.argv[2] if len(sys.argv) > 2 else "louvain"
     if variant not in config["semantic_graph"]["variants"]:
@@ -181,10 +182,10 @@ def main() -> None:
     linewidth = float(config["visualization"]["linewidth"])
     dpi = int(config["visualization"]["figure_dpi"])
 
-    classified_path = DATA_INTERIM / "road_edges_classified.gpkg"
-    clusters_path = DATA_PROCESSED / f"segment_clusters_{variant}_{algorithm}.gpkg"
-    graph_path = OUTPUTS_GRAPHS / f"segment_relation_graph_{variant}.gpickle"
-    boundary_path = DATA_RAW / "beijing_fifth_ring_boundary.gpkg"
+    classified_path = paths["classified_edges"]
+    clusters_path = paths["data_processed"] / f"segment_clusters_{variant}_{algorithm}.gpkg"
+    graph_path = paths["outputs_graphs"] / f"segment_relation_graph_{variant}.gpickle"
+    boundary_path = paths["boundary"]
 
     classified = gpd.read_file(classified_path)
     clusters = gpd.read_file(clusters_path)
@@ -194,9 +195,9 @@ def main() -> None:
 
     connectors = classified.loc[classified["segment_role"] == "connector"].copy()
 
-    classification_output = OUTPUTS_FIGURES / "01_ordinary_vs_connector_segments.png"
-    clusters_output = OUTPUTS_FIGURES / f"02_segment_clusters_{variant}_{algorithm}.png"
-    zoom_output = OUTPUTS_FIGURES / f"03_connector_compression_zoom_{variant}_{algorithm}.png"
+    classification_output = paths["outputs_figures"] / "01_ordinary_vs_connector_segments.png"
+    clusters_output = paths["outputs_figures"] / f"02_segment_clusters_{variant}_{algorithm}.png"
+    zoom_output = paths["outputs_figures"] / f"03_connector_compression_zoom_{variant}_{algorithm}.png"
 
     plot_classification(
         classified,
@@ -215,7 +216,7 @@ def main() -> None:
         dpi,
     )
     if variant == config.get("evaluation", {}).get("default_variant", "road_only") and algorithm == "louvain":
-        shutil.copyfile(clusters_output, OUTPUTS_FIGURES / "02_segment_clusters_louvain.png")
+        shutil.copyfile(clusters_output, paths["outputs_figures"] / "02_segment_clusters_louvain.png")
     print(f"Saved cluster map to {clusters_output}")
     projected_bounds = project_bounds(
         config["visualization"]["zoom_bounds"],
@@ -234,10 +235,10 @@ def main() -> None:
         projected_bounds,
     )
     if variant == config.get("evaluation", {}).get("default_variant", "road_only") and algorithm == "louvain":
-        shutil.copyfile(zoom_output, OUTPUTS_FIGURES / "03_connector_compression_zoom.png")
+        shutil.copyfile(zoom_output, paths["outputs_figures"] / "03_connector_compression_zoom.png")
     print(f"Saved connector-compression zoom to {zoom_output}")
 
-    print(f"Saved figures to {OUTPUTS_FIGURES}")
+    print(f"Saved figures to {paths['outputs_figures']}")
 
 
 if __name__ == "__main__":

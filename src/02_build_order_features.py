@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
-from utils_geo import DATA_INTERIM, DATA_PROCESSED, PROJECT_ROOT, ensure_directories, load_config, project_gdf
+from utils_geo import PROJECT_ROOT, ensure_scope_directories, get_scope_paths, load_config, project_gdf
 
 
 def match_points_to_segments(
@@ -48,13 +48,14 @@ def add_counts(target: Counter, values: pd.Series) -> None:
 
 
 def main() -> None:
-    ensure_directories()
     config = load_config()
+    ensure_scope_directories(config)
+    paths = get_scope_paths(config)
     order_config = config["semantic_graph"]["order"]
 
-    segments_path = DATA_INTERIM / "road_edges_classified.gpkg"
-    features_path = DATA_PROCESSED / "segment_order_features.csv"
-    od_path = DATA_PROCESSED / "segment_order_od_pairs.csv"
+    segments_path = paths["classified_edges"]
+    features_path = paths["order_features"]
+    od_path = paths["order_od_pairs"]
     order_path = PROJECT_ROOT / order_config["input_path"]
 
     print(f"Loading classified roads from {segments_path}...")

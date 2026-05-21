@@ -6,10 +6,10 @@ import pandas as pd
 from collections import Counter
 
 from utils_geo import (
-    DATA_INTERIM,
-    DATA_RAW,
     OSM_NORMALIZE_FIELDS,
-    ensure_directories,
+    ensure_scope_directories,
+    get_active_scope,
+    get_scope_paths,
     load_config,
     normalize_columns,
     normalize_road_name,
@@ -56,28 +56,32 @@ def length_ratio_inside(geometry, polygon) -> float:
     return float(geometry.intersection(polygon).length) / length
 
 
-def is_fifth_ring_name(value, config: dict) -> bool:
-    include_patterns = [normalize_road_name(name) for name in config["study_area"]["ring_name_patterns"]]
-    exclude_patterns = [normalize_road_name(name) for name in config["study_area"].get("exclude_name_patterns", [])]
+def is_boundary_ring_name(value, scope: dict) -> bool:
+    include_patterns = [normalize_road_name(name) for name in scope["ring_name_patterns"]]
+    exclude_patterns = [normalize_road_name(name) for name in scope.get("exclude_name_patterns", [])]
     return road_name_matches(value, include_patterns, exclude_patterns)
 
 
 def build_scope_mask(edges: gpd.GeoDataFrame, boundary: gpd.GeoDataFrame, ring_segments: gpd.GeoDataFrame, config: dict) -> tuple[pd.Series, pd.Series, pd.Series]:
-    study_area = config["study_area"]
-    threshold = float(study_area.get("inside_length_ratio_threshold", 0.98))
-    boundary_tolerance_m = float(study_area.get("boundary_tolerance_m", 0))
-    ring_overlap_tolerance_m = float(study_area.get("ring_overlap_tolerance_m", 0))
+    scope = get_active_scope(config)
+    threshold = float(scope.get("inside_length_ratio_threshold", 0.98))
+    boundary_tolerance_m = float(scope.get("boundary_tolerance_m", 0))
+    ring_overlap_tolerance_m = float(scope.get("ring_overlap_tolerance_m", 0))
+    retain_boundary_roads = bool(scope.get("retain_boundary_roads", True))
 
     boundary_polygon = boundary.geometry.iloc[0]
     inside_polygon = boundary_polygon.buffer(boundary_tolerance_m) if boundary_tolerance_m else boundary_polygon
-    ring_linework = ring_segments.geometry.union_all()
-    ring_corridor = ring_linework.buffer(ring_overlap_tolerance_m) if ring_overlap_tolerance_m else ring_linework
 
     inside_ratio = edges.geometry.map(lambda geometry: length_ratio_inside(geometry, inside_polygon))
     inside_mask = inside_ratio >= threshold
-    ring_name_mask = edges["name"].map(lambda value: is_fifth_ring_name(value, config)) if "name" in edges.columns else pd.Series(False, index=edges.index)
-    ring_overlap_mask = edges.geometry.intersects(ring_corridor)
-    ring_mask = ring_name_mask & ring_overlap_mask
+    if retain_boundary_roads:
+        ring_linework = ring_segments.geometry.union_all()
+        ring_corridor = ring_linework.buffer(ring_overlap_tolerance_m) if ring_overlap_tolerance_m else ring_linework
+        ring_name_mask = edges["name"].map(lambda value: is_boundary_ring_name(value, scope)) if "name" in edges.columns else pd.Series(False, index=edges.index)
+        ring_overlap_mask = edges.geometry.intersects(ring_corridor)
+        ring_mask = ring_name_mask & ring_overlap_mask
+    else:
+        ring_mask = pd.Series(False, index=edges.index)
     return inside_mask | ring_mask, inside_mask, ring_mask
 
 
@@ -142,13 +146,15 @@ def format_counter(counter: Counter, limit: int = 10) -> str:
 
 
 def main() -> None:
-    ensure_directories()
     config = load_config()
+    ensure_scope_directories(config)
+    scope = get_active_scope(config)
+    paths = get_scope_paths(config)
 
-    edges_path = DATA_RAW / "beijing_edges_raw.gpkg"
-    boundary_path = DATA_RAW / "beijing_fifth_ring_boundary.gpkg"
-    ring_segments_path = DATA_RAW / "beijing_fifth_ring_segments.gpkg"
-    output_path = DATA_INTERIM / "road_edges_classified.gpkg"
+    edges_path = paths["raw_edges"]
+    boundary_path = paths["boundary"]
+    ring_segments_path = paths["ring_segments"]
+    output_path = paths["classified_edges"]
 
     print(f"Loading raw edges from {edges_path}...")
     edges = gpd.read_file(edges_path)
@@ -213,14 +219,14 @@ def main() -> None:
     connector_count = int((edges["segment_role"] == "connector").sum())
 
     print(f"number of raw edges: {raw_edge_count:,}")
-    print(f"number of edges retained by inside-Fifth-Ring rule: {retained_inside_count:,}")
-    print(f"number of additional Fifth Ring boundary edges retained: {retained_ring_count:,}")
-    print(f"number of edges discarded outside Fifth Ring: {outside_scope_count:,}")
+    print(f"number of edges retained by inside-{scope['label']} rule: {retained_inside_count:,}")
+    print(f"number of additional {scope['label']} boundary edges retained: {retained_ring_count:,}")
+    print(f"number of edges discarded outside {scope['label']}: {outside_scope_count:,}")
     print(f"number of edges removed by highway class filter: {highway_filtered_count:,}")
     print(f"number of service edges removed by service subtype filter: {service_filtered_count:,}")
     print(f"number of edges removed by taxi/motor-vehicle access filter: {access_filtered_count:,}")
     print(f"top taxi/motor-vehicle access rejection reasons: {format_counter(access_reject_counts)}")
-    print(f"number of Fifth-Ring-retained edges: {len(edges):,}")
+    print(f"number of {scope['label']}-retained edges: {len(edges):,}")
     print(f"number of ordinary segments: {ordinary_count:,}")
     print(f"number of connector segments: {connector_count:,}")
     print(f"Saved classified edges to {output_path}")

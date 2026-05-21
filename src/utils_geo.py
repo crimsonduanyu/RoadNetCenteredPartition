@@ -15,18 +15,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
 DATA_INTERIM = PROJECT_ROOT / "data" / "interim"
 DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
-OUTPUTS_FIGURES = PROJECT_ROOT / "outputs" / "figures"
-OUTPUTS_TABLES = PROJECT_ROOT / "outputs" / "tables"
-OUTPUTS_GRAPHS = PROJECT_ROOT / "outputs" / "graphs"
+OUTPUTS_ROOT = PROJECT_ROOT / "outputs"
 
 
 REQUIRED_DIRS = [
     DATA_RAW,
     DATA_INTERIM,
     DATA_PROCESSED,
-    OUTPUTS_FIGURES,
-    OUTPUTS_TABLES,
-    OUTPUTS_GRAPHS,
+    OUTPUTS_ROOT,
 ]
 
 
@@ -55,8 +51,81 @@ def load_config() -> dict[str, Any]:
         return yaml.safe_load(handle)
 
 
+def get_active_scope_name(config: dict[str, Any]) -> str:
+    study_area = config["study_area"]
+    return str(study_area.get("active", study_area.get("boundary_source", "fifth_ring")))
+
+
+def get_active_scope(config: dict[str, Any]) -> dict[str, Any]:
+    study_area = config["study_area"]
+    active = get_active_scope_name(config)
+    scopes = study_area.get("scopes")
+    if scopes:
+        if active not in scopes:
+            raise ValueError(f"Unknown study_area.active '{active}'. Expected one of {list(scopes)}.")
+        scope = dict(scopes[active])
+        scope["name"] = active
+    else:
+        scope = dict(study_area)
+        scope["name"] = active
+        scope.setdefault("label", active)
+
+    scope.setdefault("label", active)
+    scope.setdefault("raw_edges_path", "data/raw/beijing_edges_raw.gpkg")
+    scope.setdefault("raw_nodes_path", "data/raw/beijing_nodes_raw.gpkg")
+    scope.setdefault("graphml_path", "data/raw/beijing_drive_within_fifth_ring.graphml")
+    scope.setdefault("boundary_path", f"data/raw/beijing_{active}_boundary.gpkg")
+    scope.setdefault("ring_segments_path", f"data/raw/beijing_{active}_segments.gpkg")
+    scope.setdefault("retain_boundary_roads", True)
+    return scope
+
+
+def project_path(path_value: str | Path) -> Path:
+    path = Path(path_value)
+    if path.is_absolute():
+        return path
+    return PROJECT_ROOT / path
+
+
+def get_scope_directories(config: dict[str, Any]) -> dict[str, Path]:
+    scope_name = get_active_scope_name(config)
+    return {
+        "data_interim": DATA_INTERIM / scope_name,
+        "data_processed": DATA_PROCESSED / scope_name,
+        "outputs_figures": PROJECT_ROOT / "outputs" / scope_name / "figures",
+        "outputs_graphs": PROJECT_ROOT / "outputs" / scope_name / "graphs",
+        "outputs_tables": PROJECT_ROOT / "outputs" / scope_name / "tables",
+    }
+
+
+def get_scope_paths(config: dict[str, Any]) -> dict[str, Path]:
+    scope = get_active_scope(config)
+    dirs = get_scope_directories(config)
+    return {
+        **dirs,
+        "raw_edges": project_path(scope["raw_edges_path"]),
+        "raw_nodes": project_path(scope["raw_nodes_path"]),
+        "raw_graphml": project_path(scope["graphml_path"]),
+        "boundary": project_path(scope["boundary_path"]),
+        "ring_segments": project_path(scope["ring_segments_path"]),
+        "classified_edges": dirs["data_interim"] / "road_edges_classified.gpkg",
+        "segment_nodes": dirs["data_processed"] / "segment_nodes.gpkg",
+        "poi_features": dirs["data_processed"] / "segment_poi_features.csv",
+        "poi_category_mapping": dirs["data_processed"] / "poi_category_mapping.csv",
+        "order_features": dirs["data_processed"] / "segment_order_features.csv",
+        "order_od_pairs": dirs["data_processed"] / "segment_order_od_pairs.csv",
+    }
+
+
 def ensure_directories() -> None:
     for directory in REQUIRED_DIRS:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+
+def ensure_scope_directories(config: dict[str, Any]) -> None:
+    ensure_directories()
+    for directory in get_scope_directories(config).values():
         directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -158,7 +227,7 @@ def build_inner_polygon_from_ring_buffer(
     remaining = harvest_polygon.iloc[0].difference(corridor)
 
     if remaining.is_empty:
-        raise ValueError("Buffered Fifth Ring corridor removed the entire harvest area.")
+        raise ValueError("Buffered ring corridor removed the entire harvest area.")
 
     if remaining.geom_type == "Polygon":
         polygon_geoms = [remaining]

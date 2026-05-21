@@ -1,13 +1,20 @@
 # Beijing Road-Centered Semantic Network Partitioning Prototype
 
-This project builds a reproducible road-centered partitioning pipeline for the road network **inside Beijing Fifth Ring Road**.
+This project builds a reproducible road-centered partitioning pipeline for configurable Beijing ring-road study areas, currently **inside the Fifth Ring Road** or **inside the Fourth Ring Road**.
 
 The key modeling choice is:
 
 - ordinary road segments are graph nodes;
 - short connector roads such as OSM `*_link` ramps are compressed into relation edges between adjacent ordinary road segments.
 
-The study area is **not** a bbox. The pipeline first extracts the Fifth Ring boundary from OSM road features, converts that ring-road linework into a polygon, and then downloads the drivable network within that polygon.
+The study area is **not** a bbox. The shared raw road network is the Fifth-Ring network in `data/raw/`; narrower scopes such as Fourth Ring reuse that raw network and apply a different boundary filter during preprocessing.
+
+Switch the active scope in `config.yaml`:
+
+```yaml
+study_area:
+  active: "fifth_ring"   # or "fourth_ring"
+```
 
 ## Environment setup
 
@@ -48,36 +55,37 @@ python src/04_visualize_clusters.py
 
 Open this repository root folder in VSCode. The workspace config in `.vscode/` selects the `bj_road_partition` conda interpreter, so opening a script such as `src/04_visualize_clusters.py` and clicking Run should use the same environment as the command-line workflow.
 
-Visualization scripts save PNG files under `outputs/figures/`; they do not open a popup window.
+Visualization scripts save PNG files under `outputs/<active_scope>/figures/`; they do not open a popup window.
 
 ## Pipeline overview
 
-### 1. Extract Fifth Ring boundary and download OSM network
+### 1. Prepare ring boundary and shared raw network
 
 `src/00_download_osm.py`:
 
-- queries OSM highway features in a broad harvest window;
-- identifies Fifth Ring segments by road name;
-- polygonizes the ring-road linework;
-- selects the polygon containing central Beijing;
-- downloads the drivable road network within that polygon.
+- reuses existing `data/raw/beijing_edges_raw.gpkg` when available;
+- for `fifth_ring`, downloads the shared Fifth-Ring road network only if the shared raw files are missing;
+- for `fourth_ring`, extracts Fourth Ring segments from the shared raw edges without re-downloading OSM;
+- polygonizes the configured ring-road linework and selects the central Beijing boundary polygon.
 
 Saved raw artifacts include:
 
 - `data/raw/beijing_fifth_ring_segments.gpkg`
 - `data/raw/beijing_fifth_ring_boundary.gpkg`
+- `data/raw/beijing_fourth_ring_segments.gpkg`
+- `data/raw/beijing_fourth_ring_boundary.gpkg`
 - `data/raw/beijing_drive_within_fifth_ring.graphml`
 - `data/raw/beijing_edges_raw.gpkg`
 - `data/raw/beijing_nodes_raw.gpkg`
 
 ### 2. Classify ordinary vs connector segments
 
-`src/01_preprocess_roads.py` filters motor-vehicle roads, enforces the saved Fifth Ring boundary, and classifies each edge as either:
+`src/01_preprocess_roads.py` filters motor-vehicle roads, enforces the active scope boundary, and classifies each edge as either:
 
 - `ordinary`
 - `connector`
 
-The spatial filter keeps roads whose geometry lies almost entirely inside the Fifth Ring polygon, plus named Fifth Ring segments that overlap the saved ring linework. Roads that merely intersect the boundary but mostly lie outside are discarded.
+The spatial filter keeps roads whose geometry lies almost entirely inside the active boundary polygon, plus named boundary ring segments that overlap the saved ring linework. Roads that merely intersect the boundary but mostly lie outside are discarded.
 
 The motor-vehicle filter uses an explicit OSM `highway` allowlist plus access/service exclusions. Pedestrian, cycle, path, track, construction, and proposed road classes are excluded, and roads tagged with non-motor-vehicle access values such as `no`, `private`, `agricultural`, or `forestry` are removed. Service roads remain configurable but parking aisles, driveways, drive-throughs, and emergency-access service subtypes are excluded by default.
 
@@ -122,8 +130,8 @@ Louvain and Leiden use the configured resolution and random seed. Spectral clust
 
 `src/04_visualize_clusters.py` creates:
 
-- ordinary vs connector segment map with Fifth Ring boundary outline;
-- clustered road segment map with Fifth Ring boundary outline for the configured default graph/algorithm pair;
+- ordinary vs connector segment map with the active boundary outline;
+- clustered road segment map with the active boundary outline for the configured default graph/algorithm pair;
 - zoomed connector-compression illustration.
 
 Pass a graph variant and algorithm to visualize another result:
@@ -146,37 +154,39 @@ Expected artifacts include:
 
 - `data/raw/beijing_fifth_ring_segments.gpkg`
 - `data/raw/beijing_fifth_ring_boundary.gpkg`
+- `data/raw/beijing_fourth_ring_segments.gpkg`
+- `data/raw/beijing_fourth_ring_boundary.gpkg`
 - `data/raw/beijing_drive_within_fifth_ring.graphml`
 - `data/raw/beijing_edges_raw.gpkg`
 - `data/raw/beijing_nodes_raw.gpkg`
-- `data/interim/road_edges_classified.gpkg`
-- `data/processed/segment_nodes.gpkg`
-- `data/processed/segment_poi_features.csv`
-- `data/processed/segment_order_features.csv`
-- `data/processed/segment_order_od_pairs.csv`
-- `data/processed/segment_relation_edges_{variant}.csv`
-- `data/processed/segment_clusters_{variant}_{algorithm}.gpkg`
-- `outputs/graphs/segment_relation_graph_{variant}.gpickle`
-- `outputs/tables/cluster_summary_{variant}_{algorithm}.csv`
-- `outputs/tables/road_name_split_diagnostics_{variant}_{algorithm}.csv`
-- `outputs/tables/graph_variant_evaluation.csv`
-- `outputs/tables/graph_algorithm_evaluation.csv`
-- `outputs/tables/graph_algorithm_ranked_summary.csv`
-- `outputs/figures/01_ordinary_vs_connector_segments.png`
-- `outputs/figures/02_segment_clusters_{variant}_{algorithm}.png`
-- `outputs/figures/03_connector_compression_zoom_{variant}_{algorithm}.png`
+- `data/interim/<active_scope>/road_edges_classified.gpkg`
+- `data/processed/<active_scope>/segment_nodes.gpkg`
+- `data/processed/<active_scope>/segment_poi_features.csv`
+- `data/processed/<active_scope>/segment_order_features.csv`
+- `data/processed/<active_scope>/segment_order_od_pairs.csv`
+- `data/processed/<active_scope>/segment_relation_edges_{variant}.csv`
+- `data/processed/<active_scope>/segment_clusters_{variant}_{algorithm}.gpkg`
+- `outputs/<active_scope>/graphs/segment_relation_graph_{variant}.gpickle`
+- `outputs/<active_scope>/tables/cluster_summary_{variant}_{algorithm}.csv`
+- `outputs/<active_scope>/tables/road_name_split_diagnostics_{variant}_{algorithm}.csv`
+- `outputs/<active_scope>/tables/graph_variant_evaluation.csv`
+- `outputs/<active_scope>/tables/graph_algorithm_evaluation.csv`
+- `outputs/<active_scope>/tables/graph_algorithm_ranked_summary.csv`
+- `outputs/<active_scope>/figures/01_ordinary_vs_connector_segments.png`
+- `outputs/<active_scope>/figures/02_segment_clusters_{variant}_{algorithm}.png`
+- `outputs/<active_scope>/figures/03_connector_compression_zoom_{variant}_{algorithm}.png`
 
 ## Validation signals
 
 A successful run should print at least:
 
-- number of candidate Fifth Ring segments found;
+- number of candidate active ring segments found;
 - number of boundary polygons generated before selection;
 - chosen boundary polygon area;
 - number of raw edges;
-- number of edges retained by inside-Fifth-Ring rule;
-- number of additional Fifth Ring boundary edges retained;
-- number of edges discarded outside Fifth Ring;
+- number of edges retained by the active ring rule;
+- number of additional active boundary edges retained;
+- number of edges discarded outside the active ring;
 - number of edges removed by highway class filter;
 - number of edges removed by motor-vehicle access filter;
 - number of service edges removed by service subtype filter;
@@ -193,7 +203,7 @@ A successful run should print at least:
 
 ## Known limitations
 
-- Fifth Ring extraction depends on OSM road naming quality.
+- Ring extraction depends on OSM road naming quality.
 - Connector identification still uses a simple `*_link` plus length threshold heuristic.
 - Continuity strengthening is local and depends on OSM naming quality.
 - POI and order semantics are added as local edge-weight terms on existing road relation edges, not as long-range semantic edges.
