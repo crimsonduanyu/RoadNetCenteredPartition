@@ -35,6 +35,7 @@ data/raw/
 data/interim/
 data/processed/
 outputs/
+regularized_zoning_experiments/runs/
 
 # Geospatial sidecar/index files
 *.gpkg-shm
