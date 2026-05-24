@@ -102,21 +102,43 @@ def validate_inputs(config: dict[str, Any], tables_dir: Path) -> None:
         require_file(tables_dir / name, name)
 
 
+def combined_metric_values(metrics: pd.DataFrame, name: str, regularized: pd.Series) -> pd.Series:
+    if name == "order_capacity_balance":
+        required = ["order_count_cv", "capacity_hinge_loss"]
+        missing = [column for column in required if column not in metrics.columns]
+        if missing:
+            raise ValueError(f"Best-selection combined metric is missing columns: {missing}")
+        parts = []
+        for column in required:
+            values = pd.to_numeric(metrics.loc[regularized, column], errors="coerce")
+            lo = float(values.min())
+            hi = float(values.max())
+            if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+                normalized = pd.Series(0.0, index=metrics.index, dtype=float)
+            else:
+                normalized = (pd.to_numeric(metrics[column], errors="coerce") - lo) / (hi - lo)
+            normalized.loc[~regularized] = np.nan
+            parts.append(normalized)
+        return sum(parts) / len(parts)
+    if name not in metrics.columns:
+        raise ValueError(f"Best-selection metric is missing from metrics_regularized.csv: {name}")
+    return pd.to_numeric(metrics[name], errors="coerce")
+
+
 def add_balanced_score(metrics: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame:
     result = metrics.copy()
     weights = config["visualization"]["best_selection"]["metrics"]
     regularized = result["source_type"] == "regularized"
     for metric, weight in weights.items():
-        if metric not in result.columns:
-            raise ValueError(f"Best-selection metric is missing from metrics_regularized.csv: {metric}")
-        values = pd.to_numeric(result.loc[regularized, metric], errors="coerce")
+        source_values = combined_metric_values(result, metric, regularized)
+        values = pd.to_numeric(source_values.loc[regularized], errors="coerce")
         lo = float(values.min())
         hi = float(values.max())
         normalized_column = f"{metric}_normalized"
         if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
             result[normalized_column] = 0.0
         else:
-            result[normalized_column] = (pd.to_numeric(result[metric], errors="coerce") - lo) / (hi - lo)
+            result[normalized_column] = (source_values - lo) / (hi - lo)
         result.loc[~regularized, normalized_column] = np.nan
 
     score = pd.Series(0.0, index=result.index, dtype=float)
@@ -127,10 +149,34 @@ def add_balanced_score(metrics: pd.DataFrame, config: dict[str, Any]) -> pd.Data
     return result
 
 
+def pareto_non_dominated_flags(frame: pd.DataFrame, metrics: list[str]) -> pd.Series:
+    available = [metric for metric in metrics if metric in frame.columns]
+    if not available:
+        return pd.Series(True, index=frame.index)
+    work = frame[available].apply(pd.to_numeric, errors="coerce")
+    valid = work.dropna()
+    flags = pd.Series(False, index=frame.index)
+    for index, row in valid.iterrows():
+        others = valid.drop(index=index)
+        dominated = (
+            (others <= row).all(axis=1)
+            & (others < row).any(axis=1)
+        ).any()
+        flags.loc[index] = not bool(dominated)
+    return flags
+
+
 def select_best_run(metrics: pd.DataFrame, manifest: pd.DataFrame, config: dict[str, Any]) -> BestSelection:
     candidates = metrics.loc[metrics["source_type"] == "regularized"].copy()
-    if bool(config["visualization"]["best_selection"].get("require_connected", True)):
+    best_config = config["visualization"]["best_selection"]
+    if bool(best_config.get("require_connected", True)):
         candidates = candidates.loc[pd.to_numeric(candidates["connected_cluster_ratio"], errors="coerce") >= 1.0]
+    target_clusters = best_config.get("target_clusters", config.get("objective", {}).get("target_clusters"))
+    if target_clusters is not None and bool(best_config.get("require_exact_target_clusters", False)):
+        candidates = candidates.loc[pd.to_numeric(candidates["num_clusters"], errors="coerce") == int(target_clusters)]
+    if bool(best_config.get("require_pareto_non_dominated", False)):
+        pareto_metrics = best_config.get("pareto_metrics", list(best_config.get("metrics", {}).keys()))
+        candidates = candidates.loc[pareto_non_dominated_flags(candidates, pareto_metrics)]
     candidates = candidates.dropna(subset=["balanced_score"]).copy()
     if candidates.empty:
         raise RuntimeError("No connected regularized candidate is available for visualization.")
@@ -169,6 +215,7 @@ def write_best_summary(best: BestSelection, metrics: pd.DataFrame, output_path: 
         "connector_edge_cut_ratio",
         "continuity_edge_cut_ratio",
         "order_count_cv",
+        "capacity_hinge_loss",
         "capacity_violation_ratio",
         "historical_avg_wape",
         "mean_network_diameter_m",
@@ -701,10 +748,11 @@ def plot_heatmaps(metrics: pd.DataFrame, config: dict[str, Any], figures_dir: Pa
         image = Image.new("RGB", (panel_w * len(heatmap_metrics), panel_h + 46), (255, 255, 255))
         draw = ImageDraw.Draw(image, "RGBA")
         draw.text((18, 12), f"Parameter heatmaps: {initialization}", fill=rgba("#111111"))
+        column_axis = "alpha_cont" if "alpha_cont" in group.columns and group["alpha_cont"].nunique(dropna=True) > 1 else "lambda_r"
         for index, metric in enumerate(heatmap_metrics):
             if metric not in group.columns:
                 raise ValueError(f"Heatmap metric is missing: {metric}")
-            table = group.pivot_table(index="lambda_c", columns="lambda_r", values=metric, aggfunc="mean")
+            table = group.pivot_table(index="lambda_c", columns=column_axis, values=metric, aggfunc="mean")
             table = table.sort_index().sort_index(axis=1)
             draw_heatmap_panel(draw, table, (index * panel_w + 6, 46, (index + 1) * panel_w - 6, panel_h + 46), metric)
         image.save(figures_dir / f"heatmap_{initialization}.png")
@@ -719,7 +767,8 @@ def plot_objective_final(manifest: pd.DataFrame, figures_dir: Path, dpi: int) ->
     draw.text((18, 12), "Final objective by setting", fill=rgba("#111111"))
     for index, initialization in enumerate(initializations):
         group = manifest.loc[manifest["initialization"] == initialization]
-        table = group.pivot_table(index="lambda_c", columns="lambda_r", values="objective", aggfunc="mean")
+        column_axis = "alpha_cont" if "alpha_cont" in group.columns and group["alpha_cont"].nunique(dropna=True) > 1 else "lambda_r"
+        table = group.pivot_table(index="lambda_c", columns=column_axis, values="objective", aggfunc="mean")
         table = table.sort_index().sort_index(axis=1)
         draw_heatmap_panel(draw, table, (index * panel_w + 6, 46, (index + 1) * panel_w - 6, panel_h + 46), f"Objective: {initialization}")
     image.save(figures_dir / "objective_final_by_setting.png")

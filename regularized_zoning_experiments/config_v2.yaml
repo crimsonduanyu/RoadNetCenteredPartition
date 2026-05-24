@@ -1,0 +1,184 @@
+scope:
+  active: fourth_ring
+  graph_variant: road_poi_order
+
+inputs:
+  graph: outputs/fourth_ring/graphs/segment_relation_graph_road_poi_order.gpickle
+  relation_edges: data/processed/fourth_ring/segment_relation_edges_road_poi_order.csv
+  classified_edges: data/interim/fourth_ring/road_edges_classified.gpkg
+  boundary: data/raw/beijing_fourth_ring_boundary.gpkg
+  segment_nodes: data/processed/fourth_ring/segment_nodes.gpkg
+  poi_features: data/processed/fourth_ring/segment_poi_features.csv
+  order_features: data/processed/fourth_ring/segment_order_features.csv
+  hourly_od: data/processed/fourth_ring/segment_order_od_hourly.csv
+  baseline_clusters:
+    louvain: data/processed/fourth_ring/segment_clusters_road_poi_order_louvain.gpkg
+    leiden: data/processed/fourth_ring/segment_clusters_road_poi_order_leiden.gpkg
+    demand_region_growing: data/processed/fourth_ring/segment_clusters_road_poi_order_demand_region_growing.gpkg
+    demand_network_voronoi: data/processed/fourth_ring/segment_clusters_road_poi_order_demand_network_voronoi.gpkg
+    metis: data/processed/fourth_ring/segment_clusters_road_poi_order_metis.gpkg
+    skater: data/processed/fourth_ring/segment_clusters_road_poi_order_skater.gpkg
+
+outputs:
+  root: regularized_zoning_experiments/runs/v2_fourth_ring_road_poi_order
+  overwrite: true
+
+initializations:
+  - louvain
+  - leiden
+  - demand_region_growing
+
+objective:
+  target_clusters: 100
+  capacity_loss: squared_hinge
+  capacity_min_ratio: 0.5
+  capacity_max_ratio: 1.5
+  lambda_g: 1.0
+  lambda_r: 1.0
+  alpha_cont: 1.0
+  alpha_conn: 1.0
+  grid:
+    lambda_c: [0.5, 1.0, 2.0]
+    lambda_r: [1.0]
+    alpha_cont: [1.0, 2.0, 4.0]
+    alpha_conn: [0.5, 1.0, 2.0]
+
+search:
+  max_passes: 5
+  min_delta: 1.0e-9
+  move_policy: best_improving
+  enforce_connectivity: true
+  allow_merge_split: false
+  max_merge_candidates: 8
+  max_merge_targets_per_cluster: 3
+  max_split_candidates: 8
+  split_cleanup_passes: 2
+  grid:
+    merge_split_enabled: [false, true]
+
+evaluation:
+  thresholds:
+    small_cluster_min_segments: 5
+    small_cluster_min_length_m: 1000.0
+    small_cluster_min_orders: 100.0
+    min_order_total: 100.0
+    capacity_min_ratio: 0.5
+    capacity_max_ratio: 1.5
+    effective_od_min_flow: 10.0
+    elongation_threshold: 10.0
+    large_diameter_threshold_m: 30000.0
+    geometry_buffer_m: 50.0
+  pareto_pairs:
+    - name: od_sparsity_vs_continuity_cut
+      x: od_sparsity
+      y: continuity_edge_cut_ratio
+      x_direction: min
+      y_direction: min
+    - name: order_cv_vs_connector_cut
+      x: order_count_cv
+      y: connector_edge_cut_ratio
+      x_direction: min
+      y_direction: min
+    - name: capacity_hinge_vs_continuity_cut
+      x: capacity_hinge_loss
+      y: continuity_edge_cut_ratio
+      x_direction: min
+      y_direction: min
+    - name: wape_vs_road_integrity
+      x: historical_avg_wape
+      y: weighted_mean_road_name_num_clusters
+      x_direction: min
+      y_direction: min
+    - name: network_diameter_vs_od_sparsity
+      x: mean_network_diameter_m
+      y: od_sparsity
+      x_direction: min
+      y_direction: min
+  selection_tolerances:
+    od_sparsity_max_relative_degradation: 0.02
+    structure_cut_max_relative_degradation: 0.10
+    shape_max_relative_degradation: 0.10
+
+visualization:
+  output_dir: regularized_zoning_experiments/runs/v2_fourth_ring_road_poi_order/figures
+  dpi: 300
+  map_size_px: 2400
+  panel_map_size_px: 1500
+  linewidth: 0.45
+  cluster_palette_strategy: adjacency_contrast
+  cluster_line_halo: true
+  cluster_line_halo_multiplier: 2.5
+  connector_alpha: 70
+  min_color_distance: 90.0
+  baseline_algorithms:
+    - louvain
+    - demand_region_growing
+  comparison_algorithms:
+    - louvain
+    - leiden
+    - demand_region_growing
+  best_selection:
+    require_connected: true
+    require_exact_target_clusters: true
+    require_pareto_non_dominated: true
+    target_clusters: 100
+    pareto_metrics:
+      - od_sparsity
+      - order_count_cv
+      - capacity_hinge_loss
+      - continuity_edge_cut_ratio
+      - connector_edge_cut_ratio
+      - mean_network_diameter_m
+      - historical_avg_wape
+    metrics:
+      od_sparsity: 0.20
+      order_capacity_balance: 0.20
+      continuity_edge_cut_ratio: 0.20
+      connector_edge_cut_ratio: 0.20
+      mean_network_diameter_m: 0.10
+      historical_avg_wape: 0.10
+  tradeoff_pairs:
+    - name: od_sparsity_vs_continuity_cut
+      x: od_sparsity
+      y: continuity_edge_cut_ratio
+      x_label: OD sparsity
+      y_label: Continuity cut ratio
+    - name: order_cv_vs_connector_cut
+      x: order_count_cv
+      y: connector_edge_cut_ratio
+      x_label: Order capacity CV
+      y_label: Connector cut ratio
+    - name: capacity_hinge_vs_continuity_cut
+      x: capacity_hinge_loss
+      y: continuity_edge_cut_ratio
+      x_label: Capacity hinge loss
+      y_label: Continuity cut ratio
+    - name: wape_vs_road_integrity
+      x: historical_avg_wape
+      y: weighted_mean_road_name_num_clusters
+      x_label: Historical average WAPE
+      y_label: Weighted mean road-name clusters
+    - name: network_diameter_vs_od_sparsity
+      x: mean_network_diameter_m
+      y: od_sparsity
+      x_label: Mean network diameter (m)
+      y_label: OD sparsity
+  heatmap_metrics:
+    - od_sparsity
+    - connector_edge_cut_ratio
+    - continuity_edge_cut_ratio
+    - order_count_cv
+    - capacity_hinge_loss
+    - balanced_score
+  core_metric_comparison:
+    - continuity_edge_cut_ratio
+    - connector_edge_cut_ratio
+    - od_sparsity
+    - order_count_cv
+    - capacity_hinge_loss
+    - historical_avg_wape
+  zoom_bounds:
+    west: 116.35
+    east: 116.45
+    south: 39.88
+    north: 39.96

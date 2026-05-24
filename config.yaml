@@ -193,6 +193,44 @@ semantic_graph:
       poi_weight: 1.0
       order_weight: 1.0
 
+order_pipeline:
+  inputs:
+    partition_gpkg: "regularized_zoning_experiments/runs/v2_fifth_ring_road_poi_order_lc1_lr1_k100/clusters/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg"
+    road_relation_edges_csv: "data/processed/fifth_ring/segment_relation_edges_road_poi_order.csv"
+    order_datasets:
+      - "data/raw/beijing_order_201710.csv"
+    poi_path: "data/raw/beijing_poi_2017.csv"
+  outputs:
+    root: null
+  time_slot_minutes: 15
+  order:
+    chunksize: 200000
+    max_match_distance_m: 250
+    start_time: "2017-10-16 00:00:00"
+    end_time: "2017-10-23 00:00:00"
+    order_id_column: "order_id"
+    driver_id_column: "driver_id"
+    pickup_lon_column: "starting_lng"
+    pickup_lat_column: "starting_lat"
+    dropoff_lon_column: "dest_lng"
+    dropoff_lat_column: "dest_lat"
+    departure_time_column: "departure_time"
+    finish_time_column: "finish_time"
+  poi:
+    lon_column: "大地X"
+    lat_column: "大地Y"
+    category_column: "类型1"
+    max_match_distance_m: 100
+    similarity_top_k: 10
+  road_graph:
+    weight_column: "base_weight"
+  distance_graph:
+    top_k: 10
+    decay_distance_m: 3000.0
+  graph_normalization:
+    add_self_loops: true
+    symmetric: true
+
 evaluation:
   default_variant: "road_poi_order"
 

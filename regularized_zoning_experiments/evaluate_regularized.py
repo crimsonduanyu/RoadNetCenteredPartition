@@ -274,7 +274,23 @@ def main(argv: list[str] | None = None) -> None:
         row["run_id"] = run_id
         row["initialization"] = manifest_row["initialization"]
         row["setting_id"] = manifest_row["setting_id"]
-        for column in ["lambda_c", "lambda_g", "lambda_r", "alpha_cont", "alpha_conn", "objective", "r_cap", "r_graph", "r_cont", "r_conn", "r_road", "num_moves"]:
+        for column in [
+            "lambda_c",
+            "lambda_g",
+            "lambda_r",
+            "alpha_cont",
+            "alpha_conn",
+            "merge_split_enabled",
+            "target_clusters",
+            "capacity_loss",
+            "objective",
+            "r_cap",
+            "r_graph",
+            "r_cont",
+            "r_conn",
+            "r_road",
+            "num_moves",
+        ]:
             if column in manifest_row:
                 row[column] = manifest_row[column]
         metric_rows.append(row)

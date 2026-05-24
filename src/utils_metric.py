@@ -612,11 +612,15 @@ def compute_benchmark_metrics(
     if order_totals.empty or float(order_totals.sum()) <= EPS:
         target_order_capacity = float("nan")
         capacity_violation_ratio = float("nan")
+        capacity_hinge_loss = float("nan")
     else:
         target_order_capacity = float(order_totals.sum() / max(len(order_totals), 1))
         capacity_min = thresholds.capacity_min_ratio * target_order_capacity
         capacity_max = thresholds.capacity_max_ratio * target_order_capacity
         capacity_violation_ratio = float(((order_totals < capacity_min) | (order_totals > capacity_max)).mean())
+        low_violation = ((capacity_min - order_totals).clip(lower=0.0) / max(target_order_capacity, EPS)) ** 2
+        high_violation = ((order_totals - capacity_max).clip(lower=0.0) / max(target_order_capacity, EPS)) ** 2
+        capacity_hinge_loss = float((low_violation + high_violation).mean())
 
     row: dict[str, Any] = {
         "graph_variant": graph_variant,
@@ -653,6 +657,7 @@ def compute_benchmark_metrics(
             "ratio_clusters_below_min_order": float(low_order_mask.mean()) if len(low_order_mask) else float("nan"),
             "target_order_capacity": target_order_capacity,
             "capacity_violation_ratio": capacity_violation_ratio,
+            "capacity_hinge_loss": capacity_hinge_loss,
         }
     )
 
