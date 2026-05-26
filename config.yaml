@@ -1,5 +1,5 @@
 study_area:
-  active: "fourth_ring"
+  active: "fifth_ring"
   center_point:
     lon: 116.4074
     lat: 39.9042
@@ -198,16 +198,17 @@ order_pipeline:
     partition_gpkg: "regularized_zoning_experiments/runs/v2_fifth_ring_road_poi_order_lc1_lr1_k100/clusters/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg"
     road_relation_edges_csv: "data/processed/fifth_ring/segment_relation_edges_road_poi_order.csv"
     order_datasets:
-      - "data/raw/beijing_order_201710.csv"
+      - "data/raw/beijing_orders_2017-06_2017-08.csv"
     poi_path: "data/raw/beijing_poi_2017.csv"
   outputs:
     root: null
+  keep_staging_db: false
   time_slot_minutes: 15
   order:
-    chunksize: 200000
+    chunksize: 500000
     max_match_distance_m: 250
-    start_time: "2017-10-16 00:00:00"
-    end_time: "2017-10-23 00:00:00"
+    start_time: "2017-06-01 00:00:00"
+    end_time: "2017-08-31 23:59:00"
     order_id_column: "order_id"
     driver_id_column: "driver_id"
     pickup_lon_column: "starting_lng"
