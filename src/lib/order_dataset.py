@@ -874,11 +874,7 @@ def build_cluster_poi_graph(
     positive = norms > 0
     if values.shape[1] > 0 and bool(positive.any()):
         normalized = np.divide(values, norms[:, None], out=np.zeros_like(values), where=norms[:, None] > 0)
-        # BLAS-free Gram matrix. This env's numpy dense matmul (`@`/dot) crashes with a
-        # Windows delay-load DLL fault (0xC06D007F); einsum(optimize=False) uses the
-        # einsum C kernel instead of BLAS dgemm. The matrix is tiny (clusters x clusters),
-        # so there is no performance downside to avoiding BLAS here.
-        similarity = np.einsum("ik,jk->ij", normalized, normalized, optimize=False)
+        similarity = normalized @ normalized.T
     edges = build_similarity_topk_edges(similarity, cluster_ids, int(poi_config["similarity_top_k"]))
     return edges, {"enabled": True, "valid_poi_rows": int(len(poi)), "matched_poi_rows": int(len(matched))}
 
