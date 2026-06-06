@@ -37,6 +37,11 @@ data/processed/
 outputs/
 regularized_zoning_experiments/runs/
 
+# Frozen reproducibility snapshot (large binary artifacts; keep local, do not commit).
+# Only the README is tracked so the folder's purpose is documented in git.
+IntermediateDataForReproduce/*
+!IntermediateDataForReproduce/README.md
+
 # Geospatial sidecar/index files
 *.gpkg-shm
 *.gpkg-wal

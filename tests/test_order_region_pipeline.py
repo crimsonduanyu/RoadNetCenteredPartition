@@ -12,7 +12,7 @@ import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = PROJECT_ROOT / "src" / "06_build_order_region_dataset.py"
+MODULE_PATH = PROJECT_ROOT / "src" / "lib" / "order_dataset.py"
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))

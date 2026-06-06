@@ -446,25 +446,69 @@ def attach_global_fleet_to_all_clusters(
     return completed.merge(global_fleet, on="slot_start", how="left")
 
 
+def _attach_natural_day(
+    frame: pd.DataFrame,
+    start_col: str,
+    chain_id_col: str | None = None,
+) -> pd.DataFrame:
+    """Return ``frame`` with a ``_natural_day`` column (midnight of the row's day).
+
+    Prefers the date encoded in ``chain_id`` (``driver_date_seq``) when available
+    so idle windows inherit their chain's day; otherwise falls back to flooring
+    ``start_col`` to the day. Used to clip slot expansion (Fix-1).
+    """
+    if frame.empty:
+        return frame.assign(_natural_day=pd.Series(dtype="datetime64[ns]"))
+    if chain_id_col is not None and chain_id_col in frame.columns:
+        day = pd.to_datetime(frame[chain_id_col].str.rsplit("_", n=2).str[1], errors="coerce")
+        day = day.fillna(frame[start_col].dt.floor("D"))
+    else:
+        day = frame[start_col].dt.floor("D")
+    return frame.assign(_natural_day=day)
+
+
 def _expand_interval_slots(
     frame: pd.DataFrame,
     start_col: str,
     end_col: str,
     slot_duration_min: int,
     columns: Iterable[str],
+    day_col: str | None = None,
 ) -> pd.DataFrame:
-    """Map intervals to every half-open slot they overlap without a row-wise Python loop."""
+    """Map intervals to every half-open slot they overlap without a row-wise Python loop.
+
+    When ``day_col`` (the natural-day midnight for each row) is supplied, each
+    interval is first clipped to ``[day, day + 1 day)`` so it only contributes
+    slots within its own natural day. This is Fix-1: without it, an interval that
+    crosses midnight emits slots belonging to the next day, which the daily-part
+    merge then double-counts (previously ~44% duplicate (slot, cluster) rows).
+    """
     output_columns = ["slot_start", *columns]
     if frame.empty:
         return pd.DataFrame(columns=output_columns)
 
     frequency = f"{slot_duration_min}min"
-    intervals = frame.loc[frame[end_col] > frame[start_col], [start_col, end_col, *columns]].copy()
+    needed = [start_col, end_col, *columns]
+    if day_col is not None and day_col not in needed:
+        needed = [*needed, day_col]
+    intervals = frame.loc[frame[end_col] > frame[start_col], needed].copy()
     if intervals.empty:
         return pd.DataFrame(columns=output_columns)
 
-    intervals["_slot_start"] = intervals[start_col].dt.floor(frequency)
-    intervals["_slot_end"] = (intervals[end_col] - pd.Timedelta(nanoseconds=1)).dt.floor(frequency)
+    start = intervals[start_col]
+    end = intervals[end_col]
+    if day_col is not None:
+        day0 = intervals[day_col]
+        day1 = day0 + pd.Timedelta(days=1)
+        start = start.clip(lower=day0)
+        end = end.clip(upper=day1)
+        keep = end > start
+        intervals, start, end = intervals.loc[keep], start.loc[keep], end.loc[keep]
+        if intervals.empty:
+            return pd.DataFrame(columns=output_columns)
+
+    intervals["_slot_start"] = start.dt.floor(frequency)
+    intervals["_slot_end"] = (end - pd.Timedelta(nanoseconds=1)).dt.floor(frequency)
     intervals["_slot_count"] = (
         (intervals["_slot_end"] - intervals["_slot_start"]).dt.total_seconds()
         // (slot_duration_min * 60)
@@ -486,12 +530,14 @@ def compute_available_by_cluster(
     return_driver_slots: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Count distinct idle drivers by slot and last-known cluster."""
+    idle_windows = _attach_natural_day(idle_windows, "idle_start", chain_id_col="chain_id")
     idle_driver_slots = _expand_interval_slots(
         idle_windows,
         "idle_start",
         "idle_end",
         slot_duration_min,
         ["driver_id", "idle_cluster_id"],
+        day_col="_natural_day",
     ).rename(columns={"idle_cluster_id": "cluster_id"})
     if idle_driver_slots.empty:
         available = pd.DataFrame(columns=["slot_start", "cluster_id", "available_vehicles"])
@@ -512,12 +558,14 @@ def compute_in_service_od(
     return_driver_slots: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Count distinct in-service drivers per slot and trip OD pair."""
+    trip_segments = _attach_natural_day(trip_segments, "trip_start")
     trip_driver_slots = _expand_interval_slots(
         trip_segments,
         "trip_start",
         "trip_end",
         slot_duration_min,
         ["driver_id", "origin_cluster_id", "destination_cluster_id"],
+        day_col="_natural_day",
     )
     if trip_driver_slots.empty:
         in_service = pd.DataFrame(
@@ -544,14 +592,13 @@ def compute_fleet_lower_bound(
     """Compute cluster and global distinct-driver lower bounds from idle and in-service activity."""
     idle_activity = idle_driver_slots[["slot_start", "driver_id", "cluster_id"]].copy()
 
-    # A trip contributes the active driver to both endpoint clusters for the slot.
+    # Fix-2: an in-service trip attributes its driver to the ORIGIN cluster only.
+    # Counting the destination cluster too double-counts the driver across two
+    # clusters in the same slot and inflates the per-cluster fleet lower bound.
     origin_activity = trip_driver_slots[["slot_start", "driver_id", "origin_cluster_id"]].rename(
         columns={"origin_cluster_id": "cluster_id"}
     )
-    dest_activity = trip_driver_slots[["slot_start", "driver_id", "destination_cluster_id"]].rename(
-        columns={"destination_cluster_id": "cluster_id"}
-    )
-    activity_frames = [frame for frame in [idle_activity, origin_activity, dest_activity] if not frame.empty]
+    activity_frames = [frame for frame in [idle_activity, origin_activity] if not frame.empty]
     if not activity_frames:
         return pd.DataFrame(columns=["slot_start", "cluster_id", "fleet_lower_bound_cluster", "global_fleet_lower_bound"])
     activity = pd.concat(activity_frames, ignore_index=True)

@@ -15,7 +15,7 @@ import pandas as pd
 from scipy import sparse
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXCLUSIVE = "exclusive"
 CARPOOL = "carpool"
 SERVICE_TYPES = [EXCLUSIVE, CARPOOL]
