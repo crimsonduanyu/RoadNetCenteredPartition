@@ -131,3 +131,12 @@ def test_merge_split_search_preserves_exact_k_and_connectivity(search_module) ->
     assert any(row["operation"] == "merge_split" for row in trace)
     for nodes in clusters.values():
         assert nx.is_connected(graph.subgraph(nodes))
+
+
+def test_baseline_for_algorithm_inverts_naming(search_module) -> None:
+    assert search_module.baseline_for_algorithm("regularized_region_growing") == "demand_region_growing"
+    assert search_module.baseline_for_algorithm("regularized_leiden") == "leiden"
+    assert search_module.baseline_for_algorithm("regularized_louvain") == "louvain"
+    assert search_module.baseline_for_algorithm("louvain") == ""
+    for init in ["leiden", "louvain", "demand_region_growing"]:
+        assert search_module.baseline_for_algorithm(search_module.regularized_algorithm_name(init)) == init

@@ -22,6 +22,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from lib.geo import project_bounds  # noqa: E402
+from lib.metrics import partition_from_clusters  # noqa: E402,F401
 
 
 FALLBACK_COLORS = [
@@ -311,10 +312,6 @@ def generate_high_contrast_palette() -> list[str]:
         selected.append(next_color)
         remaining = [color for color in remaining if rgb_distance(color, next_color) >= 18.0]
     return [rgb_to_hex(color) for color in selected]
-
-
-def partition_from_clusters(clusters: gpd.GeoDataFrame) -> dict[str, Any]:
-    return dict(zip(clusters["seg_id"].astype(str), clusters["cluster_id"]))
 
 
 def build_cluster_adjacency(graph: nx.Graph, partition: dict[str, Any]) -> dict[Any, set[Any]]:

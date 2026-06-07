@@ -1018,6 +1018,16 @@ def regularized_algorithm_name(initialization: str) -> str:
     return f"regularized_{initialization}"
 
 
+def baseline_for_algorithm(algorithm: str) -> str:
+    """Inverse of regularized_algorithm_name: map a regularized algorithm name back to
+    its baseline initialization name (empty string if not a regularized algorithm)."""
+    if algorithm == "regularized_region_growing":
+        return "demand_region_growing"
+    if algorithm.startswith("regularized_"):
+        return algorithm[len("regularized_") :]
+    return ""
+
+
 def save_partition(
     output_path: Path,
     csv_path: Path,
