@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
-from utils_geo import PROJECT_ROOT, ensure_scope_directories, get_scope_paths, load_config, project_gdf
+from lib.geo import PROJECT_ROOT, ensure_scope_directories, get_scope_paths, load_config, project_gdf
 
 
 def match_points_to_segments(

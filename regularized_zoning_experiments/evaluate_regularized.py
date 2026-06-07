@@ -17,7 +17,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from utils_metric import MetricThresholds, compute_benchmark_metrics  # noqa: E402
+from lib.metrics import MetricThresholds, compute_benchmark_metrics  # noqa: E402
 
 
 def project_path(path_value: str | Path) -> Path:

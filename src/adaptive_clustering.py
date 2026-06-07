@@ -12,7 +12,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from utils_geo import get_scope_paths
+from lib.geo import get_scope_paths
 
 
 EPS = 1.0e-9

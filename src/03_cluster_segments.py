@@ -10,7 +10,7 @@ import pandas as pd
 from community import community_louvain
 
 from adaptive_clustering import run_demand_network_voronoi, run_demand_region_growing
-from utils_geo import ensure_scope_directories, get_scope_paths, load_config
+from lib.geo import ensure_scope_directories, get_scope_paths, load_config
 
 
 def dominant_value(series: pd.Series):

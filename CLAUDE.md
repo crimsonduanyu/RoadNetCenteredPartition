@@ -89,7 +89,7 @@ Rules: never overwrite files here. Stage 1 re-runs write to a `*_stage1_verify` 
 These produce the (now frozen) upstream artifacts and are not part of the day-to-day three-stage run:
 
 - `src/00_download_osm.py` → `src/01_preprocess_roads.py` → `src/02_build_*_features.py` / `src/02_build_segment_relation_graph.py` build the road graph and segment features. `src/03_cluster_segments.py` + `src/adaptive_clustering.py` produce the baseline clusterings; `src/04_visualize_clusters.py`, `src/05_benchmark_clusters.py` visualize/benchmark them. Stage 1 of `00`/`01` uses live OSMnx downloads.
-- `src/utils_geo.py`, `src/utils_graph.py`, `src/utils_metric.py` are **compatibility shims** that re-export `lib.geo` / `lib.graph` / `lib.metrics`; new code should import from `lib.*` directly.
+- All code imports the shared utilities from `lib.geo` / `lib.graph` / `lib.metrics` directly (the former `utils_geo/graph/metric` compatibility shims have been removed).
 - `regularized_zoning_experiments/run_regularized_search.py` is a thin CLI over `lib.regularized` for parameter-grid experiments; `evaluate_regularized.py` and `visualize_regularized_results.py` are analysis/figure scripts.
 - `scripts/recompute_supply_fixed.py` is a diagnostics layer for stock-vs-flow supply metrics (Fix-1/Fix-2 are now upstreamed into `lib/supply.py`, so it is no longer the source of truth for those).
 

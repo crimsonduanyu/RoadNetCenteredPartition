@@ -21,7 +21,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from utils_geo import project_bounds  # noqa: E402
+from lib.geo import project_bounds  # noqa: E402
 
 
 FALLBACK_COLORS = [

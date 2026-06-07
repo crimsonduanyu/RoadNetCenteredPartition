@@ -5,7 +5,7 @@ import geopandas as gpd
 import pandas as pd
 from collections import Counter
 
-from utils_geo import (
+from lib.geo import (
     OSM_NORMALIZE_FIELDS,
     ensure_scope_directories,
     get_active_scope,
