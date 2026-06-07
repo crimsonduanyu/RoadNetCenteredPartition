@@ -629,6 +629,21 @@ def compute_supply_variables(
     in_service, trip_driver_slots = compute_in_service_od(trip_segments, slot_duration_min, True)
     fleet = compute_fleet_lower_bound(idle_driver_slots, trip_driver_slots)
     slots = generate_slots(trip_segments, idle_windows, slot_duration_min)
+    # Clip the grid to slots that actually carry activity. Fix-1 clips activity to its
+    # natural day, but generate_slots' raw max(trip_end) can still reach past midnight;
+    # padding those empty slots would create zero rows that duplicate the next day's real
+    # rows when daily parts are merged. Restricting the grid to the observed activity span
+    # keeps (slot, cluster) unique across the daily merge (and only drops all-zero edge
+    # slots in full-memory mode).
+    observed = pd.to_datetime(
+        pd.concat(
+            [available["slot_start"], in_service["slot_start"], fleet["slot_start"]],
+            ignore_index=True,
+        ),
+        errors="coerce",
+    ).dropna()
+    if not slots.empty and not observed.empty:
+        slots = slots[(slots["slot_start"] >= observed.min()) & (slots["slot_start"] <= observed.max())]
     clusters = build_cluster_universe(trip_segments, idle_windows)
     available = complete_slot_cluster_grid(available, slots, clusters, ["available_vehicles"])
     fleet = attach_global_fleet_to_all_clusters(fleet, slots, clusters)

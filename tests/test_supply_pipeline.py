@@ -235,6 +235,15 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
     assert "2017-06-02 00:00:00" not in in_service_slots
     assert "2017-06-02 00:15:00" not in in_service_slots
 
+    # Fix-1 (daily merge): the per-day slot grid is clipped to observed activity, so the
+    # merged available/fleet tables have unique (slot_start, cluster_id) rows -- no
+    # zero-padded boundary rows duplicating the next day's real rows.
+    available = pd.read_csv(output_dir / "supply_available_by_cluster.csv.gz")
+    fleet = pd.read_csv(output_dir / "supply_fleet_lower_bound.csv.gz")
+    assert not available.duplicated(["slot_start", "cluster_id"]).any()
+    assert not fleet.duplicated(["slot_start", "cluster_id"]).any()
+    assert not in_service.duplicated(["slot_start", "origin_cluster_id", "destination_cluster_id"]).any()
+
     filtered_output = tmp_path / "supply_filtered"
     filtered = module.run_pipeline(
         orders_path=orders_path,
