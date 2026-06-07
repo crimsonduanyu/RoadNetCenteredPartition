@@ -10,8 +10,8 @@ import numpy as np
 import networkx as nx
 import pandas as pd
 
-from utils_geo import angle_diff, compute_bearing, ensure_scope_directories, get_active_scope, get_scope_paths, load_config, validate_boundary_polygon
-from utils_graph import build_incident_index, ensure_edge_record, iter_incident_pairs, serialize_edge_records
+from lib.geo import angle_diff, compute_bearing, ensure_scope_directories, get_active_scope, get_scope_paths, load_config, validate_boundary_polygon
+from lib.graph import build_incident_index, ensure_edge_record, iter_incident_pairs, serialize_edge_records
 
 
 def continuity_score(record_a: dict, record_b: dict, config: dict) -> tuple[float, dict]:

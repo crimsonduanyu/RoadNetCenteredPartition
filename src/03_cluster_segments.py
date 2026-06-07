@@ -10,7 +10,8 @@ import pandas as pd
 from community import community_louvain
 
 from adaptive_clustering import run_demand_network_voronoi, run_demand_region_growing
-from utils_geo import ensure_scope_directories, get_scope_paths, load_config
+from lib import clustering as lib_clustering
+from lib.geo import ensure_scope_directories, get_scope_paths, load_config
 
 
 def dominant_value(series: pd.Series):
@@ -108,45 +109,13 @@ def configured_target_clusters(config: dict, target_cluster_count: int | None = 
 
 
 def allocate_component_cluster_counts(component_sizes: list[int], target_clusters: int) -> list[int]:
-    component_count = len(component_sizes)
-    total_nodes = sum(component_sizes)
-    if target_clusters < component_count:
-        raise ValueError(
-            f"target_clusters={target_clusters} is smaller than the graph's "
-            f"{component_count} connected components."
-        )
-    if target_clusters > total_nodes:
-        raise ValueError(f"target_clusters={target_clusters} exceeds graph node count {total_nodes}.")
-
-    allocations = [1] * component_count
-    capacities = [size - 1 for size in component_sizes]
-    remaining = target_clusters - component_count
-    if remaining == 0:
-        return allocations
-
-    raw_extras = [remaining * size / total_nodes for size in component_sizes]
-    floor_extras = [min(int(np.floor(raw)), capacity) for raw, capacity in zip(raw_extras, capacities)]
-    allocations = [allocation + extra for allocation, extra in zip(allocations, floor_extras)]
-    remaining -= sum(floor_extras)
-
-    while remaining > 0:
-        candidates = [index for index, capacity in enumerate(capacities) if allocations[index] - 1 < capacity]
-        if not candidates:
-            raise ValueError("Unable to allocate requested clusters across graph components.")
-        candidates.sort(
-            key=lambda index: (
-                raw_extras[index] - floor_extras[index],
-                component_sizes[index],
-                -index,
-            ),
-            reverse=True,
-        )
-        selected = candidates[0]
-        allocations[selected] += 1
-        floor_extras[selected] += 1
-        remaining -= 1
-
-    return allocations
+    """Node-count-weighted allocation (delegates to the shared lib.clustering helper)."""
+    return lib_clustering.allocate_component_cluster_counts(
+        weights=[float(size) for size in component_sizes],
+        capacities=[size - 1 for size in component_sizes],
+        target_clusters=target_clusters,
+        tiebreak=lambda index: (component_sizes[index], -index),
+    )
 
 
 def edge_dissimilarity(attrs: dict, mode: str) -> float:

@@ -12,7 +12,8 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from utils_geo import get_scope_paths
+from lib import clustering as lib_clustering
+from lib.geo import get_scope_paths
 
 
 EPS = 1.0e-9
@@ -146,37 +147,12 @@ def allocate_component_cluster_counts(
     if sum(component_demands) <= 0:
         component_demands = [float(len(component)) for component in components]
 
-    allocations = [1] * len(components)
-    capacities = [len(component) - 1 for component in components]
-    remaining = target_clusters - len(components)
-    if remaining == 0:
-        return allocations
-
-    total_weight = float(sum(component_demands))
-    raw_extras = [remaining * demand / total_weight for demand in component_demands]
-    floor_extras = [min(int(math.floor(raw)), capacity) for raw, capacity in zip(raw_extras, capacities)]
-    allocations = [allocation + extra for allocation, extra in zip(allocations, floor_extras)]
-    remaining -= sum(floor_extras)
-
-    while remaining > 0:
-        candidates = [index for index, capacity in enumerate(capacities) if allocations[index] - 1 < capacity]
-        if not candidates:
-            raise ValueError("Unable to allocate requested clusters across graph components.")
-        candidates.sort(
-            key=lambda index: (
-                raw_extras[index] - floor_extras[index],
-                component_demands[index],
-                len(components[index]),
-                -index,
-            ),
-            reverse=True,
-        )
-        selected = candidates[0]
-        allocations[selected] += 1
-        floor_extras[selected] += 1
-        remaining -= 1
-
-    return allocations
+    return lib_clustering.allocate_component_cluster_counts(
+        weights=component_demands,
+        capacities=[len(component) - 1 for component in components],
+        target_clusters=target_clusters,
+        tiebreak=lambda index: (component_demands[index], len(components[index]), -index),
+    )
 
 
 def demand_signal(context: AdaptiveContext, nodes: list[str]) -> dict[str, float]:

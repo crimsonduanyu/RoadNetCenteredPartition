@@ -3,6 +3,11 @@ channels:
   - conda-forge
 dependencies:
   - python=3.11
+  # Pin the BLAS implementation to OpenBLAS. The conda-forge MKL build shipped a
+  # runtime whose DLL failed to delay-load on Windows, crashing numpy dense matmul
+  # (Windows fatal exception 0xC06D007F) in build_cluster_poi_graph. OpenBLAS is
+  # self-contained and avoids that.
+  - libblas=*=*openblas
   - osmnx
   - geopandas
   - shapely

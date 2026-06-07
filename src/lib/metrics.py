@@ -14,7 +14,7 @@ import pandas as pd
 from shapely.geometry import Point
 from shapely.ops import unary_union
 
-from utils_geo import PROJECT_ROOT, project_gdf
+from lib.geo import PROJECT_ROOT, project_gdf
 
 
 EPS = 1e-9

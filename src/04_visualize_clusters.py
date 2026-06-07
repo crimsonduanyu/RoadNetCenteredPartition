@@ -9,7 +9,7 @@ import geopandas as gpd
 from PIL import Image, ImageDraw
 from shapely.geometry import LineString, MultiLineString
 
-from utils_geo import ensure_scope_directories, get_scope_paths, load_config, project_bounds
+from lib.geo import ensure_scope_directories, get_scope_paths, load_config, project_bounds
 
 
 TAB20 = [

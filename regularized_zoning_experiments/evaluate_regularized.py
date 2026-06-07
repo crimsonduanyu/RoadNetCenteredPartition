@@ -17,7 +17,8 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from utils_metric import MetricThresholds, compute_benchmark_metrics  # noqa: E402
+from lib.metrics import MetricThresholds, compute_benchmark_metrics  # noqa: E402
+from lib.regularized import baseline_for_algorithm  # noqa: E402
 
 
 def project_path(path_value: str | Path) -> Path:
@@ -154,14 +155,7 @@ def build_candidate_selection(metrics: pd.DataFrame, config: dict[str, Any]) -> 
     }
     rows = []
     for _, row in metrics.loc[metrics["source_type"] == "regularized"].iterrows():
-        if row["algorithm"] == "regularized_region_growing":
-            baseline_name = "demand_region_growing"
-        elif row["algorithm"] == "regularized_louvain":
-            baseline_name = "louvain"
-        elif row["algorithm"] == "regularized_leiden":
-            baseline_name = "leiden"
-        else:
-            baseline_name = ""
+        baseline_name = baseline_for_algorithm(row["algorithm"])
         baseline = baseline_by_algorithm.get(baseline_name)
         if baseline is None:
             continue

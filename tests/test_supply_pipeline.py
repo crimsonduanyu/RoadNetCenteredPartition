@@ -10,7 +10,7 @@ python -u scripts\reconstruct_driver_chains.py --orders-path data\processed\fift
 """
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = PROJECT_ROOT / "scripts" / "reconstruct_driver_chains.py"
+MODULE_PATH = PROJECT_ROOT / "src" / "lib" / "supply.py"
 
 
 def load_module():
@@ -227,7 +227,22 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
     in_service = pd.read_csv(output_dir / "supply_in_service_od.csv.gz")
     assert len(trips) == 3
     assert set(chains["date_"].astype(str)) == {"2017-06-01", "2017-06-02"}
-    assert "2017-06-02 00:15:00" in set(in_service["slot_start"].astype(str))
+    # Fix-1: order 1's trip (23:50 -> 00:20, chain day 2017-06-01) is clipped to
+    # its natural day, so it contributes only the 23:45 slot on 06-01 and no
+    # cross-midnight tail slots on 06-02.
+    in_service_slots = set(in_service["slot_start"].astype(str))
+    assert "2017-06-01 23:45:00" in in_service_slots
+    assert "2017-06-02 00:00:00" not in in_service_slots
+    assert "2017-06-02 00:15:00" not in in_service_slots
+
+    # Fix-1 (daily merge): the per-day slot grid is clipped to observed activity, so the
+    # merged available/fleet tables have unique (slot_start, cluster_id) rows -- no
+    # zero-padded boundary rows duplicating the next day's real rows.
+    available = pd.read_csv(output_dir / "supply_available_by_cluster.csv.gz")
+    fleet = pd.read_csv(output_dir / "supply_fleet_lower_bound.csv.gz")
+    assert not available.duplicated(["slot_start", "cluster_id"]).any()
+    assert not fleet.duplicated(["slot_start", "cluster_id"]).any()
+    assert not in_service.duplicated(["slot_start", "origin_cluster_id", "destination_cluster_id"]).any()
 
     filtered_output = tmp_path / "supply_filtered"
     filtered = module.run_pipeline(
@@ -244,3 +259,46 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
     filtered_chains = pd.read_csv(filtered_output / "driver_chains.csv.gz")
     assert filtered["days_processed"] == 1
     assert set(filtered_chains["date_"].astype(str)) == {"2017-06-02"}
+
+
+def test_in_service_slots_are_clipped_to_natural_day() -> None:
+    """Fix-1: a trip crossing midnight only emits slots within its start day."""
+    module = load_module()
+    trips = pd.DataFrame(
+        [
+            {
+                "driver_id": 1,
+                "trip_start": pd.Timestamp("2017-06-01 23:50:00"),
+                "trip_end": pd.Timestamp("2017-06-02 00:30:00"),
+                "origin_cluster_id": 1,
+                "destination_cluster_id": 2,
+            }
+        ]
+    )
+
+    _, driver_slots = module.compute_in_service_od(trips, slot_duration_min=15, return_driver_slots=True)
+
+    slots = set(driver_slots["slot_start"].dt.strftime("%Y-%m-%d %H:%M:%S"))
+    assert slots == {"2017-06-01 23:45:00"}
+
+
+def test_fleet_lower_bound_in_service_counts_origin_only() -> None:
+    """Fix-2: an in-service driver is attributed to the origin cluster only."""
+    module = load_module()
+    idle_driver_slots = pd.DataFrame(columns=["slot_start", "driver_id", "cluster_id"])
+    trip_driver_slots = pd.DataFrame(
+        [
+            {
+                "slot_start": pd.Timestamp("2017-06-01 08:00:00"),
+                "driver_id": 7,
+                "origin_cluster_id": 10,
+                "destination_cluster_id": 20,
+            }
+        ]
+    )
+
+    fleet = module.compute_fleet_lower_bound(idle_driver_slots, trip_driver_slots)
+
+    by_cluster = dict(zip(fleet["cluster_id"], fleet["fleet_lower_bound_cluster"]))
+    assert by_cluster.get(10) == 1
+    assert 20 not in by_cluster  # destination cluster must not count the driver

@@ -7,8 +7,8 @@ import env_setup  # noqa: F401
 import geopandas as gpd
 import pandas as pd
 
-from utils_geo import ensure_scope_directories, get_scope_paths, load_config
-from utils_metric import MetricThresholds, compute_benchmark_metrics, load_or_build_hourly_segment_od
+from lib.geo import ensure_scope_directories, get_scope_paths, load_config
+from lib.metrics import MetricThresholds, compute_benchmark_metrics, load_or_build_hourly_segment_od
 
 
 CORE_PREVIEW_COLUMNS = [

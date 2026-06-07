@@ -16,6 +16,18 @@ study_area:
   active: "fifth_ring"   # or "fourth_ring"
 ```
 
+## Repository structure and three-stage pipeline
+
+Code is split into pure library modules under `src/lib/` (importable, no I/O) and thin run scripts under `src/stages/` that read the single `config.yaml`. The pipeline has three stages:
+
+1. **Stage 1 — spatial partitioning** (`src/stages/stage1_partition.py`, core `src/lib/regularized.py`): a deterministic regularized local search, initialized from the leiden baseline, optimizes a capacity-balanced cut objective into the canonical 100-cluster partition.
+2. **Stage 2 — demand dataset** (`src/stages/stage2_demand.py`, core `src/lib/order_dataset.py`): assigns orders to clusters and builds the cluster OD table/tensor and road/POI/distance cluster graphs.
+3. **Stage 3 — supply state** (`src/stages/stage3_supply.py`, core `src/lib/supply.py`): reconstructs driver chains/idle windows and slot-level supply tables.
+
+The random, OSM-dependent inputs and baselines are frozen in `IntermediateDataForReproduce/` so the canonical partition is exactly reproducible; `config.yaml` points Stage 1's inputs/baselines and Stage 2's partition there. See `CLAUDE.md` for details.
+
+The detailed **Pipeline overview** below describes the *legacy baseline pipeline* (`src/00`–`src/05`) that builds the road graph and baseline clusterings — its products are now frozen and consumed by Stage 1.
+
 ## Environment setup
 
 Recommended conda workflow:
@@ -33,13 +45,27 @@ pip install python-louvain
 
 ## How to run
 
-Run the full pipeline from the project root:
+Run the full three-stage pipeline from the project root:
 
 ```bash
 python src/run_pipeline.py
 ```
 
-Or run each stage manually:
+Or run a single stage (each reads the unified `config.yaml`):
+
+```bash
+python src/stages/stage1_partition.py --verify   # reproduce canonical partition + verify vs frozen
+python src/stages/stage2_demand.py               # demand dataset (OD / POI / distance graphs)
+python src/stages/stage3_supply.py               # supply-state reconstruction
+```
+
+Run the tests:
+
+```bash
+python -m pytest tests/
+```
+
+The legacy baseline pipeline (used to build the now-frozen road graph and baseline clusterings) is still runnable stage by stage:
 
 ```bash
 python src/00_download_osm.py

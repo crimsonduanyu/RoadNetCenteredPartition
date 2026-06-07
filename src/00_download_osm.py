@@ -6,7 +6,7 @@ import env_setup  # noqa: F401
 import geopandas as gpd
 import osmnx as ox
 
-from utils_geo import (
+from lib.geo import (
     build_center_point,
     build_inner_polygon_from_ring_buffer,
     ensure_scope_directories,
