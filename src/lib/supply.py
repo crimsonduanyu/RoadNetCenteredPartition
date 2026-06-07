@@ -97,20 +97,29 @@ def parse_optional_date(value: str | None) -> pd.Timestamp | None:
     return pd.Timestamp(value).normalize()
 
 
-def scan_departure_dates(
+def partition_orders_by_day(
     orders_path: str | Path,
+    orders_parts_dir: str | Path,
     io_chunk_rows: int = IO_CHUNK_ROWS,
     start_date: str | None = None,
     end_date: str | None = None,
-    sample_days: int | None = None,
 ) -> list[str]:
-    """Scan the input file in chunks and return sorted departure dates to process."""
+    """Stream the input once, bucketing each order into a per-departure-day CSV.
+
+    Replaces the previous design that re-read the whole orders file once per day
+    (one scan for dates plus one full rescan per day). This single pass writes rows
+    to ``orders_parts_dir/date=YYYY-MM-DD.csv`` (uncompressed, for fast appends), so
+    each day is later read only from its own small file. Returns the sorted list of
+    natural days that received at least one in-window row.
+    """
+    orders_parts_dir = Path(orders_parts_dir)
+    orders_parts_dir.mkdir(parents=True, exist_ok=True)
     start = parse_optional_date(start_date)
     end = parse_optional_date(end_date)
-    dates: set[str] = set()
+    written: set[str] = set()
     rows_scanned = 0
     for chunk_index, chunk in enumerate(
-        pd.read_csv(orders_path, usecols=["departure_time"], chunksize=io_chunk_rows)
+        pd.read_csv(orders_path, usecols=ORDER_USE_COLUMNS, chunksize=io_chunk_rows)
     ):
         rows_scanned += len(chunk)
         departure = pd.to_datetime(chunk["departure_time"], errors="coerce")
@@ -119,48 +128,31 @@ def scan_departure_dates(
             valid &= departure >= start
         if end is not None:
             valid &= departure < end + pd.Timedelta(days=1)
-        dates.update(departure.loc[valid].dt.strftime("%Y-%m-%d").dropna().unique().tolist())
-        LOGGER.info("Scanned date chunk %d: rows=%d cumulative_rows=%d dates=%d", chunk_index, len(chunk), rows_scanned, len(dates))
+        if not valid.any():
+            continue
+        selected = chunk.loc[valid]
+        days = departure.loc[valid].dt.strftime("%Y-%m-%d")
+        for day, group in selected.groupby(days, sort=False):
+            day_path = orders_parts_dir / f"date={day}.csv"
+            group.to_csv(day_path, mode="a", header=day not in written, index=False)
+            written.add(str(day))
+        LOGGER.info(
+            "Partition chunk %d: rows=%d cumulative_rows=%d days=%d",
+            chunk_index, len(chunk), rows_scanned, len(written),
+        )
 
-    sorted_dates = sorted(dates)
-    if sample_days is not None:
-        sorted_dates = sorted_dates[:sample_days]
-    LOGGER.info("Found %d departure dates to process: %s", len(sorted_dates), sorted_dates)
-    return sorted_dates
+    sorted_days = sorted(written)
+    LOGGER.info("Partitioned orders into %d departure-day files.", len(sorted_days))
+    return sorted_days
 
 
-def load_orders_for_day(
-    orders_path: str | Path,
-    day: str,
-    io_chunk_rows: int = IO_CHUNK_ROWS,
-) -> pd.DataFrame:
-    """Load all orders whose departure_time falls on the given natural day."""
-    day_start = pd.Timestamp(day)
-    day_end = day_start + pd.Timedelta(days=1)
-    chunks = []
-    total_rows = 0
-    selected_rows = 0
-    for chunk_index, chunk in enumerate(
-        pd.read_csv(orders_path, usecols=ORDER_USE_COLUMNS, chunksize=io_chunk_rows)
-    ):
-        total_rows += len(chunk)
-        departure = pd.to_datetime(chunk["departure_time"], errors="coerce")
-        mask = (departure >= day_start) & (departure < day_end)
-        if mask.any():
-            selected = chunk.loc[mask].copy()
-            selected["departure_time"] = departure.loc[mask].to_numpy()
-            selected["finish_time"] = pd.to_datetime(selected["finish_time"], errors="coerce")
-            chunks.append(selected)
-            selected_rows += len(selected)
-        if chunk_index % 20 == 0:
-            LOGGER.info("Loading %s chunk %d: cumulative_rows=%d selected_rows=%d", day, chunk_index, total_rows, selected_rows)
-
-    if not chunks:
-        LOGGER.warning("No orders found for %s after date scan.", day)
-        return pd.DataFrame(columns=ORDER_USE_COLUMNS)
-    day_orders = pd.concat(chunks, ignore_index=True)
-    LOGGER.info("Loaded %d orders for departure date %s.", len(day_orders), day)
-    return day_orders
+def load_orders_from_file(path: str | Path) -> pd.DataFrame:
+    """Load one pre-partitioned departure-day order file and parse its datetimes."""
+    orders = pd.read_csv(path, usecols=ORDER_USE_COLUMNS)
+    orders["departure_time"] = pd.to_datetime(orders["departure_time"], errors="coerce")
+    orders["finish_time"] = pd.to_datetime(orders["finish_time"], errors="coerce")
+    LOGGER.info("Loaded %d orders from %s.", len(orders), path)
+    return orders
 
 
 def filter_valid_orders(orders: pd.DataFrame) -> pd.DataFrame:
@@ -689,16 +681,15 @@ def process_orders_frame(
 
 
 def process_day_to_parts(
-    orders_path: str | Path,
+    order_file: str | Path,
     day: str,
     daily_parts_dir: str | Path,
     max_gap_minutes: int = MAX_GAP_MINUTES,
     carpool_merge_gap_s: int = CARPOOL_MERGE_GAP_S,
     slot_duration_min: int = SLOT_DURATION_MIN,
-    io_chunk_rows: int = IO_CHUNK_ROWS,
 ) -> dict[str, int | str]:
-    """Load one natural day, process it independently, and write day-level part files."""
-    day_orders = load_orders_for_day(orders_path, day, io_chunk_rows)
+    """Load one day's pre-partitioned order file, process it, and write day-level part files."""
+    day_orders = load_orders_from_file(order_file)
     outputs = process_orders_frame(day_orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min)
     day_dir = Path(daily_parts_dir) / f"date={day}"
     day_dir.mkdir(parents=True, exist_ok=True)
@@ -897,21 +888,25 @@ def run_daily_pipeline(
     """Run supply reconstruction independently for each departure natural day."""
     output_dir = Path(output_dir)
     daily_parts_dir = output_dir / "_daily_parts"
+    orders_parts_dir = output_dir / "_daily_orders"
     shutil.rmtree(daily_parts_dir, ignore_errors=True)
+    shutil.rmtree(orders_parts_dir, ignore_errors=True)
     daily_parts_dir.mkdir(parents=True, exist_ok=True)
     LOGGER.info("Starting daily supply pipeline. daily_parts_dir=%s", daily_parts_dir)
 
-    dates = scan_departure_dates(orders_path, io_chunk_rows, start_date, end_date, sample_days)
+    # Single streaming pass: bucket orders into per-day files, then read each day once.
+    dates = partition_orders_by_day(orders_path, orders_parts_dir, io_chunk_rows, start_date, end_date)
+    if sample_days is not None:
+        dates = dates[:sample_days]
     day_summaries = []
     for day in dates:
         day_summary = process_day_to_parts(
-            orders_path=orders_path,
+            order_file=orders_parts_dir / f"date={day}.csv",
             day=day,
             daily_parts_dir=daily_parts_dir,
             max_gap_minutes=max_gap_minutes,
             carpool_merge_gap_s=carpool_merge_gap_s,
             slot_duration_min=slot_duration_min,
-            io_chunk_rows=io_chunk_rows,
         )
         day_summaries.append(day_summary)
         write_json({"days": day_summaries}, output_dir / "run_summary.partial.json")
@@ -937,6 +932,8 @@ def run_daily_pipeline(
     write_json(summary, output_dir / "run_summary.json")
     LOGGER.info("Daily run summary: %s", {k: v for k, v in summary.items() if k != "daily_summaries"})
 
+    # The per-day order partition is an internal ingestion temp; always remove it.
+    shutil.rmtree(orders_parts_dir, ignore_errors=True)
     if not keep_daily_parts:
         shutil.rmtree(daily_parts_dir, ignore_errors=True)
         LOGGER.info("Removed daily part directory %s.", daily_parts_dir)
