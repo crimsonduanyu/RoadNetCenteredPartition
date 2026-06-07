@@ -1040,7 +1040,3 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Saved order-region pipeline outputs to {output_dir}")
     print(f"Saved metadata to {metadata_path}")
-
-
-if __name__ == "__main__":
-    main()

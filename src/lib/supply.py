@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import gzip
 import json
 import logging
@@ -938,56 +937,3 @@ def run_daily_pipeline(
         shutil.rmtree(daily_parts_dir, ignore_errors=True)
         LOGGER.info("Removed daily part directory %s.", daily_parts_dir)
     return summary
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line parser for supply reconstruction."""
-    parser = argparse.ArgumentParser(description="Reconstruct Fifth Ring supply-side driver chains.")
-    parser.add_argument("--orders-path", default=ORDERS_PATH, help="Filtered orders_region_assigned.csv.gz path.")
-    parser.add_argument("--max-gap", type=int, default=MAX_GAP_MINUTES, help="Maximum chain idle gap in minutes.")
-    parser.add_argument("--carpool-merge-gap-s", type=int, default=CARPOOL_MERGE_GAP_S, help="Carpool merge tolerance.")
-    parser.add_argument("--slot-duration", type=int, default=SLOT_DURATION_MIN, help="Slot duration in minutes.")
-    parser.add_argument("--output-dir", default=OUTPUT_DIR, help="Directory for supply output files.")
-    parser.add_argument("--merge-demand", action="store_true", help="Merge cluster supply into the demand table.")
-    parser.add_argument("--demand-table", default=DEMAND_TABLE, help="Demand table basename under the demand directory.")
-    parser.add_argument(
-        "--execution-mode",
-        choices=["daily", "full-memory"],
-        default=EXECUTION_MODE,
-        help="Execution mode. daily processes one departure date at a time.",
-    )
-    parser.add_argument("--io-chunk-rows", type=int, default=IO_CHUNK_ROWS, help="Rows per CSV chunk when scanning/loading each day.")
-    parser.add_argument("--start-date", default=None, help="First departure date to process, inclusive, YYYY-MM-DD.")
-    parser.add_argument("--end-date", default=None, help="Last departure date to process, inclusive, YYYY-MM-DD.")
-    parser.add_argument("--keep-daily-parts", action="store_true", help="Keep _daily_parts after final files are merged.")
-    parser.add_argument("--sample-days", type=int, default=None, help="Process only the first N discovered dates.")
-    return parser
-
-
-def main(argv: list[str] | None = None) -> dict[str, int]:
-    """Parse CLI arguments and run supply-side reconstruction."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
-    args = build_parser().parse_args(argv)
-    return run_pipeline(
-        orders_path=args.orders_path,
-        output_dir=args.output_dir,
-        max_gap_minutes=args.max_gap,
-        carpool_merge_gap_s=args.carpool_merge_gap_s,
-        slot_duration_min=args.slot_duration,
-        merge_demand=args.merge_demand,
-        demand_table=args.demand_table,
-        execution_mode=args.execution_mode,
-        io_chunk_rows=args.io_chunk_rows,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        keep_daily_parts=args.keep_daily_parts,
-        sample_days=args.sample_days,
-    )
-
-
-if __name__ == "__main__":
-    main()
