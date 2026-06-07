@@ -91,7 +91,6 @@ These produce the (now frozen) upstream artifacts and are not part of the day-to
 - `src/00_download_osm.py` → `src/01_preprocess_roads.py` → `src/02_build_*_features.py` / `src/02_build_segment_relation_graph.py` build the road graph and segment features. `src/03_cluster_segments.py` + `src/adaptive_clustering.py` produce the baseline clusterings; `src/04_visualize_clusters.py`, `src/05_benchmark_clusters.py` visualize/benchmark them. Stage 1 of `00`/`01` uses live OSMnx downloads.
 - All code imports the shared utilities from `lib.geo` / `lib.graph` / `lib.metrics` directly (the former `utils_geo/graph/metric` compatibility shims have been removed).
 - `regularized_zoning_experiments/run_regularized_search.py` is a thin CLI over `lib.regularized` for parameter-grid experiments; `evaluate_regularized.py` and `visualize_regularized_results.py` are analysis/figure scripts.
-- `scripts/recompute_supply_fixed.py` is a diagnostics layer for stock-vs-flow supply metrics (Fix-1/Fix-2 are now upstreamed into `lib/supply.py`, so it is no longer the source of truth for those).
 
 ## Output layout
 
@@ -103,7 +102,6 @@ All generated data is git-ignored. Canonical locations (per active `study_area.a
 - `outputs/<scope>/` — legacy baseline pipeline products: `graphs/`, `tables/`, `figures/`.
 - `regularized_zoning_experiments/runs/<run>/` — Stage 1 regularized run artifacts (`clusters/`, `tables/`, `figures/`); a `*_stage1_verify` sibling is written by `stage1_partition.py --verify`.
 - `IntermediateDataForReproduce/` — the frozen reproducibility snapshot (never overwritten).
-- `outputs/supply_audit*/` — optional outputs of the supply diagnostic scripts.
 
 The three stage scripts write only under `data/processed/<scope>/`; `stage3_supply.py`'s output dir and parameters come from `config.yaml` (`stage3_supply`) with optional CLI overrides.
 
