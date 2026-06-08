@@ -6,6 +6,7 @@ in its own process (stages are memory-heavy, so isolation matters):
     Stage 1  spatial partitioning   (regularized search; reproduces canonical)
     Stage 2  demand dataset         (consumes the frozen canonical partition)
     Stage 3  supply-state           (consumes the Stage 2 output)
+    Stage 4  trip-time (TTE) dataset (consumes the Stage 2 output)
 
 Stage 1 runs with ``--verify`` so a reproduction mismatch against the frozen
 canonical partition fails the whole run loudly.
@@ -25,6 +26,7 @@ STAGES: list[tuple[str, str, list[str]]] = [
     ("Stage 1: spatial partitioning", "stages/stage1_partition.py", ["--verify"]),
     ("Stage 2: demand dataset", "stages/stage2_demand.py", []),
     ("Stage 3: supply-state reconstruction", "stages/stage3_supply.py", []),
+    ("Stage 4: trip-time (TTE) dataset", "stages/stage4_tte.py", []),
 ]
 
 

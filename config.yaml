@@ -425,3 +425,65 @@ stage3_supply:
   io_chunk_rows: 500000
   peak_morning_hours: [7, 8, 9, 10]
   peak_evening_hours: [17, 18, 19]
+
+# ============================================================================
+# Stage 4 - trip-time (TTE) dataset. Builds a (time slot x OD) median trip-time
+# matrix from the Stage 2 assigned orders + cluster centroids, then fills gaps
+# with transitive (corridor) imputation. Depends only on Stage 2 outputs.
+# ============================================================================
+stage4_tte:
+  inputs:
+    # Both are Stage 2 (order_pipeline) products under data/processed/<scope>/.
+    orders_path: data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz
+    cluster_index_path: data/processed/fifth_ring/order_pipeline/cluster_index.csv
+  output_dir: data/processed/fifth_ring/tte
+  outputs:
+    # Per-cell observation-count matrix aligned with TTE_raw (count>=1 iff observed).
+    count_filename: "TTE_count.parquet"
+    # Provenance of the multi-hop imputation, aligned 1:1 with TTE_raw:
+    #   hops    - 0=observed, r=filled at hop r, -1=unfilled.
+    #   support - inferred cells: weakest path support (min obs count); -1 elsewhere.
+    hops_filename: "TTE_hops.parquet"
+    support_filename: "TTE_support.parquet"
+  distance:
+    # Cluster-to-cluster road-network shortest-path distance (metres) between each
+    # cluster's representative OSM node (nearest junction to its centroid). Replaces
+    # centroid Haversine in the SpatialPruner. Built once and cached on first run.
+    matrix_filename: "cluster_network_distance.parquet"
+    representatives_filename: "cluster_representative_nodes.csv"
+    recompute: false               # if the matrix file exists and false -> load it
+    graphml_path: "data/raw/beijing_drive_within_fifth_ring.graphml"
+    # Frozen snapshot (same provenance as the canonical partition below).
+    classified_edges_path: "IntermediateDataForReproduce/road_edges_classified.gpkg"
+    partition_gpkg: "IntermediateDataForReproduce/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg"
+  time:
+    freq: "10min"                     # slot width; matches KoopmanTTE's TIME_FREQ for comparable coverage
+    start_time: "2017-06-01 00:00:00"
+    end_time: "2017-08-31 23:59:00"   # aligned with order_pipeline time window
+  trip_time:
+    # trip_time = finish_time - departure_time (minutes); rows outside the band
+    # or with an out-of-scope endpoint are dropped before aggregation.
+    min_minutes: 3                    # 3-80 min band matches KoopmanTTE's trip_time filter
+    max_minutes: 80
+    aggregation: median               # per-cell aggregation of trips sharing a (slot, OD)
+  keep_place:
+    # Keep clusters seen as both origin and destination at least this many times.
+    min_origin_orders: 1
+    min_dest_orders: 1
+  imputation:
+    method: transitive          # transitive corridor imputation only (no discrete-DP)
+    max_hops: 3                 # multi-hop min-plus depth cap (hop r == iteration round). Bounds compute,
+                                #   and regularizes optimizer's curse: limits how many layers the per-corridor
+                                #   min-selection of downward-biased estimates can compound.
+    source_min_count: 1         # edge-level gate k: an observed cell may serve as a transitive *leg* only if count>=k.
+                                #   k=1 = no source gate (maximize coverage, aligned with KoopmanTTE). k only gates
+                                #   sources, never targets: thin observations are kept verbatim, and the weakest
+                                #   support of each fill is recorded in TTE_support for downstream confidence
+                                #   weighting (not yet implemented). Raising k trades coverage for bound quality.
+    detour_ratio: 1.3           # corridor admissibility eta: keep k iff d(O,k)+d(k,D) <= eta*d(O,D).
+                                #   With network distance the feasible region is a detour-ratio band, not an ellipse.
+    speed_limit_kmh: [5, 120]   # validate_estimates: reject fills implying speed outside this band (curse guard)
+    min_dist_km: 0.01
+    window: 6                   # rolling-outlier window (slots) for validate_estimates
+    outlier_std_threshold: 3
+    use_validation: true
