@@ -215,34 +215,22 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
         carpool_merge_gap_s=0,
         slot_duration_min=15,
         io_chunk_rows=2,
+        execution_mode="daily",
         keep_daily_parts=True,
     )
 
+    # This test pins the (now non-default) daily path explicitly to verify the
+    # day-bucketing dead-code still runs and merges. Fix-1-specific assertions
+    # (natural-day clipping and the no-duplicate guarantee it provided) were
+    # removed when Fix-1 was deleted; the daily path is no longer the gold standard.
     assert summary["days_processed"] == 2
     assert (output_dir / "trip_segments.csv.gz").exists()
     assert (output_dir / "_daily_parts" / "date=2017-06-01" / "trip_segments.csv.gz").exists()
     assert (output_dir / "_daily_parts" / "date=2017-06-02" / "trip_segments.csv.gz").exists()
     trips = pd.read_csv(output_dir / "trip_segments.csv.gz")
     chains = pd.read_csv(output_dir / "driver_chains.csv.gz")
-    in_service = pd.read_csv(output_dir / "supply_in_service_od.csv.gz")
     assert len(trips) == 3
     assert set(chains["date_"].astype(str)) == {"2017-06-01", "2017-06-02"}
-    # Fix-1: order 1's trip (23:50 -> 00:20, chain day 2017-06-01) is clipped to
-    # its natural day, so it contributes only the 23:45 slot on 06-01 and no
-    # cross-midnight tail slots on 06-02.
-    in_service_slots = set(in_service["slot_start"].astype(str))
-    assert "2017-06-01 23:45:00" in in_service_slots
-    assert "2017-06-02 00:00:00" not in in_service_slots
-    assert "2017-06-02 00:15:00" not in in_service_slots
-
-    # Fix-1 (daily merge): the per-day slot grid is clipped to observed activity, so the
-    # merged available/fleet tables have unique (slot_start, cluster_id) rows -- no
-    # zero-padded boundary rows duplicating the next day's real rows.
-    available = pd.read_csv(output_dir / "supply_available_by_cluster.csv.gz")
-    fleet = pd.read_csv(output_dir / "supply_fleet_lower_bound.csv.gz")
-    assert not available.duplicated(["slot_start", "cluster_id"]).any()
-    assert not fleet.duplicated(["slot_start", "cluster_id"]).any()
-    assert not in_service.duplicated(["slot_start", "origin_cluster_id", "destination_cluster_id"]).any()
 
     filtered_output = tmp_path / "supply_filtered"
     filtered = module.run_pipeline(
@@ -252,6 +240,7 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
         carpool_merge_gap_s=0,
         slot_duration_min=15,
         io_chunk_rows=2,
+        execution_mode="daily",
         start_date="2017-06-02",
         end_date="2017-06-02",
     )
@@ -261,8 +250,9 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
     assert set(filtered_chains["date_"].astype(str)) == {"2017-06-02"}
 
 
-def test_in_service_slots_are_clipped_to_natural_day() -> None:
-    """Fix-1: a trip crossing midnight only emits slots within its start day."""
+def test_in_service_slots_span_midnight() -> None:
+    """Fix-1 removed: a trip crossing midnight emits every slot it overlaps,
+    including the cross-midnight tail slots (no natural-day clipping)."""
     module = load_module()
     trips = pd.DataFrame(
         [
@@ -279,7 +269,74 @@ def test_in_service_slots_are_clipped_to_natural_day() -> None:
     _, driver_slots = module.compute_in_service_od(trips, slot_duration_min=15, return_driver_slots=True)
 
     slots = set(driver_slots["slot_start"].dt.strftime("%Y-%m-%d %H:%M:%S"))
-    assert slots == {"2017-06-01 23:45:00"}
+    assert slots == {"2017-06-01 23:45:00", "2017-06-02 00:00:00", "2017-06-02 00:15:00"}
+
+
+def test_tau_idle_decoupled_from_chain_formation() -> None:
+    """A 45-min inter-trip gap: chain formation (max_gap=60) keeps both trips in one
+    chain regardless of tau_idle; the idle window is kept at tau_idle=60 but dropped
+    at tau_idle=30. Confirms the idle cap is decoupled from chain formation."""
+    module = load_module()
+    segments = pd.DataFrame(
+        [
+            {"segment_id": "a", "driver_id": 1, "trip_start": pd.Timestamp("2017-06-01 08:00:00"),
+             "trip_end": pd.Timestamp("2017-06-01 08:20:00"), "origin_cluster_id": 1, "destination_cluster_id": 2},
+            {"segment_id": "b", "driver_id": 1, "trip_start": pd.Timestamp("2017-06-01 09:05:00"),
+             "trip_end": pd.Timestamp("2017-06-01 09:20:00"), "origin_cluster_id": 2, "destination_cluster_id": 3},
+        ]
+    )
+    chain_segments, chains = module.reconstruct_driver_chains(segments, max_gap_minutes=60)
+    assert chains["chain_id"].nunique() == 1  # 45min < 60min -> one chain, both thresholds
+
+    idle60 = module.extract_idle_windows(chain_segments, tau_idle_minutes=60)
+    idle30 = module.extract_idle_windows(chain_segments, tau_idle_minutes=30)
+    assert len(idle60) == 1   # 45min gap kept under tau=60
+    assert len(idle30) == 0   # 45min gap excluded under tau=30 (tighter)
+
+
+def test_driver_chunked_equals_whole_frame(tmp_path) -> None:
+    """The driver-chunked skeleton must be lossless: summing per-block nunique over
+    disjoint driver blocks equals the whole-frame compute, cell for cell."""
+    module = load_module()
+    orders = pd.DataFrame(
+        [
+            make_order(1, 11, "2017-06-01 08:00:00", "2017-06-01 08:20:00", 1, 2, "exclusive"),
+            make_order(2, 11, "2017-06-01 08:25:00", "2017-06-01 08:40:00", 2, 3, "exclusive"),
+            make_order(3, 22, "2017-06-01 08:05:00", "2017-06-01 08:35:00", 1, 4, "carpool"),
+            make_order(4, 22, "2017-06-01 08:15:00", "2017-06-01 08:50:00", 5, 6, "carpool"),
+            make_order(5, 33, "2017-06-01 23:50:00", "2017-06-02 00:30:00", 2, 1, "exclusive"),
+            make_order(6, 44, "2017-06-01 09:00:00", "2017-06-01 09:20:00", 3, 2, "exclusive"),
+            make_order(7, 55, "2017-06-01 09:10:00", "2017-06-01 09:18:00", 4, 4, "carpool"),
+            make_order(8, 66, "2017-06-01 10:00:00", "2017-06-01 10:40:00", 1, 3, "exclusive"),
+        ]
+    )
+    orders_path = tmp_path / "orders.csv.gz"
+    orders.to_csv(orders_path, index=False, compression="gzip")
+    out_dir = tmp_path / "chunked"
+
+    module.run_chunked_pipeline(
+        orders_path=orders_path, output_dir=out_dir,
+        max_gap_minutes=60, carpool_merge_gap_s=0, slot_duration_min=15, n_blocks=8,
+    )
+    whole = module.process_orders_frame(orders, 60, 0, 15)
+
+    def norm(df, keys):
+        d = df.copy()
+        d["slot_start"] = pd.to_datetime(d["slot_start"])
+        return d.sort_values(keys).reset_index(drop=True)
+
+    c_in = norm(pd.read_csv(out_dir / "supply_in_service_od.csv.gz"),
+                ["slot_start", "origin_cluster_id", "destination_cluster_id"])
+    w_in = norm(whole["supply_in_service_od"], ["slot_start", "origin_cluster_id", "destination_cluster_id"])
+    merged = c_in.merge(w_in, on=["slot_start", "origin_cluster_id", "destination_cluster_id"],
+                        how="outer", suffixes=("_c", "_w"))
+    assert (merged["vehicles_in_service_c"].fillna(0) == merged["vehicles_in_service_w"].fillna(0)).all()
+
+    # available / fleet match on the keys present in the (densified) whole-frame output.
+    c_av = norm(pd.read_csv(out_dir / "supply_available_by_cluster.csv.gz"), ["slot_start", "cluster_id"])
+    w_av = norm(whole["supply_available_by_cluster"], ["slot_start", "cluster_id"])
+    av = w_av.merge(c_av, on=["slot_start", "cluster_id"], how="left", suffixes=("_w", "_c"))
+    assert (av["available_vehicles_w"] == av["available_vehicles_c"]).all()
 
 
 def test_fleet_lower_bound_in_service_counts_origin_only() -> None:

@@ -8,10 +8,12 @@ import shutil
 import sys
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 
 
-MAX_GAP_MINUTES = 60
+MAX_GAP_MINUTES = 60  # chain-formation gap: trips farther apart start a new driver chain
+TAU_IDLE_MINUTES = 30  # idle-judgement cap: a gap shorter than this counts as online-idle (-> available)
 CARPOOL_MERGE_GAP_S = 0
 SLOT_DURATION_MIN = 15
 OUTPUT_DIR = "data/processed/fifth_ring/supply/"
@@ -19,8 +21,13 @@ ORDERS_PATH = "data/processed/fifth_ring/order_pipeline/orders_region_assigned.c
 DEMAND_DIR = "data/processed/fifth_ring/demand"
 DEMAND_TABLE = "demand_table"
 MERGE_WITH_DEMAND = False
-EXECUTION_MODE = "daily"
+# Default execution path. "driver-chunked" is the per-driver-block skeleton:
+# verified lossless (== whole-frame, cell-for-cell) and full-data peak ~9.3 GB
+# (well under the 19.2 GB waterline). "daily" (Fix-1 era) and "full-memory"
+# (OOMs on full data) remain selectable via --execution-mode as fallbacks.
+EXECUTION_MODE = "driver-chunked"
 IO_CHUNK_ROWS = 500_000
+DRIVER_BLOCKS = 8  # number of per-driver chunks for the "driver-chunked" execution mode
 
 DATETIME_COLUMNS = ["departure_time", "finish_time", "slot_start"]
 ORDER_USE_COLUMNS = [
@@ -69,11 +76,27 @@ LOGGER = logging.getLogger(__name__)
 
 
 def load_orders(path: str | Path = ORDERS_PATH) -> pd.DataFrame:
-    """Load the pre-filtered Fifth Ring order table with timezone-naive datetimes."""
-    orders = pd.read_csv(path)
-    for column in DATETIME_COLUMNS:
-        if column in orders.columns:
-            orders[column] = pd.to_datetime(orders[column], errors="coerce")
+    """Load the pre-filtered Fifth Ring order table with timezone-naive datetimes.
+
+    Reads only the columns the reconstruction actually consumes
+    (``ORDER_USE_COLUMNS``) with explicit dtypes, so the full-memory load never
+    materializes the wide unused columns (``source_file``, ``*_seg_id``,
+    ``slot_start``, match distances, ...). The two time columns are read as text
+    and parsed with an explicit format to keep the parse-time peak low. This is an
+    I/O-footprint change only; the resulting values are identical to before.
+    """
+    dtypes = {
+        "order_id": "int64",
+        "driver_id": "int64",
+        "origin_cluster_id": "int32",
+        "destination_cluster_id": "int32",
+        "service_type": "category",
+        "departure_time": "string",
+        "finish_time": "string",
+    }
+    orders = pd.read_csv(path, usecols=ORDER_USE_COLUMNS, dtype=dtypes)
+    for column in ("departure_time", "finish_time"):
+        orders[column] = pd.to_datetime(orders[column], format="%Y-%m-%d %H:%M:%S", errors="coerce")
     return orders
 
 
@@ -322,9 +345,15 @@ def reconstruct_driver_chains(
 
 def extract_idle_windows(
     chain_segments: pd.DataFrame,
-    max_gap_minutes: int = MAX_GAP_MINUTES,
+    tau_idle_minutes: int = TAU_IDLE_MINUTES,
 ) -> pd.DataFrame:
-    """Extract positive inter-trip idle windows inside reconstructed chains."""
+    """Extract positive inter-trip idle windows inside reconstructed chains.
+
+    ``tau_idle_minutes`` is the idle-judgement cap (a gap shorter than it counts as
+    online-idle -> ``available``); it is DISTINCT from the chain-formation gap
+    ``max_gap_minutes`` used in ``reconstruct_driver_chains``. Decoupled so the
+    idle cap can be tightened (60 -> 30) without changing chain structure (hence
+    leaving trip_segments / in-service / fleet's in-service part untouched)."""
     if chain_segments.empty:
         return pd.DataFrame(
             columns=["chain_id", "driver_id", "idle_start", "idle_end", "idle_cluster_id", "idle_duration_s"]
@@ -348,7 +377,7 @@ def extract_idle_windows(
     idle = idle.loc[
         (idle["chain_id"].eq(next_chain.loc[idle.index]))
         & (idle["idle_duration_s"] > 0)
-        & (idle["idle_duration_s"] <= max_gap_minutes * 60)
+        & (idle["idle_duration_s"] <= tau_idle_minutes * 60)
     ].copy()
     idle["idle_cluster_id"] = idle["destination_cluster_id"]
     return idle[["chain_id", "driver_id", "idle_start", "idle_end", "idle_cluster_id", "idle_duration_s"]]
@@ -437,67 +466,26 @@ def attach_global_fleet_to_all_clusters(
     return completed.merge(global_fleet, on="slot_start", how="left")
 
 
-def _attach_natural_day(
-    frame: pd.DataFrame,
-    start_col: str,
-    chain_id_col: str | None = None,
-) -> pd.DataFrame:
-    """Return ``frame`` with a ``_natural_day`` column (midnight of the row's day).
-
-    Prefers the date encoded in ``chain_id`` (``driver_date_seq``) when available
-    so idle windows inherit their chain's day; otherwise falls back to flooring
-    ``start_col`` to the day. Used to clip slot expansion (Fix-1).
-    """
-    if frame.empty:
-        return frame.assign(_natural_day=pd.Series(dtype="datetime64[ns]"))
-    if chain_id_col is not None and chain_id_col in frame.columns:
-        day = pd.to_datetime(frame[chain_id_col].str.rsplit("_", n=2).str[1], errors="coerce")
-        day = day.fillna(frame[start_col].dt.floor("D"))
-    else:
-        day = frame[start_col].dt.floor("D")
-    return frame.assign(_natural_day=day)
-
-
 def _expand_interval_slots(
     frame: pd.DataFrame,
     start_col: str,
     end_col: str,
     slot_duration_min: int,
     columns: Iterable[str],
-    day_col: str | None = None,
 ) -> pd.DataFrame:
-    """Map intervals to every half-open slot they overlap without a row-wise Python loop.
-
-    When ``day_col`` (the natural-day midnight for each row) is supplied, each
-    interval is first clipped to ``[day, day + 1 day)`` so it only contributes
-    slots within its own natural day. This is Fix-1: without it, an interval that
-    crosses midnight emits slots belonging to the next day, which the daily-part
-    merge then double-counts (previously ~44% duplicate (slot, cluster) rows).
-    """
+    """Map intervals to every half-open slot they overlap without a row-wise Python loop."""
     output_columns = ["slot_start", *columns]
     if frame.empty:
         return pd.DataFrame(columns=output_columns)
 
     frequency = f"{slot_duration_min}min"
     needed = [start_col, end_col, *columns]
-    if day_col is not None and day_col not in needed:
-        needed = [*needed, day_col]
     intervals = frame.loc[frame[end_col] > frame[start_col], needed].copy()
     if intervals.empty:
         return pd.DataFrame(columns=output_columns)
 
     start = intervals[start_col]
     end = intervals[end_col]
-    if day_col is not None:
-        day0 = intervals[day_col]
-        day1 = day0 + pd.Timedelta(days=1)
-        start = start.clip(lower=day0)
-        end = end.clip(upper=day1)
-        keep = end > start
-        intervals, start, end = intervals.loc[keep], start.loc[keep], end.loc[keep]
-        if intervals.empty:
-            return pd.DataFrame(columns=output_columns)
-
     intervals["_slot_start"] = start.dt.floor(frequency)
     intervals["_slot_end"] = (end - pd.Timedelta(nanoseconds=1)).dt.floor(frequency)
     intervals["_slot_count"] = (
@@ -521,14 +509,12 @@ def compute_available_by_cluster(
     return_driver_slots: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Count distinct idle drivers by slot and last-known cluster."""
-    idle_windows = _attach_natural_day(idle_windows, "idle_start", chain_id_col="chain_id")
     idle_driver_slots = _expand_interval_slots(
         idle_windows,
         "idle_start",
         "idle_end",
         slot_duration_min,
         ["driver_id", "idle_cluster_id"],
-        day_col="_natural_day",
     ).rename(columns={"idle_cluster_id": "cluster_id"})
     if idle_driver_slots.empty:
         available = pd.DataFrame(columns=["slot_start", "cluster_id", "available_vehicles"])
@@ -549,14 +535,12 @@ def compute_in_service_od(
     return_driver_slots: bool = False,
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Count distinct in-service drivers per slot and trip OD pair."""
-    trip_segments = _attach_natural_day(trip_segments, "trip_start")
     trip_driver_slots = _expand_interval_slots(
         trip_segments,
         "trip_start",
         "trip_end",
         slot_duration_min,
         ["driver_id", "origin_cluster_id", "destination_cluster_id"],
-        day_col="_natural_day",
     )
     if trip_driver_slots.empty:
         in_service = pd.DataFrame(
@@ -663,11 +647,16 @@ def process_orders_frame(
     max_gap_minutes: int = MAX_GAP_MINUTES,
     carpool_merge_gap_s: int = CARPOOL_MERGE_GAP_S,
     slot_duration_min: int = SLOT_DURATION_MIN,
+    tau_idle_minutes: int = TAU_IDLE_MINUTES,
 ) -> dict[str, pd.DataFrame]:
-    """Process one in-memory order frame into all supply-side output tables."""
+    """Process one in-memory order frame into all supply-side output tables.
+
+    ``max_gap_minutes`` forms chains; ``tau_idle_minutes`` (distinct) caps idle
+    windows -> available. In-service depends only on ``trip_segments`` and is
+    independent of both gap thresholds."""
     trip_segments = build_trip_segments(orders, carpool_merge_gap_s)
     chain_segments, driver_chains = reconstruct_driver_chains(trip_segments, max_gap_minutes)
-    idle_windows = extract_idle_windows(chain_segments, max_gap_minutes)
+    idle_windows = extract_idle_windows(chain_segments, tau_idle_minutes)
     available, in_service, fleet = compute_supply_variables(trip_segments, idle_windows, slot_duration_min)
     return {
         "trip_segments": trip_segments,
@@ -686,10 +675,11 @@ def process_day_to_parts(
     max_gap_minutes: int = MAX_GAP_MINUTES,
     carpool_merge_gap_s: int = CARPOOL_MERGE_GAP_S,
     slot_duration_min: int = SLOT_DURATION_MIN,
+    tau_idle_minutes: int = TAU_IDLE_MINUTES,
 ) -> dict[str, int | str]:
     """Load one day's pre-partitioned order file, process it, and write day-level part files."""
     day_orders = load_orders_from_file(order_file)
-    outputs = process_orders_frame(day_orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min)
+    outputs = process_orders_frame(day_orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min, tau_idle_minutes)
     day_dir = Path(daily_parts_dir) / f"date={day}"
     day_dir.mkdir(parents=True, exist_ok=True)
     summary: dict[str, int | str] = {"date": day, "orders_loaded": len(day_orders)}
@@ -799,6 +789,7 @@ def run_pipeline(
     end_date: str | None = None,
     keep_daily_parts: bool = False,
     sample_days: int | None = None,
+    tau_idle_minutes: int = TAU_IDLE_MINUTES,
 ) -> dict[str, object]:
     """Run the complete supply-side reconstruction pipeline and write all outputs."""
     output_dir = Path(output_dir)
@@ -807,6 +798,7 @@ def run_pipeline(
         "orders_path": str(orders_path),
         "output_dir": str(output_dir),
         "max_gap_minutes": max_gap_minutes,
+        "tau_idle_minutes": tau_idle_minutes,
         "carpool_merge_gap_s": carpool_merge_gap_s,
         "slot_duration_min": slot_duration_min,
         "merge_demand": merge_demand,
@@ -834,13 +826,27 @@ def run_pipeline(
             end_date=end_date,
             keep_daily_parts=keep_daily_parts,
             sample_days=sample_days,
+            tau_idle_minutes=tau_idle_minutes,
+        )
+    if execution_mode == "driver-chunked":
+        return run_chunked_pipeline(
+            orders_path=orders_path,
+            output_dir=output_dir,
+            max_gap_minutes=max_gap_minutes,
+            carpool_merge_gap_s=carpool_merge_gap_s,
+            slot_duration_min=slot_duration_min,
+            merge_demand=merge_demand,
+            demand_table=demand_table,
+            tau_idle_minutes=tau_idle_minutes,
         )
     if execution_mode != "full-memory":
-        raise ValueError(f"Unsupported execution_mode={execution_mode!r}; expected 'daily' or 'full-memory'.")
+        raise ValueError(
+            f"Unsupported execution_mode={execution_mode!r}; expected 'daily', 'full-memory', or 'driver-chunked'."
+        )
 
     orders = load_orders(orders_path)
     LOGGER.info("Loaded %d filtered Fifth Ring orders from %s.", len(orders), orders_path)
-    outputs = process_orders_frame(orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min)
+    outputs = process_orders_frame(orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min, tau_idle_minutes)
     trip_segments = outputs["trip_segments"]
     driver_chains = outputs["driver_chains"]
     idle_windows = outputs["idle_windows"]
@@ -883,6 +889,7 @@ def run_daily_pipeline(
     end_date: str | None = None,
     keep_daily_parts: bool = False,
     sample_days: int | None = None,
+    tau_idle_minutes: int = TAU_IDLE_MINUTES,
 ) -> dict[str, object]:
     """Run supply reconstruction independently for each departure natural day."""
     output_dir = Path(output_dir)
@@ -906,6 +913,7 @@ def run_daily_pipeline(
             max_gap_minutes=max_gap_minutes,
             carpool_merge_gap_s=carpool_merge_gap_s,
             slot_duration_min=slot_duration_min,
+            tau_idle_minutes=tau_idle_minutes,
         )
         day_summaries.append(day_summary)
         write_json({"days": day_summaries}, output_dir / "run_summary.partial.json")
@@ -937,3 +945,209 @@ def run_daily_pipeline(
         shutil.rmtree(daily_parts_dir, ignore_errors=True)
         LOGGER.info("Removed daily part directory %s.", daily_parts_dir)
     return summary
+
+
+# ==========================================================================
+# Driver-chunked execution skeleton (the (B) refactor).
+#
+# Splits drivers into DRIVER_BLOCKS uniform-hash buckets, runs the SAME per-frame
+# compute (build_trip_segments -> reconstruct_driver_chains -> extract_idle_windows
+# -> compute_* ) on each block, and accumulates the block-level results into dense
+# global arrays. No computation/threshold/naming semantics change -- only the
+# execution skeleton. Correctness rests on four invariants (asserted at runtime):
+#   1. Block assignment is ONE uniform-hash function (driver_block_id).
+#   2. Each driver is in exactly one block (disjoint + complete) -> per-block
+#      nunique is additive across blocks.
+#   3. A single global slot/cluster index built ONCE; blocks map their
+#      (slot, cluster) to global positions before accumulating (no local indices).
+#   4. fleet does the in-service-union-idle driver dedup INSIDE each block, then
+#      blocks are summed (disjoint drivers) -- never global-tensor add afterwards.
+# ==========================================================================
+def driver_block_id(driver_ids: "np.ndarray | pd.Series", n_blocks: int) -> np.ndarray:
+    """Sole block-assignment function (invariant 1). Uniform 64-bit hash of the
+    driver id, modulo n_blocks -- never a bare ``driver_id % n`` (those ids cluster
+    in low bits: an earlier probe showed ``%16`` captured 21.6% instead of 6.25%)."""
+    return (pd.util.hash_array(np.asarray(driver_ids)) % n_blocks).astype("int64")
+
+
+def build_global_slot_index(orders: pd.DataFrame, slot_duration_min: int) -> pd.DatetimeIndex:
+    """Global continuous slot set over the whole study window, built ONCE (invariant 3).
+
+    [floor(min departure), ceil(max finish)) stepped by the slot width -- the same
+    first/last logic as ``generate_slots``, but global across all blocks. trip_start
+    = min(departure) and trip_end = max(finish) within a carpool group, and idle
+    windows live between trips, so every emitted slot is inside this range."""
+    frequency = f"{slot_duration_min}min"
+    first = orders["departure_time"].min().floor(frequency)
+    last = orders["finish_time"].max().ceil(frequency)
+    return pd.date_range(first, last, freq=frequency, inclusive="left")
+
+
+def build_global_cluster_index(orders: pd.DataFrame) -> pd.Index:
+    """Global cluster set (all clusters observed as an origin or destination), built
+    ONCE (invariant 3). Sorted so the column/row order is stable across blocks."""
+    values = pd.concat(
+        [orders["origin_cluster_id"], orders["destination_cluster_id"]], ignore_index=True
+    ).dropna().unique()
+    return pd.Index(np.sort(values), name="cluster_id")
+
+
+def _slot_positions(slot_series: pd.Series, slots: pd.DatetimeIndex) -> np.ndarray:
+    pos = slots.get_indexer(pd.to_datetime(slot_series))
+    if (pos < 0).any():
+        raise AssertionError("invariant 3 violated: a block slot is outside the global slot index.")
+    return pos
+
+
+def _cluster_positions(cluster_series: pd.Series, clusters: pd.Index) -> np.ndarray:
+    pos = clusters.get_indexer(cluster_series)
+    if (pos < 0).any():
+        raise AssertionError("invariant 3 violated: a block cluster is outside the global cluster index.")
+    return pos
+
+
+def run_chunked_pipeline(
+    orders_path: str | Path = ORDERS_PATH,
+    output_dir: str | Path = OUTPUT_DIR,
+    max_gap_minutes: int = MAX_GAP_MINUTES,
+    carpool_merge_gap_s: int = CARPOOL_MERGE_GAP_S,
+    slot_duration_min: int = SLOT_DURATION_MIN,
+    n_blocks: int = DRIVER_BLOCKS,
+    merge_demand: bool = MERGE_WITH_DEMAND,
+    demand_table: str = DEMAND_TABLE,
+    tau_idle_minutes: int = TAU_IDLE_MINUTES,
+) -> dict[str, object]:
+    """Per-driver-chunked supply reconstruction; dense block-summed aggregation."""
+    output_dir = Path(output_dir)
+    orders = load_orders(orders_path)
+    LOGGER.info("Loaded %d orders for driver-chunked run (%d blocks).", len(orders), n_blocks)
+
+    orders["_block"] = driver_block_id(orders["driver_id"], n_blocks)
+
+    # Invariant 3: global indices, built ONCE, shared by every block.
+    slots = build_global_slot_index(orders, slot_duration_min)
+    clusters = build_global_cluster_index(orders)
+    T, N = len(slots), len(clusters)
+    LOGGER.info("Global grid: T=%d slots x N=%d clusters.", T, N)
+
+    # Dense accumulators (probe-confirmed: in-service [T,N,N] int32 ~0.33GB, no sparse).
+    A = np.zeros((T, N, N), dtype=np.int64)       # in-service: slot x origin x dest
+    B = np.zeros((T, N), dtype=np.int64)          # available: slot x cluster
+    Fc = np.zeros((T, N), dtype=np.int64)         # fleet lower bound per cluster
+    Fg = np.zeros(T, dtype=np.int64)              # global fleet lower bound per slot
+
+    all_drivers = set(orders["driver_id"].unique())
+    seen_drivers: set = set()
+    block_summaries = []
+
+    for b in range(n_blocks):
+        block = orders.loc[orders["_block"] == b].drop(columns="_block")
+        block_drivers = set(block["driver_id"].unique())
+        # Invariant 2: disjoint blocks (assert before processing).
+        if not seen_drivers.isdisjoint(block_drivers):
+            raise AssertionError(f"invariant 2 violated: block {b} shares drivers with an earlier block.")
+        seen_drivers |= block_drivers
+
+        # Same per-frame compute path as process_orders_frame (no semantic change).
+        trip_segments = build_trip_segments(block, carpool_merge_gap_s)
+        chain_segments, _ = reconstruct_driver_chains(trip_segments, max_gap_minutes)
+        idle_windows = extract_idle_windows(chain_segments, tau_idle_minutes)
+        available, idle_driver_slots = compute_available_by_cluster(idle_windows, slot_duration_min, True)
+        in_service, trip_driver_slots = compute_in_service_od(trip_segments, slot_duration_min, True)
+        # Invariant 4: dedup in-service-union-idle WITHIN the block, then block-sum.
+        fleet = compute_fleet_lower_bound(idle_driver_slots, trip_driver_slots)
+
+        # Accumulate via global index maps (invariant 3).
+        if not in_service.empty:
+            t = _slot_positions(in_service["slot_start"], slots)
+            i = _cluster_positions(in_service["origin_cluster_id"], clusters)
+            j = _cluster_positions(in_service["destination_cluster_id"], clusters)
+            np.add.at(A, (t, i, j), in_service["vehicles_in_service"].to_numpy())
+        if not available.empty:
+            t = _slot_positions(available["slot_start"], slots)
+            c = _cluster_positions(available["cluster_id"], clusters)
+            np.add.at(B, (t, c), available["available_vehicles"].to_numpy())
+        if not fleet.empty:
+            t = _slot_positions(fleet["slot_start"], slots)
+            c = _cluster_positions(fleet["cluster_id"], clusters)
+            np.add.at(Fc, (t, c), fleet["fleet_lower_bound_cluster"].to_numpy())
+            g = fleet[["slot_start", "global_fleet_lower_bound"]].drop_duplicates("slot_start")
+            tg = _slot_positions(g["slot_start"], slots)
+            np.add.at(Fg, tg, g["global_fleet_lower_bound"].to_numpy())
+
+        block_summaries.append({"block": b, "orders": int(len(block)), "drivers": int(len(block_drivers)),
+                                "in_service_rows": int(len(in_service))})
+        LOGGER.info("Block %d/%d done: orders=%d drivers=%d.", b + 1, n_blocks, len(block), len(block_drivers))
+        del block, trip_segments, chain_segments, idle_windows
+        del available, in_service, fleet, idle_driver_slots, trip_driver_slots
+
+    # Invariant 2: completeness (union of blocks == all drivers).
+    if seen_drivers != all_drivers:
+        raise AssertionError("invariant 2 violated: union of block drivers != all drivers.")
+    # No overflow: dense int64 accumulators must fit int32 output (counts << 2^31).
+    for name, arr in (("A", A), ("B", B), ("Fc", Fc), ("Fg", Fg)):
+        if arr.size and int(arr.max()) > np.iinfo(np.int32).max:
+            raise AssertionError(f"accumulator {name} exceeds int32 range.")
+
+    # Dense arrays -> output frames (same schema/keys as the other modes).
+    in_service_df = _inservice_array_to_frame(A, slots, clusters)
+    available_df = _dense_cluster_array_to_frame(B, slots, clusters, "available_vehicles")
+    fleet_df = _fleet_arrays_to_frame(Fc, Fg, slots, clusters)
+
+    save_csv_gz(in_service_df, output_dir / "supply_in_service_od.csv.gz")
+    save_csv_gz(available_df, output_dir / "supply_available_by_cluster.csv.gz")
+    save_csv_gz(fleet_df, output_dir / "supply_fleet_lower_bound.csv.gz")
+    if merge_demand:
+        merge_supply_with_demand(output_dir, demand_table)
+
+    summary = {
+        "execution_mode": "driver-chunked",
+        "max_gap_minutes": max_gap_minutes,
+        "tau_idle_minutes": tau_idle_minutes,
+        "n_blocks": n_blocks,
+        "orders_loaded": int(len(orders)),
+        "n_drivers": int(len(all_drivers)),
+        "global_slots": int(T),
+        "global_clusters": int(N),
+        "available_rows": int(len(available_df)),
+        "in_service_rows": int(len(in_service_df)),
+        "fleet_rows": int(len(fleet_df)),
+        "note": "intermediate trip_segments/driver_chains/idle_windows are not dumped in "
+                "chunked mode (object-column residency is the memory hog); supply products only.",
+        "block_summaries": block_summaries,
+    }
+    write_json(summary, output_dir / "run_summary.json")
+    LOGGER.info("Driver-chunked summary: %s", {k: v for k, v in summary.items() if k != "block_summaries"})
+    return summary
+
+
+def _inservice_array_to_frame(A: np.ndarray, slots: pd.DatetimeIndex, clusters: pd.Index) -> pd.DataFrame:
+    """Dense [T,N,N] -> sparse (slot, origin, dest, vehicles_in_service) rows (nonzero only)."""
+    tt, ii, jj = np.nonzero(A)
+    if tt.size == 0:
+        return pd.DataFrame(columns=IN_SERVICE_COLUMNS)
+    frame = pd.DataFrame({
+        "slot_start": slots.to_numpy()[tt],
+        "origin_cluster_id": clusters.to_numpy()[ii],
+        "destination_cluster_id": clusters.to_numpy()[jj],
+        "vehicles_in_service": A[tt, ii, jj].astype("int64"),
+    })
+    return frame.sort_values(["slot_start", "origin_cluster_id", "destination_cluster_id"]).reset_index(drop=True)
+
+
+def _dense_cluster_array_to_frame(M: np.ndarray, slots: pd.DatetimeIndex, clusters: pd.Index, value_col: str) -> pd.DataFrame:
+    """Dense [T,N] -> (slot, cluster, value) rows over the full global grid."""
+    T, N = M.shape
+    return pd.DataFrame({
+        "slot_start": np.repeat(slots.to_numpy(), N),
+        "cluster_id": np.tile(clusters.to_numpy(), T),
+        value_col: M.reshape(-1).astype("int64"),
+    })
+
+
+def _fleet_arrays_to_frame(Fc: np.ndarray, Fg: np.ndarray, slots: pd.DatetimeIndex, clusters: pd.Index) -> pd.DataFrame:
+    """Dense [T,N] cluster bound + per-slot global bound -> fleet rows over the full grid."""
+    frame = _dense_cluster_array_to_frame(Fc, slots, clusters, "fleet_lower_bound_cluster")
+    T, N = Fc.shape
+    frame["global_fleet_lower_bound"] = np.repeat(Fg, N).astype("int64")
+    return frame[FLEET_COLUMNS]
