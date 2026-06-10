@@ -423,7 +423,7 @@ stage3_supply:
   tau_idle_minutes: 30       # idle-judgement cap (minutes): a gap shorter than this counts as online-idle -> available. DISTINCT from max_gap_minutes (do not couple them)
   carpool_merge_gap_s: 0
   slot_duration_min: 15
-  io_chunk_rows: 500000
+  n_blocks: 8                 # number of per-driver chunks for the chunked supply reconstruction
   peak_morning_hours: [7, 8, 9, 10]
   peak_evening_hours: [17, 18, 19]
 

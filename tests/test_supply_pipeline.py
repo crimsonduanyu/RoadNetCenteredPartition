@@ -174,67 +174,6 @@ def test_fleet_lower_bound_deduplicates_driver_idle_and_in_service_same_slot() -
     assert int(cluster_2["global_fleet_lower_bound"]) == 2
 
 
-def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) -> None:
-    module = load_module()
-    orders_path = tmp_path / "orders.csv.gz"
-    output_dir = tmp_path / "supply"
-    pd.DataFrame(
-        [
-            make_order(1, 1, "2017-06-01 23:50:00", "2017-06-02 00:20:00", 1, 2, "exclusive"),
-            make_order(2, 1, "2017-06-02 00:30:00", "2017-06-02 00:45:00", 2, 3, "exclusive"),
-            make_order(3, 2, "2017-06-02 08:00:00", "2017-06-02 08:20:00", 4, 5, "carpool"),
-            make_order(4, 2, "2017-06-02 08:10:00", "2017-06-02 08:30:00", 6, 7, "carpool"),
-        ]
-    ).to_csv(orders_path, index=False, compression="gzip")
-
-    summary = module.run_pipeline(
-        orders_path=orders_path,
-        output_dir=output_dir,
-        max_gap_minutes=60,
-        carpool_merge_gap_s=0,
-        slot_duration_min=15,
-        io_chunk_rows=2,
-        execution_mode="daily",
-        keep_daily_parts=True,
-    )
-
-    # This test pins the (now non-default) daily path explicitly to verify the
-    # day-bucketing dead-code still runs and merges. Fix-1-specific assertions
-    # (natural-day clipping and the no-duplicate guarantee it provided) were
-    # removed when Fix-1 was deleted; the daily path is no longer the gold standard.
-    assert summary["days_processed"] == 2
-    assert (output_dir / "trip_segments.csv.gz").exists()
-    assert (output_dir / "_daily_parts" / "date=2017-06-01" / "trip_segments.csv.gz").exists()
-    assert (output_dir / "_daily_parts" / "date=2017-06-02" / "trip_segments.csv.gz").exists()
-    trips = pd.read_csv(output_dir / "trip_segments.csv.gz")
-    chains = pd.read_csv(output_dir / "driver_chains.csv.gz")
-    assert len(trips) == 3
-    # chain_id no longer encodes a date (midnight break removed); driver_chains
-    # carries no date_ column. Daily mode still buckets by departure day, so this
-    # 2-day input still yields chains -- we just no longer assert on date_.
-    assert "date_" not in chains.columns
-    assert len(chains) >= 2 and chains["chain_id"].notna().all()
-
-    filtered_output = tmp_path / "supply_filtered"
-    filtered = module.run_pipeline(
-        orders_path=orders_path,
-        output_dir=filtered_output,
-        max_gap_minutes=60,
-        carpool_merge_gap_s=0,
-        slot_duration_min=15,
-        io_chunk_rows=2,
-        execution_mode="daily",
-        start_date="2017-06-02",
-        end_date="2017-06-02",
-    )
-
-    filtered_chains = pd.read_csv(filtered_output / "driver_chains.csv.gz")
-    assert filtered["days_processed"] == 1
-    # Date-range filtering is verified by days_processed==1; chain_start carries
-    # the timestamp now that chain_id no longer encodes a date.
-    assert pd.to_datetime(filtered_chains["chain_start"]).dt.strftime("%Y-%m-%d").eq("2017-06-02").all()
-
-
 def test_in_service_slots_span_midnight() -> None:
     """Fix-1 removed: a trip crossing midnight emits every slot it overlaps,
     including the cross-midnight tail slots (no natural-day clipping)."""

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import gzip
 import json
 import logging
 from pathlib import Path
-import shutil
 import sys
 from typing import Iterable
 
@@ -21,15 +19,8 @@ ORDERS_PATH = "data/processed/fifth_ring/order_pipeline/orders_region_assigned.c
 DEMAND_DIR = "data/processed/fifth_ring/demand"
 DEMAND_TABLE = "demand_table"
 MERGE_WITH_DEMAND = False
-# Default execution path. "driver-chunked" is the per-driver-block skeleton:
-# verified lossless (== whole-frame, cell-for-cell) and full-data peak ~9.3 GB
-# (well under the 19.2 GB waterline). "daily" (Fix-1 era) and "full-memory"
-# (OOMs on full data) remain selectable via --execution-mode as fallbacks.
-EXECUTION_MODE = "driver-chunked"
-IO_CHUNK_ROWS = 500_000
-DRIVER_BLOCKS = 8  # number of per-driver chunks for the "driver-chunked" execution mode
+DRIVER_BLOCKS = 8  # number of per-driver chunks for supply reconstruction
 
-DATETIME_COLUMNS = ["departure_time", "finish_time", "slot_start"]
 ORDER_USE_COLUMNS = [
     "order_id",
     "driver_id",
@@ -49,27 +40,8 @@ TRIP_SEGMENT_COLUMNS = [
     "service_type",
     "order_ids",
 ]
-DRIVER_CHAIN_COLUMNS = [
-    "chain_id",
-    "driver_id",
-    "chain_seq",
-    "chain_start",
-    "chain_end",
-    "segment_count",
-    "segment_ids",
-]
-IDLE_WINDOW_COLUMNS = ["chain_id", "driver_id", "idle_start", "idle_end", "idle_cluster_id", "idle_duration_s"]
-AVAILABLE_COLUMNS = ["slot_start", "cluster_id", "available_vehicles"]
 IN_SERVICE_COLUMNS = ["slot_start", "origin_cluster_id", "destination_cluster_id", "vehicles_in_service"]
 FLEET_COLUMNS = ["slot_start", "cluster_id", "fleet_lower_bound_cluster", "global_fleet_lower_bound"]
-OUTPUT_TABLES = {
-    "trip_segments": ("trip_segments.csv.gz", TRIP_SEGMENT_COLUMNS),
-    "driver_chains": ("driver_chains.csv.gz", DRIVER_CHAIN_COLUMNS),
-    "idle_windows": ("idle_windows.csv.gz", IDLE_WINDOW_COLUMNS),
-    "supply_available_floor": ("supply_available_floor.csv.gz", AVAILABLE_COLUMNS),
-    "supply_inservice_od": ("supply_inservice_od.csv.gz", IN_SERVICE_COLUMNS),
-    "supply_fleet_lower_bound": ("supply_fleet_lower_bound.csv.gz", FLEET_COLUMNS),
-}
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,11 +50,11 @@ def load_orders(path: str | Path = ORDERS_PATH) -> pd.DataFrame:
     """Load the pre-filtered Fifth Ring order table with timezone-naive datetimes.
 
     Reads only the columns the reconstruction actually consumes
-    (``ORDER_USE_COLUMNS``) with explicit dtypes, so the full-memory load never
-    materializes the wide unused columns (``source_file``, ``*_seg_id``,
-    ``slot_start``, match distances, ...). The two time columns are read as text
-    and parsed with an explicit format to keep the parse-time peak low. This is an
-    I/O-footprint change only; the resulting values are identical to before.
+    (``ORDER_USE_COLUMNS``) with explicit dtypes, so the load never materializes
+    the wide unused columns (``source_file``, ``*_seg_id``, ``slot_start``, match
+    distances, ...). The two time columns are read as text and parsed with an
+    explicit format to keep the parse-time peak low. This is an I/O-footprint
+    change only; the resulting values are identical to before.
     """
     dtypes = {
         "order_id": "int64",
@@ -109,71 +81,6 @@ def configure_file_logging(output_dir: str | Path) -> None:
         file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
         file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
         root.addHandler(file_handler)
-
-
-def parse_optional_date(value: str | None) -> pd.Timestamp | None:
-    """Parse an optional YYYY-MM-DD date argument to a normalized timestamp."""
-    if value is None:
-        return None
-    return pd.Timestamp(value).normalize()
-
-
-def partition_orders_by_day(
-    orders_path: str | Path,
-    orders_parts_dir: str | Path,
-    io_chunk_rows: int = IO_CHUNK_ROWS,
-    start_date: str | None = None,
-    end_date: str | None = None,
-) -> list[str]:
-    """Stream the input once, bucketing each order into a per-departure-day CSV.
-
-    Replaces the previous design that re-read the whole orders file once per day
-    (one scan for dates plus one full rescan per day). This single pass writes rows
-    to ``orders_parts_dir/date=YYYY-MM-DD.csv`` (uncompressed, for fast appends), so
-    each day is later read only from its own small file. Returns the sorted list of
-    natural days that received at least one in-window row.
-    """
-    orders_parts_dir = Path(orders_parts_dir)
-    orders_parts_dir.mkdir(parents=True, exist_ok=True)
-    start = parse_optional_date(start_date)
-    end = parse_optional_date(end_date)
-    written: set[str] = set()
-    rows_scanned = 0
-    for chunk_index, chunk in enumerate(
-        pd.read_csv(orders_path, usecols=ORDER_USE_COLUMNS, chunksize=io_chunk_rows)
-    ):
-        rows_scanned += len(chunk)
-        departure = pd.to_datetime(chunk["departure_time"], errors="coerce")
-        valid = departure.notna()
-        if start is not None:
-            valid &= departure >= start
-        if end is not None:
-            valid &= departure < end + pd.Timedelta(days=1)
-        if not valid.any():
-            continue
-        selected = chunk.loc[valid]
-        days = departure.loc[valid].dt.strftime("%Y-%m-%d")
-        for day, group in selected.groupby(days, sort=False):
-            day_path = orders_parts_dir / f"date={day}.csv"
-            group.to_csv(day_path, mode="a", header=day not in written, index=False)
-            written.add(str(day))
-        LOGGER.info(
-            "Partition chunk %d: rows=%d cumulative_rows=%d days=%d",
-            chunk_index, len(chunk), rows_scanned, len(written),
-        )
-
-    sorted_days = sorted(written)
-    LOGGER.info("Partitioned orders into %d departure-day files.", len(sorted_days))
-    return sorted_days
-
-
-def load_orders_from_file(path: str | Path) -> pd.DataFrame:
-    """Load one pre-partitioned departure-day order file and parse its datetimes."""
-    orders = pd.read_csv(path, usecols=ORDER_USE_COLUMNS)
-    orders["departure_time"] = pd.to_datetime(orders["departure_time"], errors="coerce")
-    orders["finish_time"] = pd.to_datetime(orders["finish_time"], errors="coerce")
-    LOGGER.info("Loaded %d orders from %s.", len(orders), path)
-    return orders
 
 
 def filter_valid_orders(orders: pd.DataFrame) -> pd.DataFrame:
@@ -603,12 +510,8 @@ def compute_supply_variables(
     in_service, trip_driver_slots = compute_in_service_od(trip_segments, slot_duration_min, True)
     fleet = compute_fleet_lower_bound(idle_driver_slots, trip_driver_slots)
     slots = generate_slots(trip_segments, idle_windows, slot_duration_min)
-    # Clip the grid to slots that actually carry activity. Fix-1 clips activity to its
-    # natural day, but generate_slots' raw max(trip_end) can still reach past midnight;
-    # padding those empty slots would create zero rows that duplicate the next day's real
-    # rows when daily parts are merged. Restricting the grid to the observed activity span
-    # keeps (slot, cluster) unique across the daily merge (and only drops all-zero edge
-    # slots in full-memory mode).
+    # Restrict the dense grid to slots that actually carry activity (drops all-zero
+    # edge slots that generate_slots' ceil(max trip_end) can introduce).
     observed = pd.to_datetime(
         pd.concat(
             [available["slot_start"], in_service["slot_start"], fleet["slot_start"]],
@@ -667,79 +570,6 @@ def process_orders_frame(
     }
 
 
-def process_day_to_parts(
-    order_file: str | Path,
-    day: str,
-    daily_parts_dir: str | Path,
-    max_gap_minutes: int = MAX_GAP_MINUTES,
-    carpool_merge_gap_s: int = CARPOOL_MERGE_GAP_S,
-    slot_duration_min: int = SLOT_DURATION_MIN,
-    tau_idle_minutes: int = TAU_IDLE_MINUTES,
-) -> dict[str, int | str]:
-    """Load one day's pre-partitioned order file, process it, and write day-level part files."""
-    day_orders = load_orders_from_file(order_file)
-    outputs = process_orders_frame(day_orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min, tau_idle_minutes)
-    day_dir = Path(daily_parts_dir) / f"date={day}"
-    day_dir.mkdir(parents=True, exist_ok=True)
-    summary: dict[str, int | str] = {"date": day, "orders_loaded": len(day_orders)}
-    valid_mask = (
-        day_orders["departure_time"].notna()
-        & day_orders["finish_time"].notna()
-        & (day_orders["finish_time"] > day_orders["departure_time"])
-    )
-    summary["valid_orders"] = int(valid_mask.sum()) if not day_orders.empty else 0
-    summary["invalid_orders"] = int((~valid_mask).sum()) if not day_orders.empty else 0
-
-    for table_name, (filename, _) in OUTPUT_TABLES.items():
-        frame = outputs[table_name]
-        save_csv_gz(frame, day_dir / filename)
-        summary[f"{table_name}_rows"] = len(frame)
-    LOGGER.info("Completed %s summary: %s", day, summary)
-    return summary
-
-
-def write_empty_output(path: str | Path, columns: list[str]) -> None:
-    """Write an empty gzip CSV with only the header row."""
-    save_csv_gz(pd.DataFrame(columns=columns), path)
-
-
-def merge_gzip_csv_parts(part_paths: list[Path], output_path: str | Path, columns: list[str]) -> int:
-    """Merge gzip CSV part files by streaming text without loading them into memory."""
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if not part_paths:
-        write_empty_output(output_path, columns)
-        return 0
-
-    total_rows = 0
-    with gzip.open(output_path, "wt", encoding="utf-8", newline="") as out_handle:
-        wrote_header = False
-        for part_path in sorted(part_paths):
-            with gzip.open(part_path, "rt", encoding="utf-8", newline="") as in_handle:
-                header = in_handle.readline()
-                if header and not wrote_header:
-                    out_handle.write(header)
-                    wrote_header = True
-                for line in in_handle:
-                    out_handle.write(line)
-                    total_rows += 1
-        if not wrote_header:
-            out_handle.write(",".join(columns) + "\n")
-    LOGGER.info("Merged %d parts into %s (%d data rows).", len(part_paths), output_path, total_rows)
-    return total_rows
-
-
-def merge_daily_parts(daily_parts_dir: str | Path, output_dir: str | Path) -> dict[str, int]:
-    """Merge all day-level part files into the final requested output files."""
-    daily_parts_dir = Path(daily_parts_dir)
-    output_dir = Path(output_dir)
-    merged_rows = {}
-    for table_name, (filename, columns) in OUTPUT_TABLES.items():
-        part_paths = list(daily_parts_dir.glob(f"date=*/{filename}"))
-        merged_rows[table_name] = merge_gzip_csv_parts(part_paths, output_dir / filename, columns)
-    return merged_rows
-
-
 def write_json(data: dict, path: str | Path) -> None:
     """Write JSON with a stable indentation for run metadata."""
     path = Path(path)
@@ -782,15 +612,10 @@ def run_pipeline(
     slot_duration_min: int = SLOT_DURATION_MIN,
     merge_demand: bool = MERGE_WITH_DEMAND,
     demand_table: str = DEMAND_TABLE,
-    execution_mode: str = EXECUTION_MODE,
-    io_chunk_rows: int = IO_CHUNK_ROWS,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    keep_daily_parts: bool = False,
-    sample_days: int | None = None,
     tau_idle_minutes: int = TAU_IDLE_MINUTES,
+    n_blocks: int = DRIVER_BLOCKS,
 ) -> dict[str, object]:
-    """Run the complete supply-side reconstruction pipeline and write all outputs."""
+    """Run the supply-side reconstruction (per-driver-chunked) and write all outputs."""
     output_dir = Path(output_dir)
     configure_file_logging(output_dir)
     config_used = {
@@ -802,148 +627,20 @@ def run_pipeline(
         "slot_duration_min": slot_duration_min,
         "merge_demand": merge_demand,
         "demand_table": demand_table,
-        "execution_mode": execution_mode,
-        "io_chunk_rows": io_chunk_rows,
-        "start_date": start_date,
-        "end_date": end_date,
-        "keep_daily_parts": keep_daily_parts,
-        "sample_days": sample_days,
+        "n_blocks": n_blocks,
     }
     write_json(config_used, output_dir / "config_used.json")
-
-    if execution_mode == "daily":
-        return run_daily_pipeline(
-            orders_path=orders_path,
-            output_dir=output_dir,
-            max_gap_minutes=max_gap_minutes,
-            carpool_merge_gap_s=carpool_merge_gap_s,
-            slot_duration_min=slot_duration_min,
-            merge_demand=merge_demand,
-            demand_table=demand_table,
-            io_chunk_rows=io_chunk_rows,
-            start_date=start_date,
-            end_date=end_date,
-            keep_daily_parts=keep_daily_parts,
-            sample_days=sample_days,
-            tau_idle_minutes=tau_idle_minutes,
-        )
-    if execution_mode == "driver-chunked":
-        return run_chunked_pipeline(
-            orders_path=orders_path,
-            output_dir=output_dir,
-            max_gap_minutes=max_gap_minutes,
-            carpool_merge_gap_s=carpool_merge_gap_s,
-            slot_duration_min=slot_duration_min,
-            merge_demand=merge_demand,
-            demand_table=demand_table,
-            tau_idle_minutes=tau_idle_minutes,
-        )
-    if execution_mode != "full-memory":
-        raise ValueError(
-            f"Unsupported execution_mode={execution_mode!r}; expected 'daily', 'full-memory', or 'driver-chunked'."
-        )
-
-    orders = load_orders(orders_path)
-    LOGGER.info("Loaded %d filtered Fifth Ring orders from %s.", len(orders), orders_path)
-    outputs = process_orders_frame(orders, max_gap_minutes, carpool_merge_gap_s, slot_duration_min, tau_idle_minutes)
-    trip_segments = outputs["trip_segments"]
-    driver_chains = outputs["driver_chains"]
-    idle_windows = outputs["idle_windows"]
-    available = outputs["supply_available_floor"]
-    in_service = outputs["supply_inservice_od"]
-    fleet = outputs["supply_fleet_lower_bound"]
-    save_csv_gz(trip_segments, output_dir / "trip_segments.csv.gz")
-    save_csv_gz(driver_chains, output_dir / "driver_chains.csv.gz")
-    save_csv_gz(idle_windows, output_dir / "idle_windows.csv.gz")
-    save_csv_gz(available, output_dir / "supply_available_floor.csv.gz")
-    save_csv_gz(in_service, output_dir / "supply_inservice_od.csv.gz")
-    save_csv_gz(fleet, output_dir / "supply_fleet_lower_bound.csv.gz")
-    if merge_demand:
-        merge_supply_with_demand(output_dir, demand_table)
-
-    summary = {
-        "orders_loaded": len(orders),
-        "trip_segments": len(trip_segments),
-        "driver_chains": len(driver_chains),
-        "idle_windows": len(idle_windows),
-        "available_rows": len(available),
-        "in_service_rows": len(in_service),
-        "fleet_rows": len(fleet),
-    }
-    LOGGER.info("Run summary: %s", summary)
-    write_json(summary, output_dir / "run_summary.json")
-    return summary
-
-
-def run_daily_pipeline(
-    orders_path: str | Path = ORDERS_PATH,
-    output_dir: str | Path = OUTPUT_DIR,
-    max_gap_minutes: int = MAX_GAP_MINUTES,
-    carpool_merge_gap_s: int = CARPOOL_MERGE_GAP_S,
-    slot_duration_min: int = SLOT_DURATION_MIN,
-    merge_demand: bool = MERGE_WITH_DEMAND,
-    demand_table: str = DEMAND_TABLE,
-    io_chunk_rows: int = IO_CHUNK_ROWS,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    keep_daily_parts: bool = False,
-    sample_days: int | None = None,
-    tau_idle_minutes: int = TAU_IDLE_MINUTES,
-) -> dict[str, object]:
-    """Run supply reconstruction independently for each departure natural day."""
-    output_dir = Path(output_dir)
-    daily_parts_dir = output_dir / "_daily_parts"
-    orders_parts_dir = output_dir / "_daily_orders"
-    shutil.rmtree(daily_parts_dir, ignore_errors=True)
-    shutil.rmtree(orders_parts_dir, ignore_errors=True)
-    daily_parts_dir.mkdir(parents=True, exist_ok=True)
-    LOGGER.info("Starting daily supply pipeline. daily_parts_dir=%s", daily_parts_dir)
-
-    # Single streaming pass: bucket orders into per-day files, then read each day once.
-    dates = partition_orders_by_day(orders_path, orders_parts_dir, io_chunk_rows, start_date, end_date)
-    if sample_days is not None:
-        dates = dates[:sample_days]
-    day_summaries = []
-    for day in dates:
-        day_summary = process_day_to_parts(
-            order_file=orders_parts_dir / f"date={day}.csv",
-            day=day,
-            daily_parts_dir=daily_parts_dir,
-            max_gap_minutes=max_gap_minutes,
-            carpool_merge_gap_s=carpool_merge_gap_s,
-            slot_duration_min=slot_duration_min,
-            tau_idle_minutes=tau_idle_minutes,
-        )
-        day_summaries.append(day_summary)
-        write_json({"days": day_summaries}, output_dir / "run_summary.partial.json")
-
-    merged_rows = merge_daily_parts(daily_parts_dir, output_dir)
-    if merge_demand:
-        merge_supply_with_demand(output_dir, demand_table)
-
-    summary = {
-        "execution_mode": "daily",
-        "days_processed": len(dates),
-        "orders_loaded": int(sum(int(day["orders_loaded"]) for day in day_summaries)),
-        "valid_orders": int(sum(int(day["valid_orders"]) for day in day_summaries)),
-        "invalid_orders": int(sum(int(day["invalid_orders"]) for day in day_summaries)),
-        "trip_segments": merged_rows["trip_segments"],
-        "driver_chains": merged_rows["driver_chains"],
-        "idle_windows": merged_rows["idle_windows"],
-        "available_rows": merged_rows["supply_available_floor"],
-        "in_service_rows": merged_rows["supply_inservice_od"],
-        "fleet_rows": merged_rows["supply_fleet_lower_bound"],
-        "daily_summaries": day_summaries,
-    }
-    write_json(summary, output_dir / "run_summary.json")
-    LOGGER.info("Daily run summary: %s", {k: v for k, v in summary.items() if k != "daily_summaries"})
-
-    # The per-day order partition is an internal ingestion temp; always remove it.
-    shutil.rmtree(orders_parts_dir, ignore_errors=True)
-    if not keep_daily_parts:
-        shutil.rmtree(daily_parts_dir, ignore_errors=True)
-        LOGGER.info("Removed daily part directory %s.", daily_parts_dir)
-    return summary
+    return run_chunked_pipeline(
+        orders_path=orders_path,
+        output_dir=output_dir,
+        max_gap_minutes=max_gap_minutes,
+        carpool_merge_gap_s=carpool_merge_gap_s,
+        slot_duration_min=slot_duration_min,
+        n_blocks=n_blocks,
+        merge_demand=merge_demand,
+        demand_table=demand_table,
+        tau_idle_minutes=tau_idle_minutes,
+    )
 
 
 # ==========================================================================
