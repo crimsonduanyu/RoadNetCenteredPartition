@@ -310,16 +310,16 @@ def test_driver_chunked_equals_whole_frame(tmp_path) -> None:
         d["slot_start"] = pd.to_datetime(d["slot_start"])
         return d.sort_values(keys).reset_index(drop=True)
 
-    c_in = norm(pd.read_csv(out_dir / "supply_in_service_od.csv.gz"),
+    c_in = norm(pd.read_csv(out_dir / "supply_inservice_od.csv.gz"),
                 ["slot_start", "origin_cluster_id", "destination_cluster_id"])
-    w_in = norm(whole["supply_in_service_od"], ["slot_start", "origin_cluster_id", "destination_cluster_id"])
+    w_in = norm(whole["supply_inservice_od"], ["slot_start", "origin_cluster_id", "destination_cluster_id"])
     merged = c_in.merge(w_in, on=["slot_start", "origin_cluster_id", "destination_cluster_id"],
                         how="outer", suffixes=("_c", "_w"))
     assert (merged["vehicles_in_service_c"].fillna(0) == merged["vehicles_in_service_w"].fillna(0)).all()
 
     # available / fleet match on the keys present in the (densified) whole-frame output.
-    c_av = norm(pd.read_csv(out_dir / "supply_available_by_cluster.csv.gz"), ["slot_start", "cluster_id"])
-    w_av = norm(whole["supply_available_by_cluster"], ["slot_start", "cluster_id"])
+    c_av = norm(pd.read_csv(out_dir / "supply_available_floor.csv.gz"), ["slot_start", "cluster_id"])
+    w_av = norm(whole["supply_available_floor"], ["slot_start", "cluster_id"])
     av = w_av.merge(c_av, on=["slot_start", "cluster_id"], how="left", suffixes=("_w", "_c"))
     assert (av["available_vehicles_w"] == av["available_vehicles_c"]).all()
 

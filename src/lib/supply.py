@@ -66,8 +66,8 @@ OUTPUT_TABLES = {
     "trip_segments": ("trip_segments.csv.gz", TRIP_SEGMENT_COLUMNS),
     "driver_chains": ("driver_chains.csv.gz", DRIVER_CHAIN_COLUMNS),
     "idle_windows": ("idle_windows.csv.gz", IDLE_WINDOW_COLUMNS),
-    "supply_available_by_cluster": ("supply_available_by_cluster.csv.gz", AVAILABLE_COLUMNS),
-    "supply_in_service_od": ("supply_in_service_od.csv.gz", IN_SERVICE_COLUMNS),
+    "supply_available_floor": ("supply_available_floor.csv.gz", AVAILABLE_COLUMNS),
+    "supply_inservice_od": ("supply_inservice_od.csv.gz", IN_SERVICE_COLUMNS),
     "supply_fleet_lower_bound": ("supply_fleet_lower_bound.csv.gz", FLEET_COLUMNS),
 }
 
@@ -661,8 +661,8 @@ def process_orders_frame(
         "trip_segments": trip_segments,
         "driver_chains": driver_chains,
         "idle_windows": idle_windows,
-        "supply_available_by_cluster": available,
-        "supply_in_service_od": in_service,
+        "supply_available_floor": available,
+        "supply_inservice_od": in_service,
         "supply_fleet_lower_bound": fleet,
     }
 
@@ -761,7 +761,7 @@ def merge_supply_with_demand(
         if column in demand.columns:
             demand[column] = demand[column].astype(str)
 
-    available = pd.read_csv(output_dir / "supply_available_by_cluster.csv.gz")
+    available = pd.read_csv(output_dir / "supply_available_floor.csv.gz")
     fleet = pd.read_csv(output_dir / "supply_fleet_lower_bound.csv.gz")
     available["slot_start"] = pd.to_datetime(available["slot_start"], errors="coerce")
     fleet["slot_start"] = pd.to_datetime(fleet["slot_start"], errors="coerce")
@@ -849,14 +849,14 @@ def run_pipeline(
     trip_segments = outputs["trip_segments"]
     driver_chains = outputs["driver_chains"]
     idle_windows = outputs["idle_windows"]
-    available = outputs["supply_available_by_cluster"]
-    in_service = outputs["supply_in_service_od"]
+    available = outputs["supply_available_floor"]
+    in_service = outputs["supply_inservice_od"]
     fleet = outputs["supply_fleet_lower_bound"]
     save_csv_gz(trip_segments, output_dir / "trip_segments.csv.gz")
     save_csv_gz(driver_chains, output_dir / "driver_chains.csv.gz")
     save_csv_gz(idle_windows, output_dir / "idle_windows.csv.gz")
-    save_csv_gz(available, output_dir / "supply_available_by_cluster.csv.gz")
-    save_csv_gz(in_service, output_dir / "supply_in_service_od.csv.gz")
+    save_csv_gz(available, output_dir / "supply_available_floor.csv.gz")
+    save_csv_gz(in_service, output_dir / "supply_inservice_od.csv.gz")
     save_csv_gz(fleet, output_dir / "supply_fleet_lower_bound.csv.gz")
     if merge_demand:
         merge_supply_with_demand(output_dir, demand_table)
@@ -930,8 +930,8 @@ def run_daily_pipeline(
         "trip_segments": merged_rows["trip_segments"],
         "driver_chains": merged_rows["driver_chains"],
         "idle_windows": merged_rows["idle_windows"],
-        "available_rows": merged_rows["supply_available_by_cluster"],
-        "in_service_rows": merged_rows["supply_in_service_od"],
+        "available_rows": merged_rows["supply_available_floor"],
+        "in_service_rows": merged_rows["supply_inservice_od"],
         "fleet_rows": merged_rows["supply_fleet_lower_bound"],
         "daily_summaries": day_summaries,
     }
@@ -1093,8 +1093,8 @@ def run_chunked_pipeline(
     available_df = _dense_cluster_array_to_frame(B, slots, clusters, "available_vehicles")
     fleet_df = _fleet_arrays_to_frame(Fc, Fg, slots, clusters)
 
-    save_csv_gz(in_service_df, output_dir / "supply_in_service_od.csv.gz")
-    save_csv_gz(available_df, output_dir / "supply_available_by_cluster.csv.gz")
+    save_csv_gz(in_service_df, output_dir / "supply_inservice_od.csv.gz")
+    save_csv_gz(available_df, output_dir / "supply_available_floor.csv.gz")
     save_csv_gz(fleet_df, output_dir / "supply_fleet_lower_bound.csv.gz")
     if merge_demand:
         merge_supply_with_demand(output_dir, demand_table)
