@@ -41,14 +41,12 @@ def build_parser(cfg: dict) -> argparse.ArgumentParser:
     parser.add_argument("--orders-path", default=cfg["orders_path"])
     parser.add_argument("--output-dir", default=cfg["output_dir"])
     parser.add_argument("--max-gap", type=int, default=int(cfg["max_gap_minutes"]))
+    parser.add_argument("--tau-idle", type=int, default=int(cfg.get("tau_idle_minutes", 30)),
+                        help="Idle-judgement cap in minutes (distinct from --max-gap chain formation).")
     parser.add_argument("--carpool-merge-gap-s", type=int, default=int(cfg["carpool_merge_gap_s"]))
     parser.add_argument("--slot-duration", type=int, default=int(cfg["slot_duration_min"]))
-    parser.add_argument("--io-chunk-rows", type=int, default=int(cfg["io_chunk_rows"]))
-    parser.add_argument("--execution-mode", choices=["daily", "full-memory"], default="daily")
-    parser.add_argument("--start-date", default=None, help="First departure date, inclusive (YYYY-MM-DD).")
-    parser.add_argument("--end-date", default=None, help="Last departure date, inclusive (YYYY-MM-DD).")
-    parser.add_argument("--sample-days", type=int, default=None, help="Process only the first N departure dates.")
-    parser.add_argument("--keep-daily-parts", action="store_true", help="Keep _daily_parts after merging.")
+    parser.add_argument("--n-blocks", type=int, default=int(cfg.get("n_blocks", 8)),
+                        help="Number of per-driver chunks for the chunked reconstruction.")
     return parser
 
 
@@ -64,18 +62,14 @@ def main(argv: list[str] | None = None) -> dict:
         orders_path=project_path(args.orders_path),
         output_dir=project_path(args.output_dir),
         max_gap_minutes=args.max_gap,
+        tau_idle_minutes=args.tau_idle,
         carpool_merge_gap_s=args.carpool_merge_gap_s,
         slot_duration_min=args.slot_duration,
-        io_chunk_rows=args.io_chunk_rows,
-        execution_mode=args.execution_mode,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        sample_days=args.sample_days,
-        keep_daily_parts=args.keep_daily_parts,
+        n_blocks=args.n_blocks,
     )
     print("Supply reconstruction summary:")
     for key, value in summary.items():
-        if key != "daily_summaries":
+        if key != "block_summaries":
             print(f"  {key}: {value}")
     return summary
 
