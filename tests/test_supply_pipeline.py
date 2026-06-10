@@ -67,57 +67,36 @@ def test_carpool_interval_merging_overlapping_non_overlapping_and_single() -> No
     assert single["order_ids"] == [4]
 
 
-def test_chain_splitting_at_gap_boundary_and_date_boundary() -> None:
+def test_chain_splitting_by_gap_only_and_crosses_midnight() -> None:
+    """Chains split only by the gap threshold (midnight break removed):
+    - s1->s2 gap exactly 60min -> same chain (boundary inclusive).
+    - s2->s3 gap 61min -> new chain.
+    - s4->s5 gap 11min ACROSS MIDNIGHT -> same chain (would previously split on date).
+    chain_id no longer encodes a date; chain_seq is a continuous per-driver count.
+    """
     module = load_module()
-    segments = pd.DataFrame(
-        [
-            {
-                "segment_id": "s1",
-                "driver_id": 1,
-                "trip_start": pd.Timestamp("2017-06-01 08:00:00"),
-                "trip_end": pd.Timestamp("2017-06-01 08:10:00"),
-                "origin_cluster_id": 1,
-                "destination_cluster_id": 2,
-                "service_type": "exclusive",
-                "order_ids": [1],
-            },
-            {
-                "segment_id": "s2",
-                "driver_id": 1,
-                "trip_start": pd.Timestamp("2017-06-01 09:10:00"),
-                "trip_end": pd.Timestamp("2017-06-01 09:20:00"),
-                "origin_cluster_id": 2,
-                "destination_cluster_id": 3,
-                "service_type": "exclusive",
-                "order_ids": [2],
-            },
-            {
-                "segment_id": "s3",
-                "driver_id": 1,
-                "trip_start": pd.Timestamp("2017-06-01 10:21:00"),
-                "trip_end": pd.Timestamp("2017-06-01 10:30:00"),
-                "origin_cluster_id": 3,
-                "destination_cluster_id": 4,
-                "service_type": "exclusive",
-                "order_ids": [3],
-            },
-            {
-                "segment_id": "s4",
-                "driver_id": 1,
-                "trip_start": pd.Timestamp("2017-06-02 00:05:00"),
-                "trip_end": pd.Timestamp("2017-06-02 00:15:00"),
-                "origin_cluster_id": 4,
-                "destination_cluster_id": 5,
-                "service_type": "exclusive",
-                "order_ids": [4],
-            },
-        ]
-    )
+
+    def seg(sid, start, end, o, d):
+        return {"segment_id": sid, "driver_id": 1, "trip_start": pd.Timestamp(start),
+                "trip_end": pd.Timestamp(end), "origin_cluster_id": o,
+                "destination_cluster_id": d, "service_type": "exclusive", "order_ids": [int(sid[1:])]}
+
+    segments = pd.DataFrame([
+        seg("s1", "2017-06-01 08:00:00", "2017-06-01 08:10:00", 1, 2),
+        seg("s2", "2017-06-01 09:10:00", "2017-06-01 09:20:00", 2, 3),   # gap 60 -> same
+        seg("s3", "2017-06-01 10:21:00", "2017-06-01 10:30:00", 3, 4),   # gap 61 -> new
+        seg("s4", "2017-06-01 23:50:00", "2017-06-01 23:59:00", 4, 5),   # gap >60 -> new
+        seg("s5", "2017-06-02 00:10:00", "2017-06-02 00:20:00", 5, 6),   # gap 11 across midnight -> same
+    ])
 
     chain_segments, chains = module.reconstruct_driver_chains(segments, max_gap_minutes=60)
 
-    assert chain_segments["chain_seq"].tolist() == [1, 1, 2, 1]
-    assert chains["segment_ids"].tolist() == [["s1", "s2"], ["s3"], ["s4"]]
+    assert chain_segments["chain_seq"].tolist() == [1, 1, 2, 3, 3]
+    assert chains["segment_ids"].tolist() == [["s1", "s2"], ["s3"], ["s4", "s5"]]
+    # chain_id is driver_id + per-driver sequence (no date), and the cross-midnight
+    # pair shares one chain_id.
+    assert chain_segments["chain_id"].tolist() == ["1_1", "1_1", "1_2", "1_3", "1_3"]
+    assert "date_" not in chains.columns
 
 
 def test_slot_overlap_logic_inside_straddling_and_outside() -> None:
@@ -230,7 +209,11 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
     trips = pd.read_csv(output_dir / "trip_segments.csv.gz")
     chains = pd.read_csv(output_dir / "driver_chains.csv.gz")
     assert len(trips) == 3
-    assert set(chains["date_"].astype(str)) == {"2017-06-01", "2017-06-02"}
+    # chain_id no longer encodes a date (midnight break removed); driver_chains
+    # carries no date_ column. Daily mode still buckets by departure day, so this
+    # 2-day input still yields chains -- we just no longer assert on date_.
+    assert "date_" not in chains.columns
+    assert len(chains) >= 2 and chains["chain_id"].notna().all()
 
     filtered_output = tmp_path / "supply_filtered"
     filtered = module.run_pipeline(
@@ -247,7 +230,9 @@ def test_daily_pipeline_writes_parts_merges_and_respects_date_range(tmp_path) ->
 
     filtered_chains = pd.read_csv(filtered_output / "driver_chains.csv.gz")
     assert filtered["days_processed"] == 1
-    assert set(filtered_chains["date_"].astype(str)) == {"2017-06-02"}
+    # Date-range filtering is verified by days_processed==1; chain_start carries
+    # the timestamp now that chain_id no longer encodes a date.
+    assert pd.to_datetime(filtered_chains["chain_start"]).dt.strftime("%Y-%m-%d").eq("2017-06-02").all()
 
 
 def test_in_service_slots_span_midnight() -> None:

@@ -52,7 +52,6 @@ TRIP_SEGMENT_COLUMNS = [
 DRIVER_CHAIN_COLUMNS = [
     "chain_id",
     "driver_id",
-    "date_",
     "chain_seq",
     "chain_start",
     "chain_end",
@@ -294,13 +293,19 @@ def reconstruct_driver_chains(
     trip_segments: pd.DataFrame,
     max_gap_minutes: int = MAX_GAP_MINUTES,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Assign driver-day chain identifiers using vectorized shifts and cumulative sums."""
+    """Assign driver chain identifiers using vectorized shifts and cumulative sums.
+
+    Chains split ONLY when the inter-trip gap exceeds ``max_gap_minutes``. The
+    former midnight break (``date_ != prev_date``) is removed, so a short
+    cross-midnight gap (<= max_gap) stays one continuous chain and a long one
+    (> max_gap) still splits. ``chain_id`` no longer encodes a calendar date (a
+    chain may span two days); it is ``driver_id`` + a per-driver chain sequence.
+    """
     if trip_segments.empty:
         chains = pd.DataFrame(
             columns=[
                 "chain_id",
                 "driver_id",
-                "date_",
                 "chain_seq",
                 "chain_start",
                 "chain_end",
@@ -314,21 +319,15 @@ def reconstruct_driver_chains(
         ["driver_id", "trip_start", "trip_end", "segment_id"],
         kind="mergesort",
     ).reset_index(drop=True)
-    segments["date_"] = segments["trip_start"].dt.date.astype(str)
     prev_end = segments.groupby("driver_id")["trip_end"].shift()
-    prev_date = segments.groupby("driver_id")["date_"].shift()
     gap_min = (segments["trip_start"] - prev_end).dt.total_seconds().div(60)
-    new_chain = prev_end.isna() | (gap_min > max_gap_minutes) | segments["date_"].ne(prev_date)
-    segments["chain_seq"] = new_chain.groupby([segments["driver_id"], segments["date_"]]).cumsum().astype("int64")
+    new_chain = prev_end.isna() | (gap_min > max_gap_minutes)
+    segments["chain_seq"] = new_chain.groupby(segments["driver_id"]).cumsum().astype("int64")
     segments["chain_id"] = (
-        segments["driver_id"].astype(str)
-        + "_"
-        + segments["date_"].astype(str)
-        + "_"
-        + segments["chain_seq"].astype(str)
+        segments["driver_id"].astype(str) + "_" + segments["chain_seq"].astype(str)
     )
 
-    grouped = segments.groupby(["chain_id", "driver_id", "date_", "chain_seq"], sort=False)
+    grouped = segments.groupby(["chain_id", "driver_id", "chain_seq"], sort=False)
     chains = grouped.agg(
         chain_start=("trip_start", "first"),
         chain_end=("trip_end", "last"),
@@ -336,10 +335,10 @@ def reconstruct_driver_chains(
         segment_ids=("segment_id", list),
     ).reset_index()
 
-    chain_counts = chains.groupby(["driver_id", "date_"], as_index=False)["chain_id"].nunique()
-    anomalies = chain_counts.loc[chain_counts["chain_id"] > 5]
+    chain_counts = chains.groupby("driver_id", as_index=False)["chain_id"].nunique()
+    anomalies = chain_counts.loc[chain_counts["chain_id"] > 200]
     if not anomalies.empty:
-        LOGGER.warning("Drivers with >5 chains on the same day: %d driver-days.", len(anomalies))
+        LOGGER.warning("Drivers with >200 chains over the window: %d drivers.", len(anomalies))
     return segments, chains
 
 
