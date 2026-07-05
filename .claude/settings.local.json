@@ -19,7 +19,10 @@
       "Bash(cmd.exe /c \"C:\\\\Users\\\\Administrator\\\\miniconda3\\\\envs\\\\bj_road_partition\\\\python.exe src\\\\04_visualize_clusters.py\")",
       "Bash(rm -f outputs/figures/*.png)",
       "Bash(python src/04_visualize_clusters.py)",
-      "Bash(rm -f outputs/figures/*.png && python src/04_visualize_clusters.py && ls -lh outputs/figures)"
+      "Bash(rm -f outputs/figures/*.png && python src/04_visualize_clusters.py && ls -lh outputs/figures)",
+      "Bash(ls docs/)",
+      "Bash(ls)",
+      "Bash(cd C:/Users/Administrator/Desktop && ls -d */ 2>/dev/null | head -50; echo \"---Rebalance?---\"; ls Rebalance/ 2>/dev/null)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\Desktop\\RoadNetCenteredPartition",

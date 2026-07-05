@@ -100,8 +100,9 @@ evaluation:
 visualization:
   output_dir: regularized_zoning_experiments/runs/v2_fifth_ring_road_poi_order_lc1_lr1_k100/figures
   dpi: 300
-  map_size_px: 2400
-  panel_map_size_px: 1500
+  map_size_px: 1800
+  panel_map_size_px: 1200
+  export_pdf: true
   linewidth: 0.45
   cluster_palette_strategy: adjacency_contrast
   cluster_line_halo: true

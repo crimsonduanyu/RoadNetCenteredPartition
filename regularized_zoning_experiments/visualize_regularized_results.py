@@ -57,6 +57,8 @@ class BestSelection:
 
 
 def project_path(path_value: str | Path) -> Path:
+    if isinstance(path_value, str):
+        path_value = path_value.replace("\\", "/")
     path = Path(path_value)
     return path if path.is_absolute() else PROJECT_ROOT / path
 
@@ -486,10 +488,67 @@ def plot_cluster_map(
     draw_cluster_lines(draw, clusters, transform, color_map, linewidth, dpi, config)
     draw_lines(draw, boundary.geometry, transform, rgba("#111111"), line_width_px(1.2, dpi))
     if title:
-        draw.rectangle((0, 0, size_px, int(size_px * 0.055)), fill=(255, 255, 255, 230))
         draw.text((int(size_px * 0.025), int(size_px * 0.017)), title, fill=(20, 20, 20, 255))
     image.convert("RGB").save(output_path)
     return image
+
+
+def plot_cluster_map_pdf(
+    clusters: gpd.GeoDataFrame,
+    connectors: gpd.GeoDataFrame,
+    boundary: gpd.GeoDataFrame,
+    graph: nx.Graph,
+    config: dict[str, Any],
+    output_path: Path,
+    size_px: int,
+    linewidth: float,
+    dpi: int,
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    minx, miny, maxx, maxy = gdf_bounds(boundary)
+    center_x = (minx + maxx) / 2
+    center_y = (miny + maxy) / 2
+    view_span = max(maxx - minx, maxy - miny) / 0.95
+
+    figure_size = size_px / dpi
+    fig, ax = plt.subplots(figsize=(figure_size, figure_size))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    def plot_lines(geometries, color: str, width: float, alpha: float = 1.0, zorder: int = 1) -> None:
+        for geometry in geometries:
+            for coords in iter_line_coords(geometry):
+                if len(coords) < 2:
+                    continue
+                xs = [point[0] for point in coords]
+                ys = [point[1] for point in coords]
+                ax.plot(xs, ys, color=color, linewidth=width, alpha=alpha, zorder=zorder)
+
+    if not connectors.empty:
+        connector_alpha = int(config["visualization"].get("connector_alpha", 70)) / 255
+        plot_lines(connectors.geometry, "#bdbdbd", linewidth * 0.45, connector_alpha, 1)
+
+    cluster_ids = sorted(clusters["cluster_id"].dropna().unique().tolist(), key=lambda value: str(value))
+    color_map, _ = make_cluster_color_map(cluster_ids, clusters, graph, config)
+    if bool(config["visualization"].get("cluster_line_halo", True)):
+        halo_multiplier = float(config["visualization"].get("cluster_line_halo_multiplier", 2.5))
+        for _, group in clusters.groupby("cluster_id"):
+            plot_lines(group.geometry, "#ffffff", linewidth * halo_multiplier, 0.92, 2)
+    for cluster_id, group in clusters.groupby("cluster_id"):
+        plot_lines(group.geometry, color_map[cluster_id], linewidth, 1.0, 3)
+
+    plot_lines(boundary.geometry, "#111111", 1.2, 1.0, 4)
+    ax.set_xlim(center_x - view_span / 2, center_x + view_span / 2)
+    ax.set_ylim(center_y - view_span / 2, center_y + view_span / 2)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    fig.savefig(output_path, format="pdf", facecolor="white", edgecolor="none")
+    plt.close(fig)
 
 
 def plot_zoom_map(
@@ -848,7 +907,7 @@ def plot_metric_comparison(metrics: pd.DataFrame, best: BestSelection, config: d
     image.save(figures_dir / "best_vs_baselines_metrics.png")
 
 
-def verify_pngs(figures_dir: Path, expected: list[str]) -> None:
+def verify_outputs(figures_dir: Path, expected: list[str]) -> None:
     missing = []
     empty = []
     for name in expected:
@@ -920,8 +979,20 @@ def main(argv: list[str] | None = None) -> None:
         map_size_px,
         linewidth,
         dpi,
-        f"Best regularized: {best.run_id}",
+        None,
     )
+    if bool(config["visualization"].get("export_pdf", True)):
+        plot_cluster_map_pdf(
+            best_clusters,
+            connectors,
+            boundary,
+            graph,
+            config,
+            best_map.with_suffix(".pdf"),
+            map_size_px,
+            linewidth,
+            dpi,
+        )
 
     comparison_panels = []
     for algorithm in config["visualization"]["baseline_algorithms"]:
@@ -967,6 +1038,7 @@ def main(argv: list[str] | None = None) -> None:
 
     expected = [
         "best_partition_map.png",
+        *(["best_partition_map.pdf"] if bool(config["visualization"].get("export_pdf", True)) else []),
         "baseline_vs_best_maps.png",
         "best_connector_zoom.png",
         "objective_trace_best.png",
@@ -975,7 +1047,7 @@ def main(argv: list[str] | None = None) -> None:
         *[f"tradeoff_{pair['name']}.png" for pair in config["visualization"]["tradeoff_pairs"]],
         *[f"heatmap_{initialization}.png" for initialization in sorted(metrics.loc[metrics["source_type"] == "regularized", "initialization"].dropna().unique())],
     ]
-    verify_pngs(figures_dir, expected)
+    verify_outputs(figures_dir, expected)
     print(f"Selected best run: {best.run_id} (balanced_score={best.balanced_score:.6f})")
     print(f"Saved figures to {figures_dir}")
     print(f"Saved best summary to {tables_dir / 'best_selection_summary.csv'}")
