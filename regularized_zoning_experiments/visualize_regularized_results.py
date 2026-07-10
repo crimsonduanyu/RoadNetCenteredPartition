@@ -44,6 +44,57 @@ FALLBACK_COLORS = [
     "#447711",
 ]
 
+BLUE_MONO_COLORS = [
+    "#071d36",
+    "#0a2a4f",
+    "#0b376c",
+    "#0c4a8a",
+    "#0f5fa8",
+    "#1976c2",
+    "#2f8bd4",
+    "#55a1df",
+    "#7bb7e8",
+    "#a5cdef",
+    "#c4dff4",
+    "#dbeaf7",
+    "#132f4c",
+    "#1f4569",
+    "#2f5d82",
+    "#477696",
+    "#638eaa",
+    "#83a8bf",
+    "#a6bfce",
+    "#c7d5de",
+    "#111111",
+    "#252a2e",
+    "#3b444c",
+    "#58636d",
+    "#758390",
+    "#95a3ad",
+    "#b4c0c9",
+    "#d0d9df",
+    "#05152a",
+    "#082243",
+    "#0a315f",
+    "#0b417b",
+    "#135594",
+    "#236baa",
+    "#3d82bd",
+    "#5a99cd",
+    "#7aafd9",
+    "#9cc5e4",
+    "#bad7eb",
+    "#d4e6f0",
+    "#162435",
+    "#24384c",
+    "#354e64",
+    "#4b667c",
+    "#647f93",
+    "#8199aa",
+    "#9fb4c1",
+    "#bdccd4",
+]
+
 
 @dataclass(frozen=True)
 class BestSelection:
@@ -331,8 +382,9 @@ def build_cluster_adjacency(graph: nx.Graph, partition: dict[str, Any]) -> dict[
 def make_adjacency_contrast_color_map(
     cluster_ids: list[Any],
     cluster_adjacency: dict[Any, set[Any]],
+    palette_override: list[str] | None = None,
 ) -> dict[Any, str]:
-    palette = generate_high_contrast_palette()
+    palette = list(palette_override) if palette_override else generate_high_contrast_palette()
     if not palette:
         palette = FALLBACK_COLORS
     assigned: dict[Any, str] = {}
@@ -391,7 +443,11 @@ def cluster_color_diagnostics(
     return pd.DataFrame(rows).sort_values(["min_adjacent_color_distance", "degree"], ascending=[True, False])
 
 
-def make_canvas(bounds: tuple[float, float, float, float], size_px: int) -> tuple[Image.Image, ImageDraw.ImageDraw, callable]:
+def make_canvas(
+    bounds: tuple[float, float, float, float],
+    size_px: int,
+    background: tuple[int, int, int, int] = (255, 255, 255, 255),
+) -> tuple[Image.Image, ImageDraw.ImageDraw, callable]:
     minx, miny, maxx, maxy = bounds
     width = maxx - minx
     height = maxy - miny
@@ -404,7 +460,7 @@ def make_canvas(bounds: tuple[float, float, float, float], size_px: int) -> tupl
     offset_x = padding + (drawable - width * scale) / 2
     offset_y = padding + (drawable - height * scale) / 2
 
-    image = Image.new("RGBA", (size_px, size_px), (255, 255, 255, 255))
+    image = Image.new("RGBA", (size_px, size_px), background)
     draw = ImageDraw.Draw(image, "RGBA")
 
     def transform(x: float, y: float) -> tuple[float, float]:
@@ -439,11 +495,14 @@ def make_cluster_color_map(
 ) -> tuple[dict[Any, str], dict[Any, set[Any]]]:
     partition = partition_from_clusters(clusters)
     adjacency = build_cluster_adjacency(graph, partition)
-    strategy = config["visualization"].get("cluster_palette_strategy", "adjacency_contrast")
+    visualization = config["visualization"]
+    strategy = visualization.get("cluster_palette_strategy", "adjacency_contrast")
+    palette_override = visualization.get("cluster_palette_override")
     if strategy == "adjacency_contrast":
-        return make_adjacency_contrast_color_map(cluster_ids, adjacency), adjacency
+        return make_adjacency_contrast_color_map(cluster_ids, adjacency, palette_override), adjacency
+    palette = palette_override or FALLBACK_COLORS
     fallback = {
-        cluster_id: FALLBACK_COLORS[index % len(FALLBACK_COLORS)]
+        cluster_id: palette[index % len(palette)]
         for index, cluster_id in enumerate(cluster_ids)
     }
     return fallback, adjacency
@@ -461,8 +520,9 @@ def draw_cluster_lines(
 ) -> None:
     if bool(config["visualization"].get("cluster_line_halo", True)):
         halo_multiplier = float(config["visualization"].get("cluster_line_halo_multiplier", 2.5)) * multiplier
+        halo_color = str(config["visualization"].get("cluster_line_halo_color", "#ffffff"))
         for _, group in clusters.groupby("cluster_id"):
-            draw_lines(draw, group.geometry, transform, rgba("#ffffff", 235), line_width_px(linewidth, dpi, halo_multiplier))
+            draw_lines(draw, group.geometry, transform, rgba(halo_color, 235), line_width_px(linewidth, dpi, halo_multiplier))
     for cluster_id, group in clusters.groupby("cluster_id"):
         draw_lines(draw, group.geometry, transform, rgba(color_map[cluster_id]), line_width_px(linewidth, dpi, multiplier))
 
@@ -478,8 +538,10 @@ def plot_cluster_map(
     linewidth: float,
     dpi: int,
     title: str | None = None,
+    transparent_background: bool = False,
 ) -> Image.Image:
-    image, draw, transform = make_canvas(gdf_bounds(boundary), size_px)
+    background = (255, 255, 255, 0) if transparent_background else (255, 255, 255, 255)
+    image, draw, transform = make_canvas(gdf_bounds(boundary), size_px, background)
     if not connectors.empty:
         connector_alpha = int(config["visualization"].get("connector_alpha", 70))
         draw_lines(draw, connectors.geometry, transform, rgba("#bdbdbd", connector_alpha), line_width_px(linewidth, dpi, 0.45))
@@ -489,11 +551,14 @@ def plot_cluster_map(
     draw_lines(draw, boundary.geometry, transform, rgba("#111111"), line_width_px(1.2, dpi))
     if title:
         draw.text((int(size_px * 0.025), int(size_px * 0.017)), title, fill=(20, 20, 20, 255))
-    image.convert("RGB").save(output_path)
+    if transparent_background:
+        image.save(output_path)
+    else:
+        image.convert("RGB").save(output_path)
     return image
 
 
-def plot_cluster_map_pdf(
+def plot_cluster_map_vector(
     clusters: gpd.GeoDataFrame,
     connectors: gpd.GeoDataFrame,
     boundary: gpd.GeoDataFrame,
@@ -509,6 +574,10 @@ def plot_cluster_map_pdf(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    output_format = output_path.suffix.lstrip(".").lower()
+    if output_format not in {"pdf", "svg"}:
+        raise ValueError(f"Unsupported vector map format: {output_path.suffix}")
+
     minx, miny, maxx, maxy = gdf_bounds(boundary)
     center_x = (minx + maxx) / 2
     center_y = (miny + maxy) / 2
@@ -516,8 +585,8 @@ def plot_cluster_map_pdf(
 
     figure_size = size_px / dpi
     fig, ax = plt.subplots(figsize=(figure_size, figure_size))
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("white")
+    fig.patch.set_alpha(0)
+    ax.set_facecolor("none")
 
     def plot_lines(geometries, color: str, width: float, alpha: float = 1.0, zorder: int = 1) -> None:
         for geometry in geometries:
@@ -536,8 +605,9 @@ def plot_cluster_map_pdf(
     color_map, _ = make_cluster_color_map(cluster_ids, clusters, graph, config)
     if bool(config["visualization"].get("cluster_line_halo", True)):
         halo_multiplier = float(config["visualization"].get("cluster_line_halo_multiplier", 2.5))
+        halo_color = str(config["visualization"].get("cluster_line_halo_color", "#ffffff"))
         for _, group in clusters.groupby("cluster_id"):
-            plot_lines(group.geometry, "#ffffff", linewidth * halo_multiplier, 0.92, 2)
+            plot_lines(group.geometry, halo_color, linewidth * halo_multiplier, 0.92, 2)
     for cluster_id, group in clusters.groupby("cluster_id"):
         plot_lines(group.geometry, color_map[cluster_id], linewidth, 1.0, 3)
 
@@ -547,7 +617,7 @@ def plot_cluster_map_pdf(
     ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    fig.savefig(output_path, format="pdf", facecolor="white", edgecolor="none")
+    fig.savefig(output_path, format=output_format, transparent=True, facecolor="none", edgecolor="none")
     plt.close(fig)
 
 
@@ -980,19 +1050,57 @@ def main(argv: list[str] | None = None) -> None:
         linewidth,
         dpi,
         None,
+        transparent_background=True,
     )
     if bool(config["visualization"].get("export_pdf", True)):
-        plot_cluster_map_pdf(
-            best_clusters,
-            connectors,
-            boundary,
-            graph,
-            config,
-            best_map.with_suffix(".pdf"),
-            map_size_px,
-            linewidth,
-            dpi,
-        )
+        for vector_suffix in (".pdf", ".svg"):
+            plot_cluster_map_vector(
+                best_clusters,
+                connectors,
+                boundary,
+                graph,
+                config,
+                best_map.with_suffix(vector_suffix),
+                map_size_px,
+                linewidth,
+                dpi,
+            )
+
+    blue_config = {
+        **config,
+        "visualization": {
+            **config["visualization"],
+            "cluster_palette_override": BLUE_MONO_COLORS,
+            "cluster_line_halo_color": "#d8e2ee",
+        },
+    }
+    best_blue_map = figures_dir / "best_partition_map_blue.png"
+    plot_cluster_map(
+        best_clusters,
+        connectors,
+        boundary,
+        graph,
+        blue_config,
+        best_blue_map,
+        map_size_px,
+        linewidth,
+        dpi,
+        None,
+        transparent_background=True,
+    )
+    if bool(config["visualization"].get("export_pdf", True)):
+        for vector_suffix in (".pdf", ".svg"):
+            plot_cluster_map_vector(
+                best_clusters,
+                connectors,
+                boundary,
+                graph,
+                blue_config,
+                best_blue_map.with_suffix(vector_suffix),
+                map_size_px,
+                linewidth,
+                dpi,
+            )
 
     comparison_panels = []
     for algorithm in config["visualization"]["baseline_algorithms"]:
@@ -1038,7 +1146,17 @@ def main(argv: list[str] | None = None) -> None:
 
     expected = [
         "best_partition_map.png",
-        *(["best_partition_map.pdf"] if bool(config["visualization"].get("export_pdf", True)) else []),
+        *(
+            ["best_partition_map.pdf", "best_partition_map.svg"]
+            if bool(config["visualization"].get("export_pdf", True))
+            else []
+        ),
+        "best_partition_map_blue.png",
+        *(
+            ["best_partition_map_blue.pdf", "best_partition_map_blue.svg"]
+            if bool(config["visualization"].get("export_pdf", True))
+            else []
+        ),
         "baseline_vs_best_maps.png",
         "best_connector_zoom.png",
         "objective_trace_best.png",
