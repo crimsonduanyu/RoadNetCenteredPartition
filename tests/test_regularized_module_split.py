@@ -32,8 +32,8 @@ EXPECTED_DEFINITIONS = {
     },
     "partition.py": {
         "load_config", "require_keys", "validate_config", "load_graph",
-        "load_demand", "load_partition", "save_partition",
-        "write_run_config", "append_rows", "run_from_config",
+        "load_demand", "load_partition",
+        "write_run_config", "append_rows", "run_from_config", "run_partition",
     },
 }
 

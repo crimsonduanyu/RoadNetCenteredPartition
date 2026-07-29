@@ -11,6 +11,8 @@ import pandas as pd
 import yaml
 
 from roadnet_partition.io.geospatial import PROJECT_ROOT, project_path
+from roadnet_partition.pipeline.results import StageResult, StageStatus
+from roadnet_partition.zoning.contracts import save_partition
 from roadnet_partition.zoning.regularized.objective import ObjectiveParams, build_context
 from roadnet_partition.zoning.regularized.search import (
     SearchParams, normalize_partition_to_target, relabel_partition, run_search,
@@ -112,29 +114,6 @@ def load_partition(path: Path, graph_nodes: set[str]) -> dict[str, int]:
     if extra:
         partition = {node: label for node, label in partition.items() if node in graph_nodes}
     return relabel_partition(partition)
-
-def save_partition(
-    output_path: Path,
-    csv_path: Path,
-    base_segments: gpd.GeoDataFrame,
-    partition: dict[str, int],
-    initialization: str,
-    current_setting_id: str,
-    overwrite: bool,
-) -> None:
-    if output_path.exists() and overwrite:
-        output_path.unlink()
-    if csv_path.exists() and overwrite:
-        csv_path.unlink()
-    segments = base_segments.copy()
-    segments["seg_id"] = segments["seg_id"].astype(str)
-    segments["cluster_id"] = segments["seg_id"].map(partition)
-    if segments["cluster_id"].isna().any():
-        raise ValueError(f"Output partition is missing labels for {int(segments['cluster_id'].isna().sum())} segments.")
-    segments["regularized_init"] = initialization
-    segments["setting_id"] = current_setting_id
-    segments.to_file(output_path, driver="GPKG")
-    segments.drop(columns="geometry").to_csv(csv_path, index=False)
 
 def write_run_config(output_root: Path, config: dict[str, Any], config_path: Path) -> None:
     copied = dict(config)
@@ -317,3 +296,20 @@ def run_from_config(config: dict[str, Any], config_path: Path) -> None:
     print(f"Saved manifest to {manifest_path}")
     print(f"Saved objective trace to {trace_path}")
 
+
+def run_partition(config: dict[str, Any], output_root: Path, config_path: Path) -> StageResult:
+    """Run regularized partitioning with an explicit, caller-owned output root."""
+    resolved_output = Path(output_root).expanduser().resolve()
+    run_config = dict(config)
+    run_config["outputs"] = {**dict(config["outputs"]), "root": str(resolved_output)}
+    validate_config(run_config)
+    run_from_config(run_config, Path(config_path).expanduser().resolve())
+    return StageResult(
+        stage="partition",
+        status=StageStatus.COMPLETE,
+        outputs={
+            "root": resolved_output,
+            "manifest": resolved_output / "tables" / "run_manifest.csv",
+            "objective_trace": resolved_output / "tables" / "objective_trace.csv",
+        },
+    )

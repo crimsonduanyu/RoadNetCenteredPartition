@@ -7,10 +7,10 @@ from roadnet_partition.zoning.partition import (
     load_graph,
     load_partition,
     run_from_config,
-    save_partition,
     validate_config,
     write_run_config,
 )
+from roadnet_partition.zoning.contracts import save_partition
 from roadnet_partition.zoning.regularized import *  # noqa: F401,F403
 from roadnet_partition.io.geospatial import project_path
 
