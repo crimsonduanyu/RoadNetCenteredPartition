@@ -79,7 +79,7 @@ def test_business_stages_and_contracts_do_not_import_cli() -> None:
     assert not {path: names for path, names in violations.items() if names}
 
 
-def test_public_cli_registers_only_single_stage_commands() -> None:
+def test_public_cli_registers_phase6a_stages_and_phase6b_run() -> None:
     parser = build_parser()
     subparsers = next(
         action for action in parser._actions
@@ -87,8 +87,8 @@ def test_public_cli_registers_only_single_stage_commands() -> None:
     )
     registered = set(subparsers.choices)
 
-    assert registered == ALLOWED_STAGES
-    assert registered.isdisjoint(FORBIDDEN_COMMANDS)
+    assert registered == ALLOWED_STAGES | {"run"}
+    assert registered.isdisjoint(FORBIDDEN_COMMANDS - {"run"})
 
 
 def test_stage_executor_has_dispatch_but_no_subprocess_or_stage_sequence() -> None:
