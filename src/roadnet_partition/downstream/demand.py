@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 import gzip
@@ -12,6 +13,7 @@ from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
 import pandas as pd
 
+from roadnet_partition.config import ResolvedStageConfig
 from roadnet_partition.graphs.build import (
     build_cluster_distance_graph, build_cluster_poi_graph, build_cluster_road_edges,
     save_graph_assets,
@@ -19,6 +21,7 @@ from roadnet_partition.graphs.build import (
 from roadnet_partition.io.geospatial import (
     PROJECT_ROOT, display_path, match_points_to_segments_with_distance, project_path,
 )
+from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 
 EXCLUSIVE = "exclusive"
 CARPOOL = "carpool"
@@ -602,9 +605,7 @@ def json_safe(value: Any) -> Any:
         return str(value)
     return value
 
-def main(argv: list[str] | None = None) -> None:
-    argv = argv or sys.argv[1:]
-    config = load_project_config(argv[0] if argv else None)
+def run_from_config(config: dict[str, Any]) -> None:
     if "order_pipeline" not in config:
         raise ValueError("config.yaml must contain an order_pipeline section.")
 
@@ -709,3 +710,57 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Saved order-region pipeline outputs to {output_dir}")
     print(f"Saved metadata to {metadata_path}")
 
+
+def main(argv: list[str] | None = None) -> None:
+    argv = argv or sys.argv[1:]
+    run_from_config(load_project_config(argv[0] if argv else None))
+
+
+def run_demand(config: ResolvedStageConfig, context: RunContext) -> StageResult:
+    if context.stage_dir is None or context.stage_name != "demand":
+        raise ValueError("run_demand requires context.for_stage('demand')")
+    output_dir = context.stage_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    values = deepcopy(dict(config.values))
+    if "order_pipeline" not in values:
+        raise ValueError("configuration must contain an order_pipeline section")
+    values["order_pipeline"] = deepcopy(dict(values["order_pipeline"]))
+    values["order_pipeline"]["outputs"] = {
+        **dict(values["order_pipeline"].get("outputs", {})),
+        "root": str(output_dir),
+    }
+    run_from_config(values)
+
+    suffix = f"{int(values['order_pipeline']['time_slot_minutes'])}min"
+    names = {
+        "cluster_index": "cluster_index.csv",
+        "orders_region_assigned": "orders_region_assigned.csv.gz",
+        "cluster_od": f"cluster_od_{suffix}.csv",
+        "od_tensor": f"od_tensor_{suffix}.npz",
+        "metadata": "metadata.json",
+        "road_graph_edges": "cluster_graph_road_edges.csv",
+        "road_adjacency_raw": "cluster_graph_road_adjacency_raw.npz",
+        "road_adjacency_normalized": "cluster_graph_road_adjacency_normalized.npz",
+        "poi_graph_edges": "cluster_graph_poi_edges.csv",
+        "poi_adjacency_raw": "cluster_graph_poi_adjacency_raw.npz",
+        "poi_adjacency_normalized": "cluster_graph_poi_adjacency_normalized.npz",
+        "distance_graph_edges": "cluster_graph_distance_edges.csv",
+        "distance_adjacency_raw": "cluster_graph_distance_adjacency_raw.npz",
+        "distance_adjacency_normalized": "cluster_graph_distance_adjacency_normalized.npz",
+        "poi_features": "cluster_poi_features.csv",
+        "poi_category_mapping": "cluster_poi_category_mapping.csv",
+    }
+    outputs = {name: output_dir / filename for name, filename in names.items() if (output_dir / filename).exists()}
+    metadata = json.loads((output_dir / "metadata.json").read_text(encoding="utf-8"))
+    return StageResult(
+        stage="demand",
+        status=StageStatus.COMPLETE,
+        outputs=outputs,
+        metrics={
+            "orders": int(metadata["order_stats"]["staged_rows"]),
+            "exclusive": int(metadata["service_type_counts"][EXCLUSIVE]),
+            "carpool": int(metadata["service_type_counts"][CARPOOL]),
+            "clusters": int(metadata["num_clusters"]),
+            "tensor_slots": int(metadata["num_tensor_slots"]),
+        },
+    )
