@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 from pathlib import Path
 import pickle
 import shutil
@@ -18,7 +19,9 @@ from roadnet_partition.io.manifests import MANIFEST_FILENAME, atomic_write_json,
 from roadnet_partition.pipeline import runner as runner_module
 from roadnet_partition.pipeline import stages as stages_module
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
-from roadnet_partition.pipeline.stages import ResumeConflictError, RunConflictError, STAGE_ORDER
+from roadnet_partition.pipeline.stages import (
+    ResumeConflictError, RunConflictError, STAGE_ORDER, StageContractError,
+)
 from roadnet_partition.io.paths import UnsafePathError
 from roadnet_partition.pipeline.worker import _load_config, _load_request
 from test_phase6a_cli_e2e import (
@@ -333,3 +336,66 @@ def test_direct_log_open_failure_is_recorded(tmp_path: Path, monkeypatch: pytest
     assert record["status"] == "failed"
     assert record["execution"]["mode"] == "direct"
     assert record["execution"]["exit_code"] is None
+
+
+def test_partition_failure_and_demand_contract_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = resolve_pipeline_config(write_full_fixture(tmp_path / "project"))
+    original_run = stages_module._run_stage
+    monkeypatch.setattr(
+        stages_module, "_run_stage",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("synthetic Partition failure")),
+    )
+    partition_run = tmp_path / "partition-failure"
+    with pytest.raises(RuntimeError, match="Partition failure"):
+        run_pipeline(config, run_dir=partition_run, to_stage="partition", isolate_stages=False)
+    assert load_manifest(partition_run)["stages"]["partition"]["status"] == "failed"
+
+    monkeypatch.setattr(stages_module, "_run_stage", original_run)
+    demand_run = tmp_path / "demand-contract"
+    run_pipeline(config, run_dir=demand_run, to_stage="partition", isolate_stages=False)
+    original_contract = stages_module.validate_stage_contract
+
+    def fail_demand_contract(stage, resolved, outputs):
+        if stage == "demand":
+            raise StageContractError("synthetic Demand contract failure")
+        return original_contract(stage, resolved, outputs)
+
+    monkeypatch.setattr(stages_module, "validate_stage_contract", fail_demand_contract)
+    with pytest.raises(StageContractError, match="Demand contract failure"):
+        run_pipeline(
+            config, run_dir=demand_run, from_stage="demand", to_stage="demand",
+            resume=True, isolate_stages=False,
+        )
+    assert load_manifest(demand_run)["stages"]["demand"]["status"] == "failed"
+
+
+def test_supply_child_nonzero_exit_is_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = resolve_pipeline_config(write_full_fixture(tmp_path / "project"))
+    run_dir = tmp_path / "run"
+    run_pipeline(config, run_dir=run_dir, to_stage="demand", isolate_stages=False)
+
+    class FailedChild:
+        stdout = io.StringIO("")
+        stderr = io.StringIO("synthetic Supply child failure\n")
+
+        def poll(self):
+            return 7
+
+        def wait(self, timeout=None):
+            return 7
+
+        def send_signal(self, _signum):
+            return None
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(runner_module.subprocess, "Popen", lambda *_args, **_kwargs: FailedChild())
+    with pytest.raises(RunConflictError, match="supply worker exited with code 7"):
+        run_pipeline(
+            config, run_dir=run_dir, from_stage="supply", to_stage="supply",
+            resume=True, isolate_stages=True,
+        )
+    record = load_manifest(run_dir)["stages"]["supply"]
+    assert record["status"] == "failed"
+    assert record["execution"]["exit_code"] == 7
