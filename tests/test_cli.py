@@ -7,6 +7,9 @@ import subprocess
 import sys
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 def clean_environment() -> dict[str, str]:
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
@@ -46,4 +49,23 @@ def test_module_entrypoint_reports_version_outside_repository(tmp_path: Path) ->
         text=True,
     )
     assert result.returncode == 0
-    assert result.stdout.strip() == "roadnet-partition 0.1.0"
+    assert result.stdout.strip() == f"roadnet-partition {importlib.metadata.version('roadnet-partition')}"
+
+
+def test_editable_package_imports_outside_repository(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import roadnet_partition; print(roadnet_partition.__version__); print(roadnet_partition.__file__)",
+        ],
+        cwd=tmp_path,
+        env=clean_environment(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    version, module_path = result.stdout.strip().splitlines()
+    assert version == importlib.metadata.version("roadnet-partition")
+    assert Path(module_path).resolve() == PROJECT_ROOT / "src/roadnet_partition/__init__.py"
