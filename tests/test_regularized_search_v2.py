@@ -140,3 +140,71 @@ def test_baseline_for_algorithm_inverts_naming(search_module) -> None:
     assert search_module.baseline_for_algorithm("louvain") == ""
     for init in ["leiden", "louvain", "demand_region_growing"]:
         assert search_module.baseline_for_algorithm(search_module.regularized_algorithm_name(init)) == init
+
+
+def test_fixed_objective_trace_and_accepted_move_order(search_module) -> None:
+    graph = nx.Graph()
+    add_edge(graph, "a", "b", 5.0)
+    add_edge(graph, "b", "c", 1.0)
+    add_edge(graph, "c", "d", 5.0)
+    objective = search_module.ObjectiveParams(
+        capacity_min_ratio=0.8,
+        capacity_max_ratio=1.2,
+        target_clusters=2,
+        capacity_loss="squared_hinge",
+        lambda_c=2.0,
+        lambda_g=1.0,
+        lambda_r=1.0,
+        alpha_cont=1.0,
+        alpha_conn=1.0,
+    )
+    search = search_module.SearchParams(
+        max_passes=3,
+        min_delta=1.0e-9,
+        move_policy="best_improving",
+        enforce_connectivity=True,
+        allow_merge_split=False,
+    )
+    context = search_module.build_context(
+        graph,
+        {"a": 1.0, "b": 1.0, "c": 5.0, "d": 5.0},
+        objective,
+        search,
+    )
+    result, trace, final = search_module.run_search(
+        context,
+        {"a": 0, "b": 0, "c": 0, "d": 1},
+        "unit",
+        "setting",
+    )
+    assert result == {"a": 0, "b": 0, "c": 1, "d": 1}
+    assert [
+        (row["operation"], row["moved_node"], row["source_cluster"], row["target_cluster"])
+        for row in trace
+    ] == [("init", "", "", ""), ("move", "c", 0, 1)]
+    assert trace[1]["accepted_delta"] == -0.6553535353535351
+    assert trace[0]["objective"] == 1.3636363636363635
+    assert final["objective"] == trace[1]["objective"] == 0.7082828282828284
+
+
+def test_grid_setting_order_and_ids(search_module) -> None:
+    config = {
+        "objective": {
+            "lambda_r": 1.0,
+            "alpha_cont": 1.0,
+            "alpha_conn": 1.0,
+            "grid": {"lambda_c": [0.2, 1.0], "lambda_r": [1.0, 4.0]},
+        },
+        "search": {"allow_merge_split": False, "grid": {"merge_split_enabled": [False, True]}},
+    }
+    settings = search_module.build_settings(config)
+    assert [search_module.setting_id(value) for value in settings] == [
+        "lc0p2_lr1p0",
+        "lc0p2_lr1p0_ac1p0_an1p0_mson",
+        "lc0p2_lr4p0",
+        "lc0p2_lr4p0_ac1p0_an1p0_mson",
+        "lc1p0_lr1p0",
+        "lc1p0_lr1p0_ac1p0_an1p0_mson",
+        "lc1p0_lr4p0",
+        "lc1p0_lr4p0_ac1p0_an1p0_mson",
+    ]
