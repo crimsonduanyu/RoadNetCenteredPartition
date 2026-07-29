@@ -43,6 +43,11 @@ regularized_zoning_experiments/runs/
 IntermediateDataForReproduce/*
 !IntermediateDataForReproduce/README.md
 
+# Golden metadata is tracked; payload is local-only unless explicitly reviewed.
+artifacts/golden/*/inputs/**
+artifacts/golden/*/expected/**
+artifacts/golden/*/legacy_comparisons/**
+
 # Geospatial sidecar/index files
 *.gpkg-shm
 *.gpkg-wal
