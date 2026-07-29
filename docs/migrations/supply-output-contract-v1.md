@@ -19,6 +19,18 @@ outputs.
 flag is enabled; Stage 3 does not enable it and it is not in the formal
 allowlist.
 
+`supply_fleet_lower_bound.csv.gz` stores one row per `(slot_start, cluster_id)`.
+`fleet_lower_bound_cluster` is cluster-specific, while
+`global_fleet_lower_bound` is a per-time value repeated on every cluster row in
+that time slot. Contract summaries therefore distinguish:
+
+- `fleet_global_unique_time_sum`: sum one global value per `slot_start`;
+- `fleet_global_repeated_row_sum`: sum the physically stored repeated column.
+
+For the complete dense grid, the repeated-row sum equals the unique-time sum
+times the cluster count. This documents the existing schema; it does not add or
+change output columns.
+
 ## Historical legacy and intermediate files
 
 | File | Current writer | Repository references | Classification / publish decision |

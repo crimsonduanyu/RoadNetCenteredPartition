@@ -190,11 +190,29 @@ def test_supply_contract_accepts_tiny_formal_outputs(tmp_path: Path) -> None:
     output = tmp_path / "supply"
     supply.run_pipeline(orders_path=orders_path, output_dir=output, slot_duration_min=10, n_blocks=10)
 
-    result = validate_supply_outputs(output, expected_cluster_ids=[10, 30, 50, 70])
+    result = validate_supply_outputs(output, expected_cluster_ids=[10, 30, 50, 70], chunksize=1)
 
     assert result["run_summary"]["orders_loaded"] == 7
     assert result["available_floor"]["rows"] == result["fleet_lower_bound"]["rows"]
     assert result["inservice_od"]["totals"]["vehicles_in_service"] > 0
+    fleet = result["fleet_lower_bound"]
+    assert fleet["fleet_global_repeated_row_sum"] == (
+        fleet["fleet_global_unique_time_sum"] * result["run_summary"]["global_clusters"]
+    )
+
+
+def test_supply_contract_rejects_inconsistent_repeated_global_fleet(tmp_path: Path) -> None:
+    orders_path = tmp_path / "orders.csv.gz"
+    write_orders(orders_path)
+    output = tmp_path / "supply"
+    supply.run_pipeline(orders_path=orders_path, output_dir=output, slot_duration_min=10, n_blocks=10)
+    fleet_path = output / "supply_fleet_lower_bound.csv.gz"
+    fleet = pd.read_csv(fleet_path)
+    fleet.loc[1, "global_fleet_lower_bound"] += 1
+    fleet.to_csv(fleet_path, index=False, compression="gzip")
+
+    with pytest.raises(ValueError, match="global_fleet_lower_bound differs"):
+        validate_supply_outputs(output, chunksize=1)
 
 
 def test_partial_summary_never_satisfies_supply_contract(tmp_path: Path) -> None:

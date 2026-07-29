@@ -94,6 +94,26 @@ def _validate_table(
     }
 
 
+def _fleet_global_sums(path: Path, chunksize: int) -> tuple[int, int]:
+    by_slot: dict[str, int] = {}
+    repeated_row_sum = 0
+    for chunk in pd.read_csv(
+        path,
+        usecols=["slot_start", "global_fleet_lower_bound"],
+        chunksize=chunksize,
+    ):
+        repeated_row_sum += int(chunk["global_fleet_lower_bound"].sum())
+        grouped = chunk.groupby("slot_start", sort=False)["global_fleet_lower_bound"]
+        if (grouped.nunique() != 1).any():
+            raise ValueError("global_fleet_lower_bound differs across cluster rows within a slot")
+        for slot, value in grouped.first().items():
+            value = int(value)
+            if slot in by_slot and by_slot[slot] != value:
+                raise ValueError("global_fleet_lower_bound differs across chunks within a slot")
+            by_slot[slot] = value
+    return sum(by_slot.values()), repeated_row_sum
+
+
 def validate_supply_outputs(
     output_dir: Path,
     *,
@@ -167,6 +187,14 @@ def validate_supply_outputs(
         raise ValueError("run_summary global_clusters differs from CSV clusters")
     if available["rows"] != int(summary["global_slots"]) * int(summary["global_clusters"]):
         raise ValueError("available output is not the complete formal slot/cluster grid")
+
+    unique_sum, repeated_sum = _fleet_global_sums(
+        output_dir / TABLES["fleet_lower_bound"]["filename"], chunksize
+    )
+    if repeated_sum != unique_sum * len(dense_clusters):
+        raise ValueError("global fleet repeated-row sum differs from unique-time sum times cluster count")
+    fleet["fleet_global_unique_time_sum"] = unique_sum
+    fleet["fleet_global_repeated_row_sum"] = repeated_sum
 
     config_used = json.loads((output_dir / "config_used.json").read_text(encoding="utf-8"))
     required_config = {
