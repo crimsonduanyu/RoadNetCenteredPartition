@@ -63,3 +63,25 @@ class StageResult:
 class ResumeDecision:
     reusable: bool
     reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ResolvedPipelineConfig:
+    source_path: Path
+    project_root: Path
+    scope: str
+    run_root: Path
+    isolate_stages: bool
+    stages: Mapping[str, Any]
+    values: Mapping[str, Any]
+    fingerprint: str
+
+
+@dataclass(frozen=True)
+class PipelineResult:
+    run_id: str
+    run_dir: Path
+    requested_from: str
+    requested_to: str
+    completed_through: str | None
+    all_required_stages_complete: bool

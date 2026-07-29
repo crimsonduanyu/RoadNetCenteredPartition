@@ -272,6 +272,8 @@ def begin_stage(
     *,
     config_fingerprint: str,
     inputs_fingerprint: str,
+    inputs: Mapping[str, Mapping[str, Any]] | None = None,
+    runtime_bindings: list[Mapping[str, Any]] | None = None,
 ) -> RunContext:
     if context.stage_name is None or context.stage_dir is None:
         raise ValueError("stage context required")
@@ -285,6 +287,8 @@ def begin_stage(
         "directory": context.stage_dir.relative_to(context.run_dir).as_posix(),
         "config_fingerprint": config_fingerprint,
         "input_fingerprint": inputs_fingerprint,
+        "input_records": stable_value(inputs or {}),
+        "runtime_bindings": stable_value(runtime_bindings or []),
         "started_at": utc_now(),
         "outputs": {},
         "metrics": {},
@@ -371,6 +375,7 @@ def evaluate_resume(
     config_fingerprint: str,
     inputs_fingerprint: str,
     required_outputs: Mapping[str, Path],
+    require_run_complete: bool = True,
 ) -> ResumeDecision:
     if context.stage_name is None or context.stage_dir is None:
         return ResumeDecision(False, ("stage context required",))
@@ -379,7 +384,7 @@ def evaluate_resume(
         manifest = verify_run_ownership(context)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
         return ResumeDecision(False, (str(error),))
-    if manifest.get("status") != StageStatus.COMPLETE.value:
+    if require_run_complete and manifest.get("status") != StageStatus.COMPLETE.value:
         reasons.append("manifest run is not complete")
     record = manifest["stages"].get(context.stage_name)
     if record is None or record.get("status") != StageStatus.COMPLETE.value:

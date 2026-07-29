@@ -31,6 +31,20 @@ from roadnet_partition.pipeline.results import RunContext, StageResult, StageSta
 RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 RESOLVED_CONFIG_FILENAME = "resolved_config.json"
 _SOURCE_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+STAGE_ORDER = ("partition", "demand", "supply", "tte")
+PIPELINE_BINDINGS = {
+    "demand": (
+        ("partition", "canonical_partition", "order_pipeline.inputs.partition_gpkg", "partition"),
+    ),
+    "supply": (
+        ("demand", "orders_region_assigned", "stage3_supply.orders_path", "assigned_orders"),
+        ("demand", "cluster_index", "stage3_supply.cluster_index_path", "cluster_index"),
+    ),
+    "tte": (
+        ("demand", "orders_region_assigned", "stage4_tte.inputs.orders_path", "assigned_orders"),
+        ("demand", "cluster_index", "stage4_tte.inputs.cluster_index_path", "cluster_index"),
+    ),
+}
 
 
 class RunConflictError(RuntimeError):
@@ -271,6 +285,13 @@ _OUTPUT_COLLECTORS: dict[str, Callable[[ResolvedStageConfig, Path], dict[str, Pa
 
 def formal_stage_outputs(stage: str, config: ResolvedStageConfig, stage_dir: Path) -> dict[str, Path]:
     return _OUTPUT_COLLECTORS[stage](config, stage_dir)
+
+
+def canonical_partition_output_key(outputs: Mapping[str, Any]) -> str:
+    keys = sorted(name for name in outputs if name.startswith("cluster_gpkg_"))
+    if len(keys) != 1:
+        raise StageContractError(f"pipeline Partition requires exactly one cluster_gpkg_* output, found {keys}")
+    return keys[0]
 
 
 def _partition_contract(config: ResolvedStageConfig, outputs: Mapping[str, Path]) -> dict[str, Any]:
@@ -519,6 +540,9 @@ def execute_stage(
     resume: bool = False,
     overwrite: bool = False,
     overrides: Mapping[str, Any] | None = None,
+    prepared_run_context: RunContext | None = None,
+    prepared_inputs: Mapping[str, Mapping[str, Any]] | None = None,
+    runtime_bindings: list[Mapping[str, Any]] | None = None,
 ) -> StageResult:
     if resume and overwrite:
         raise RunConflictError("--resume and --overwrite are mutually exclusive")
@@ -526,9 +550,16 @@ def execute_stage(
     if config.project_root is None or config.scope is None:
         raise ConfigError(f"{config.source_path}: resolver did not provide project_root/scope")
     project_root = config.project_root.resolve()
+    if prepared_run_context is not None and (run_dir is not None or run_id is not None or overwrite):
+        raise RunConflictError("prepared pipeline execution owns run_dir/run_id/overwrite")
     requested_run_id = None if run_id is None else _validate_run_id(run_id)
     generated_run_id = _validate_run_id(requested_run_id or default_run_id(config))
-    destination = Path(run_dir) if run_dir is not None else project_root / "outputs" / "runs" / generated_run_id
+    destination = (
+        prepared_run_context.run_dir
+        if prepared_run_context is not None
+        else Path(run_dir) if run_dir is not None
+        else project_root / "outputs" / "runs" / generated_run_id
+    )
     resolved_metadata = dict(config.values.get("_resolved", {}))
     destination = assert_safe_run_dir(
         destination,
@@ -538,10 +569,15 @@ def execute_stage(
     )
     existed = destination.exists()
     nonempty = existed and any(destination.iterdir())
-    inputs = collect_stage_inputs(stage, config)
+    inputs = dict(prepared_inputs) if prepared_inputs is not None else collect_stage_inputs(stage, config)
     inputs_fingerprint = input_fingerprint(inputs)
 
-    if nonempty:
+    if prepared_run_context is not None:
+        context = prepared_run_context
+        if context.run_dir.resolve() != destination.resolve() or context.project_root.resolve() != project_root:
+            raise RunConflictError("prepared run context differs from resolved pipeline context")
+        verify_run_ownership(context)
+    elif nonempty:
         if not (resume or overwrite):
             raise RunConflictError(f"run directory already exists; use --resume or --overwrite: {destination}")
         context = _load_existing_context(
@@ -598,6 +634,7 @@ def execute_stage(
             config_fingerprint=config.fingerprint,
             inputs_fingerprint=inputs_fingerprint,
             required_outputs=required_outputs,
+            require_run_complete=prepared_run_context is None,
         )
         if not decision.reusable:
             raise ResumeConflictError("resume rejected: " + "; ".join(decision.reasons))
@@ -611,7 +648,9 @@ def execute_stage(
         status = record.get("status")
         if status == StageStatus.RUNNING.value:
             raise ResumeConflictError("resume rejected: stage is still marked running")
-        if status in {StageStatus.FAILED.value, StageStatus.INTERRUPTED.value, StageStatus.NOT_STARTED.value}:
+        if prepared_run_context is not None and status == StageStatus.NOT_STARTED.value:
+            pass
+        elif status in {StageStatus.FAILED.value, StageStatus.INTERRUPTED.value, StageStatus.NOT_STARTED.value}:
             invalidate_from_stage(context, ordered_stages=[stage], from_stage=stage)
         else:
             raise ResumeConflictError(f"resume rejected: unsupported stage status {status!r}")
@@ -621,6 +660,8 @@ def execute_stage(
             stage_context,
             config_fingerprint=config.fingerprint,
             inputs_fingerprint=inputs_fingerprint,
+            inputs=inputs,
+            runtime_bindings=runtime_bindings,
         )
         raw_result = _run_stage(stage, config, stage_context)
         if raw_result.stage != stage or raw_result.status is not StageStatus.COMPLETE:
