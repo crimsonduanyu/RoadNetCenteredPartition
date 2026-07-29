@@ -2,15 +2,45 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import pickle
 from typing import Any
 
 import geopandas as gpd
 import networkx as nx
 import numpy as np
 import pandas as pd
+import yaml
 
+from roadnet_partition.io.geospatial import PROJECT_ROOT
 from roadnet_partition.zoning.metrics import MetricThresholds, compute_benchmark_metrics
 from roadnet_partition.zoning.regularized.selection import baseline_for_algorithm
+
+
+def project_path(path_value: str | Path) -> Path:
+    path = Path(path_value)
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def load_evaluation_config(config_path: Path) -> dict[str, Any]:
+    with config_path.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def load_optional_csv(path_value: str | Path | None) -> pd.DataFrame | None:
+    if not path_value:
+        return None
+    path = project_path(path_value)
+    if not path.exists():
+        return None
+    return pd.read_csv(path)
+
+
+def load_graph(path: Path) -> nx.Graph:
+    with path.open("rb") as handle:
+        graph = pickle.load(handle)
+    if any(not isinstance(node, str) for node in graph.nodes):
+        graph = nx.relabel_nodes(graph, {node: str(node) for node in graph.nodes})
+    return graph
 
 def dominant_value(series: pd.Series):
     series = series.dropna()
@@ -314,3 +344,78 @@ def build_candidate_selection(metrics: pd.DataFrame, config: dict[str, Any]) -> 
         )
     return pd.DataFrame(rows)
 
+
+def run_regularized_evaluation(config_path: Path) -> None:
+    config = load_evaluation_config(config_path)
+    output_root = project_path(config["outputs"]["root"])
+    tables_dir = output_root / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    graph_variant = str(config["scope"]["graph_variant"])
+    graph = load_graph(project_path(config["inputs"]["graph"]))
+    relation_edges = pd.read_csv(project_path(config["inputs"]["relation_edges"]))
+    poi_features = load_optional_csv(config["inputs"].get("poi_features"))
+    order_features = load_optional_csv(config["inputs"].get("order_features"))
+    hourly_od = load_optional_csv(config["inputs"].get("hourly_od"))
+    thresholds = metric_thresholds(config)
+
+    metric_rows = []
+    connector_type_rows = []
+    for algorithm, path_value in config["inputs"]["baseline_clusters"].items():
+        print(f"Computing baseline metrics for {algorithm}...")
+        row, connector_rows = compute_metric_row(
+            graph_variant, algorithm, baseline_params(algorithm), project_path(path_value),
+            relation_edges, graph, poi_features, order_features, hourly_od, thresholds,
+        )
+        row.update(source_type="baseline", run_id=algorithm, initialization=algorithm, setting_id="")
+        metric_rows.append(row)
+        if connector_rows is not None and not connector_rows.empty:
+            connector_rows = connector_rows.copy()
+            connector_rows["source_type"] = "baseline"
+            connector_rows["run_id"] = algorithm
+            connector_type_rows.append(connector_rows)
+
+    manifest_path = tables_dir / "run_manifest.csv"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Regularized run manifest not found: {manifest_path}. Run run_regularized_search.py first.")
+    manifest = pd.read_csv(manifest_path)
+    for _, manifest_row in manifest.iterrows():
+        run_id = f"{manifest_row['algorithm']}_{manifest_row['setting_id']}"
+        print(f"Computing regularized metrics for {run_id}...")
+        row, connector_rows = compute_metric_row(
+            graph_variant, str(manifest_row["algorithm"]), str(manifest_row["params"]),
+            project_path(manifest_row["clusters_gpkg"]), relation_edges, graph,
+            poi_features, order_features, hourly_od, thresholds,
+        )
+        row.update(
+            source_type="regularized", run_id=run_id,
+            initialization=manifest_row["initialization"], setting_id=manifest_row["setting_id"],
+        )
+        for column in [
+            "lambda_c", "lambda_g", "lambda_r", "alpha_cont", "alpha_conn",
+            "merge_split_enabled", "target_clusters", "capacity_loss", "objective",
+            "r_cap", "r_graph", "r_cont", "r_conn", "r_road", "num_moves",
+        ]:
+            if column in manifest_row:
+                row[column] = manifest_row[column]
+        metric_rows.append(row)
+        if connector_rows is not None and not connector_rows.empty:
+            connector_rows = connector_rows.copy()
+            connector_rows["source_type"] = "regularized"
+            connector_rows["run_id"] = run_id
+            connector_type_rows.append(connector_rows)
+
+    metrics = pd.DataFrame(metric_rows)
+    leading_columns = ["source_type", "run_id", "graph_variant", "algorithm", "initialization", "setting_id"]
+    ordered_columns = [column for column in leading_columns if column in metrics.columns] + [
+        column for column in metrics.columns if column not in leading_columns
+    ]
+    metrics = metrics.loc[:, ordered_columns]
+    metrics_path = tables_dir / "metrics_regularized.csv"
+    metrics.to_csv(metrics_path, index=False)
+    connector_metrics = pd.concat(connector_type_rows, ignore_index=True) if connector_type_rows else pd.DataFrame()
+    connector_metrics.to_csv(tables_dir / "connector_type_metrics_regularized.csv", index=False)
+    build_pareto_summary(metrics, config).to_csv(tables_dir / "pareto_summary.csv", index=False)
+    build_candidate_selection(metrics, config).to_csv(tables_dir / "candidate_selection.csv", index=False)
+    print(f"Saved regularized metrics to {metrics_path}")
+    print(f"Saved Pareto summary to {tables_dir / 'pareto_summary.csv'}")
+    print(f"Saved candidate selection to {tables_dir / 'candidate_selection.csv'}")

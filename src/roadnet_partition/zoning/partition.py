@@ -10,9 +10,18 @@ import networkx as nx
 import pandas as pd
 import yaml
 
-from roadnet_partition.io.geospatial import PROJECT_ROOT, project_path
+from roadnet_partition.io.geospatial import (
+    PROJECT_ROOT, ensure_scope_directories, get_scope_paths, load_config as load_unified_scope_config, project_path,
+)
 from roadnet_partition.pipeline.results import StageResult, StageStatus
-from roadnet_partition.zoning.contracts import save_partition
+from roadnet_partition.zoning.algorithms.leiden import run_leiden
+from roadnet_partition.zoning.algorithms.louvain import run_louvain
+from roadnet_partition.zoning.algorithms.metis import run_metis
+from roadnet_partition.zoning.algorithms.network_voronoi import run_demand_network_voronoi
+from roadnet_partition.zoning.algorithms.region_growing import run_demand_region_growing
+from roadnet_partition.zoning.algorithms.skater import run_skater
+from roadnet_partition.zoning.contracts import save_baseline_partition_outputs, save_partition
+from roadnet_partition.zoning.evaluate import build_ranked_summary, evaluate_partition
 from roadnet_partition.zoning.regularized.objective import ObjectiveParams, build_context
 from roadnet_partition.zoning.regularized.search import (
     SearchParams, normalize_partition_to_target, relabel_partition, run_search,
@@ -20,6 +29,18 @@ from roadnet_partition.zoning.regularized.search import (
 from roadnet_partition.zoning.regularized.selection import (
     build_settings, regularized_algorithm_name, setting_id,
 )
+
+
+ALGORITHM_RUNNERS = {
+    "louvain": run_louvain,
+    "leiden": run_leiden,
+    "skater": run_skater,
+    "metis": run_metis,
+    "demand_network_voronoi": run_demand_network_voronoi,
+    "demand_region_growing": run_demand_region_growing,
+}
+
+CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 def load_config(config_path: Path) -> dict[str, Any]:
     with config_path.open("r", encoding="utf-8") as handle:
@@ -313,3 +334,145 @@ def run_partition(config: dict[str, Any], output_root: Path, config_path: Path) 
             "objective_trace": resolved_output / "tables" / "objective_trace.csv",
         },
     )
+
+
+def run_baseline_partition(config: dict[str, Any], output_root: Path) -> StageResult:
+    """Run configured baseline algorithms beneath an explicit output root."""
+    root = Path(output_root).expanduser().resolve()
+    paths = get_scope_paths(config)
+    paths["input_data_processed"] = paths["data_processed"]
+    paths["data_processed"] = root / "partition"
+    paths["outputs_tables"] = root / "metrics"
+    paths["data_processed"].mkdir(parents=True, exist_ok=True)
+    paths["outputs_tables"].mkdir(parents=True, exist_ok=True)
+    _run_baseline_partition(config, paths)
+    return StageResult(
+        stage="partition",
+        status=StageStatus.COMPLETE,
+        outputs={"partition": paths["data_processed"], "metrics": paths["outputs_tables"]},
+    )
+
+
+def _run_baseline_partition(config: dict[str, Any], paths: dict[str, Path]) -> None:
+    algorithms = config["clustering"].get("algorithms", [config["clustering"].get("method", "louvain")])
+    unknown = [algorithm for algorithm in algorithms if algorithm not in ALGORITHM_RUNNERS]
+    if unknown:
+        raise ValueError(f"Unknown clustering algorithms: {unknown}. Expected one of {list(ALGORITHM_RUNNERS)}.")
+
+    nodes_path = paths["segment_nodes"]
+    print(f"Loading segment nodes from {nodes_path}...")
+    base_segments = gpd.read_file(nodes_path)
+    evaluation_rows = []
+
+    for graph_variant in config["semantic_graph"]["variants"]:
+        graph_path = paths["outputs_graphs"] / f"segment_relation_graph_{graph_variant}.gpickle"
+        edge_path = paths.get("input_data_processed", paths["data_processed"]) / f"segment_relation_edges_{graph_variant}.csv"
+        print(f"Loading {graph_variant} graph from {graph_path}...")
+        with graph_path.open("rb") as handle:
+            graph = pickle.load(handle)
+        edges = pd.read_csv(edge_path)
+        for algorithm in algorithms:
+            print(f"Running {algorithm} on {graph_variant}...")
+            current_partition = ALGORITHM_RUNNERS[algorithm](graph, config)
+            segments, summary, diagnostics = save_baseline_partition_outputs(
+                graph_variant, algorithm, base_segments, current_partition, config, paths,
+            )
+            evaluation_rows.append(evaluate_partition(
+                graph_variant, algorithm, graph, edges, segments, current_partition,
+                summary, diagnostics, paths,
+            ))
+
+    evaluation = pd.DataFrame(evaluation_rows)
+    evaluation_path = paths["outputs_tables"] / "graph_algorithm_evaluation.csv"
+    evaluation.to_csv(evaluation_path, index=False)
+    comparison_path = paths["outputs_tables"] / "comparison_evaluation.csv"
+    evaluation.to_csv(comparison_path, index=False)
+    ranked_path = paths["outputs_tables"] / "graph_algorithm_ranked_summary.csv"
+    build_ranked_summary(evaluation).to_csv(ranked_path, index=False)
+    louvain_only = evaluation.loc[evaluation["algorithm"] == "louvain"].rename(columns={"graph_variant": "variant"})
+    louvain_only.drop(columns=["algorithm"]).to_csv(paths["outputs_tables"] / "graph_variant_evaluation.csv", index=False)
+    print(f"Saved graph algorithm evaluation to {evaluation_path}")
+    print(f"Saved comparison evaluation to {comparison_path}")
+    print(f"Saved ranked summary to {ranked_path}")
+
+
+def legacy_baseline_main() -> None:
+    config = load_unified_scope_config()
+    ensure_scope_directories(config)
+    _run_baseline_partition(config, get_scope_paths(config))
+
+
+def load_unified_config() -> dict:
+    with CONFIG_PATH.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+def build_regularized_config(unified: dict, output_root: str) -> dict:
+    stage1 = unified["stage1_partition"]
+    reg = stage1["regularized"]
+    search_config = dict(reg["search"])
+    search_config["allow_merge_split"] = False
+    search_config["grid"] = {**dict(search_config.get("grid", {})), "merge_split_enabled": [False]}
+    return {
+        "scope": {"active": unified["study_area"]["active"], "graph_variant": stage1["graph_variant"]},
+        "inputs": {**reg["inputs"], "baseline_clusters": reg["baseline_clusters"]},
+        "outputs": {"root": output_root, "overwrite": True, "resume": False},
+        "initializations": [reg["initialization"]],
+        "objective": reg["objective"],
+        "search": search_config,
+        "evaluation": reg["evaluation"],
+    }
+
+
+def verify_output_root(unified: dict) -> Path:
+    run_root = Path(unified["stage1_partition"]["outputs"]["run_root"])
+    return run_root.parent / f"{run_root.name}_stage1_verify"
+
+
+def canonical_setting_stem(unified: dict) -> str:
+    stage1 = unified["stage1_partition"]
+    reg = stage1["regularized"]
+    obj = reg["objective"]
+    algorithm = regularized_algorithm_name(reg["initialization"])
+    from roadnet_partition.zoning.regularized.selection import SearchSetting
+    setting = SearchSetting(
+        lambda_c=float(obj["grid"]["lambda_c"][0]),
+        lambda_r=float(obj["grid"].get("lambda_r", [obj["lambda_r"]])[0]),
+        alpha_cont=float(obj["grid"].get("alpha_cont", [obj["alpha_cont"]])[0]),
+        alpha_conn=float(obj["grid"].get("alpha_conn", [obj["alpha_conn"]])[0]),
+        merge_split_enabled=False,
+    )
+    return f"segment_clusters_{stage1['graph_variant']}_{algorithm}_{setting_id(setting)}"
+
+
+def verify_against_frozen(unified: dict, regenerated_stem: str) -> bool:
+    from roadnet_partition.zoning.contracts import partition_groups
+    frozen = project_path(unified["stage1_partition"]["outputs"]["canonical_partition"])
+    regenerated = verify_output_root(unified) / "clusters" / f"{regenerated_stem}.gpkg"
+    if not regenerated.exists():
+        raise FileNotFoundError(f"Regenerated partition not found: {regenerated}")
+    frozen_groups = partition_groups(gpd.read_file(frozen))
+    regen_groups = partition_groups(gpd.read_file(regenerated))
+    equivalent = frozen_groups == regen_groups
+    print(f"frozen canonical : {frozen}  ({len(frozen_groups)} clusters)")
+    print(f"regenerated      : {regenerated}  ({len(regen_groups)} clusters)")
+    print(f"REPRODUCTION {'PASS: partitions are equivalent' if equivalent else 'FAIL: partitions differ'}")
+    return equivalent
+
+
+def legacy_stage1_main(argv: list[str] | None = None) -> None:
+    import sys
+    argv = argv if argv is not None else sys.argv[1:]
+    verify = "--verify" in argv
+    verify_only = "--verify-only" in argv
+    unified = load_unified_config()
+    stem = canonical_setting_stem(unified)
+    output_root = verify_output_root(unified)
+    if not verify_only:
+        config = build_regularized_config(unified, str(output_root))
+        validate_config(config)
+        print(f"Running regularized search -> {output_root}")
+        run_from_config(config, CONFIG_PATH)
+    if verify or verify_only:
+        ok = verify_against_frozen(unified, stem)
+        sys.exit(0 if ok else 1)

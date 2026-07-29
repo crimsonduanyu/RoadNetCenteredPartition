@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 import geopandas as gpd
+import pandas as pd
+
+from roadnet_partition.zoning.evaluate import build_cluster_summary, build_road_name_diagnostics
 
 
 REQUIRED_PARTITION_COLUMNS = ("seg_id", "cluster_id", "geometry")
@@ -112,3 +115,40 @@ def save_partition(
     segments["setting_id"] = current_setting_id
     segments.to_file(output_path, driver="GPKG")
     segments.drop(columns="geometry").to_csv(csv_path, index=False)
+
+
+def save_baseline_partition_outputs(
+    graph_variant: str,
+    algorithm: str,
+    base_segments: gpd.GeoDataFrame,
+    partition: dict[str, int],
+    config: dict,
+    paths: dict,
+) -> tuple[gpd.GeoDataFrame, pd.DataFrame, pd.DataFrame]:
+    label = f"{graph_variant}_{algorithm}"
+    clusters_path = paths["data_processed"] / f"segment_clusters_{label}.gpkg"
+    clusters_csv_path = paths["data_processed"] / f"segment_clusters_{label}.csv"
+    summary_path = paths["outputs_tables"] / f"cluster_summary_{label}.csv"
+    diagnostics_path = paths["outputs_tables"] / f"road_name_split_diagnostics_{label}.csv"
+
+    segments = base_segments.copy()
+    segments["cluster_id"] = segments["seg_id"].map(partition)
+    segments.to_file(clusters_path, driver="GPKG")
+    segments.drop(columns="geometry").to_csv(clusters_csv_path, index=False)
+
+    summary = build_cluster_summary(segments)
+    diagnostics = build_road_name_diagnostics(segments)
+    summary.to_csv(summary_path, index=False)
+    diagnostics.to_csv(diagnostics_path, index=False)
+
+    default_variant = config.get("evaluation", {}).get("default_variant", "road_only")
+    if graph_variant == default_variant and algorithm == "louvain":
+        segments.to_file(paths["data_processed"] / "segment_clusters.gpkg", driver="GPKG")
+        segments.drop(columns="geometry").to_csv(paths["data_processed"] / "segment_clusters.csv", index=False)
+        summary.to_csv(paths["outputs_tables"] / "cluster_summary.csv", index=False)
+        diagnostics.to_csv(paths["outputs_tables"] / "road_name_split_diagnostics.csv", index=False)
+
+    print(f"{label} clustering completed")
+    print(f"number of clusters: {segments['cluster_id'].nunique():,}")
+    print(f"Saved clustered segments to {clusters_path}")
+    return segments, summary, diagnostics

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import ast
-import inspect
 import networkx as nx
 import pytest
 
@@ -30,14 +28,14 @@ def test_definition_defaults_match_legacy() -> None:
         assert field.default == legacy.AdaptiveParams.__dataclass_fields__[name].default
 
 
-def test_all_adaptive_function_bodies_are_mechanically_identical() -> None:
-    legacy_functions = {name: value for name, value in vars(legacy).items() if inspect.isfunction(value) and value.__module__ == legacy.__name__}
-    migrated_functions = {name: value for name, value in vars(adaptive).items() if inspect.isfunction(value) and value.__module__ == adaptive.__name__}
-    assert migrated_functions.keys() == legacy_functions.keys()
-    for name in legacy_functions:
-        old = ast.parse(inspect.getsource(legacy_functions[name])).body[0]
-        new = ast.parse(inspect.getsource(migrated_functions[name])).body[0]
-        assert ast.dump(new, include_attributes=False) == ast.dump(old, include_attributes=False), name
+def test_legacy_module_is_an_explicit_identity_bridge() -> None:
+    for name in [
+        "adaptive_params", "allocate_component_cluster_counts",
+        "select_demand_weighted_seeds", "grow_component_regions",
+        "improve_boundaries", "run_demand_region_growing",
+        "run_demand_network_voronoi", "relabel_partition",
+    ]:
+        assert getattr(legacy, name) is getattr(adaptive, name)
 
 
 def test_component_budget_errors_and_isolated_node() -> None:

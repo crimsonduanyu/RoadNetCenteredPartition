@@ -20,8 +20,9 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 # Re-export the full core so existing importers (e.g. tests) keep working.
-from lib.regularized import *  # noqa: E402,F401,F403
-from lib.regularized import load_config, project_path, run_from_config, validate_config  # noqa: E402
+from roadnet_partition.zoning.regularized import *  # noqa: E402,F401,F403
+from roadnet_partition.zoning.partition import load_config, run_from_config, validate_config  # noqa: E402
+from roadnet_partition.io.geospatial import project_path  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -1009,6 +1009,15 @@ def write_color_diagnostics(
         )
 
 
+from roadnet_partition.zoning.regularized.selection import (  # noqa: E402
+    BestSelection,
+    add_balanced_score,
+    combined_metric_values,
+    pareto_non_dominated_flags,
+    select_best_run,
+)
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = argv or sys.argv[1:]
     config_path = project_path(argv[0]) if argv else Path(__file__).with_name("config_v1.yaml")
