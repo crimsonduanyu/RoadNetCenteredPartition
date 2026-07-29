@@ -19,7 +19,12 @@ def test_new_package_has_no_legacy_imports_or_path_injection() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name == "lib" or alias.name.startswith("lib."):
+                    if (
+                        alias.name == "lib"
+                        or alias.name.startswith("lib.")
+                        or alias.name == "src"
+                        or alias.name.startswith("src.")
+                    ):
                         violations.append(f"{path}:{node.lineno}: import {alias.name}")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
@@ -87,6 +92,8 @@ def test_migrated_modules_import_from_outside_repository(tmp_path: Path) -> None
         "roadnet_partition.downstream.demand",
         "roadnet_partition.downstream.supply",
         "roadnet_partition.downstream.supply_contracts",
+        "roadnet_partition.downstream.tte",
+        "roadnet_partition.downstream.tte_contracts",
         "roadnet_partition.graphs.build",
         "roadnet_partition.graphs.relations",
         "roadnet_partition.graphs.distance",
@@ -121,3 +128,88 @@ def test_demand_package_boundaries_are_one_way() -> None:
     assert not any(module.endswith(".cli") for module in imports["demand.py"] | imports["demand_contracts.py"])
     assert not any("downstream.demand" in module for module in imports["build.py"] | imports["geospatial.py"])
     assert not any("graphs.build" in module for module in imports["demand_contracts.py"])
+
+
+def test_tte_package_boundaries_are_one_way_and_nonserialized() -> None:
+    paths = {
+        "tte": PACKAGE_ROOT / "downstream" / "tte.py",
+        "contracts": PACKAGE_ROOT / "downstream" / "tte_contracts.py",
+        "distance": PACKAGE_ROOT / "graphs" / "distance.py",
+        "stage4": PROJECT_ROOT / "src" / "stages" / "stage4_tte.py",
+        "bridge": PROJECT_ROOT / "src" / "lib" / "tte_dataset.py",
+    }
+    trees = {
+        name: ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for name, path in paths.items()
+    }
+
+    def imported_names(tree: ast.AST) -> set[str]:
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                names.update(
+                    module if alias.name == "*" else f"{module}.{alias.name}"
+                    for alias in node.names
+                )
+        return names
+
+    imports = {name: imported_names(tree) for name, tree in trees.items()}
+    forbidden_tte = (
+        "lib",
+        "src",
+        "stages",
+        "roadnet_partition.downstream.demand",
+        "roadnet_partition.downstream.supply",
+        "roadnet_partition.cli",
+    )
+    assert not any(
+        imported == prefix or imported.startswith(f"{prefix}.")
+        for imported in imports["tte"]
+        for prefix in forbidden_tte
+    )
+    assert not any(
+        imported.startswith("roadnet_partition.pipeline")
+        or imported.startswith("roadnet_partition.cli")
+        for imported in imports["contracts"]
+    )
+    assert any(
+        imported.startswith("roadnet_partition.graphs.distance")
+        for imported in imports["tte"]
+    )
+    assert not any(
+        imported.startswith("roadnet_partition.downstream.tte")
+        for imported in imports["distance"]
+    )
+
+    stage_application_imports = {
+        imported
+        for imported in imports["stage4"]
+        if imported.startswith(("roadnet_partition", "lib", "src", "stages"))
+    }
+    assert stage_application_imports == {"roadnet_partition.downstream.tte"}
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"insert", "append"}
+        and ast.unparse(node.func).startswith("sys.path.")
+        for node in ast.walk(trees["stage4"])
+    )
+
+    forbidden_dynamic_modules = {"pickle", "joblib", "cloudpickle", "dill", "importlib"}
+    for name, tree in trees.items():
+        assert not any(
+            imported.split(".", 1)[0] in forbidden_dynamic_modules
+            for imported in imports[name]
+        )
+        assert not any(
+            isinstance(node, ast.Call) and ast.unparse(node.func) == "__import__"
+            for node in ast.walk(tree)
+        )
+        assert not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in {"__reduce__", "__reduce_ex__", "__getstate__", "__setstate__"}
+            for node in ast.walk(tree)
+        )
