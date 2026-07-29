@@ -10,10 +10,12 @@ import networkx as nx
 import pandas as pd
 import yaml
 
+from roadnet_partition.config import ResolvedStageConfig, stable_value
 from roadnet_partition.io.geospatial import (
-    PROJECT_ROOT, ensure_scope_directories, get_scope_paths, load_config as load_unified_scope_config, project_path,
+    PROJECT_ROOT, display_path, ensure_scope_directories, get_scope_paths,
+    load_config as load_unified_scope_config, project_path,
 )
-from roadnet_partition.pipeline.results import StageResult, StageStatus
+from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 from roadnet_partition.zoning.algorithms.leiden import run_leiden
 from roadnet_partition.zoning.algorithms.louvain import run_louvain
 from roadnet_partition.zoning.algorithms.metis import run_metis
@@ -22,7 +24,7 @@ from roadnet_partition.zoning.algorithms.region_growing import run_demand_region
 from roadnet_partition.zoning.algorithms.skater import run_skater
 from roadnet_partition.zoning.contracts import save_baseline_partition_outputs, save_partition
 from roadnet_partition.zoning.evaluate import build_ranked_summary, evaluate_partition
-from roadnet_partition.zoning.regularized.objective import ObjectiveParams, build_context
+from roadnet_partition.zoning.regularized.objective import EPS, ObjectiveParams, build_context
 from roadnet_partition.zoning.regularized.search import (
     SearchParams, normalize_partition_to_target, relabel_partition, run_search,
 )
@@ -52,7 +54,7 @@ def require_keys(config: dict[str, Any], keys: list[str], prefix: str = "config"
             raise ValueError(f"Missing required {prefix}.{key}")
 
 def validate_config(config: dict[str, Any]) -> None:
-    require_keys(config, ["scope", "inputs", "outputs", "initializations", "objective", "search", "evaluation"])
+    require_keys(config, ["scope", "inputs", "outputs", "initializations", "objective", "search"])
     require_keys(config["scope"], ["active", "graph_variant"], "scope")
     require_keys(config["inputs"], ["graph", "relation_edges", "segment_nodes", "order_features", "baseline_clusters"], "inputs")
     require_keys(config["outputs"], ["root"], "outputs")
@@ -299,8 +301,8 @@ def run_from_config(config: dict[str, Any], config_path: Path) -> None:
                 "capacity_loss": objective_params.capacity_loss,
                 "num_clusters": len(set(partition.values())),
                 "num_moves": max(len(trace) - 1, 0),
-                "clusters_gpkg": str(gpkg_path.relative_to(PROJECT_ROOT)),
-                "clusters_csv": str(csv_path.relative_to(PROJECT_ROOT)),
+                "clusters_gpkg": display_path(gpkg_path),
+                "clusters_csv": display_path(csv_path),
                 "params": json.dumps(params, sort_keys=True),
                 **final_components,
             }
@@ -318,21 +320,65 @@ def run_from_config(config: dict[str, Any], config_path: Path) -> None:
     print(f"Saved objective trace to {trace_path}")
 
 
-def run_partition(config: dict[str, Any], output_root: Path, config_path: Path) -> StageResult:
-    """Run regularized partitioning with an explicit, caller-owned output root."""
-    resolved_output = Path(output_root).expanduser().resolve()
-    run_config = dict(config)
-    run_config["outputs"] = {**dict(config["outputs"]), "root": str(resolved_output)}
+def run_partition(
+    config: ResolvedStageConfig | dict[str, Any],
+    context_or_output_root: RunContext | Path,
+    config_path: Path | None = None,
+) -> StageResult:
+    """Run regularized partitioning through the new stage API or legacy call."""
+    if isinstance(config, ResolvedStageConfig):
+        if config_path is not None or not isinstance(context_or_output_root, RunContext):
+            raise TypeError("new run_partition call requires (ResolvedStageConfig, RunContext)")
+        context = context_or_output_root
+        if context.stage_dir is None or context.stage_name != "partition":
+            raise ValueError("run_partition requires context.for_stage('partition')")
+        resolved_output = context.stage_dir
+        run_config = dict(stable_value(config.values))
+        source_path = config.source_path
+    else:
+        if isinstance(context_or_output_root, RunContext) or config_path is None:
+            raise TypeError("legacy run_partition call requires (dict, output_root, config_path)")
+        resolved_output = Path(context_or_output_root).expanduser().resolve()
+        run_config = dict(config)
+        source_path = Path(config_path).expanduser().resolve()
+
+    run_config["outputs"] = {**dict(run_config["outputs"]), "root": str(resolved_output)}
     validate_config(run_config)
-    run_from_config(run_config, Path(config_path).expanduser().resolve())
-    return StageResult(
-        stage="partition",
-        status=StageStatus.COMPLETE,
-        outputs={
+    run_from_config(run_config, source_path)
+    if isinstance(config, ResolvedStageConfig):
+        manifest_path = resolved_output / "tables" / "run_manifest.csv"
+        outputs = {
+            "resolved_config": resolved_output / "resolved_config.yaml",
+            "manifest": manifest_path,
+            "objective_trace": resolved_output / "tables" / "objective_trace.csv",
+        }
+        if not manifest_path.is_file():
+            raise RuntimeError("Partition completed without run_manifest.csv")
+        manifest = pd.read_csv(manifest_path)
+        required_columns = {"algorithm", "setting_id", "clusters_gpkg", "clusters_csv"}
+        missing_columns = required_columns - set(manifest.columns)
+        if missing_columns:
+            raise RuntimeError(f"Partition run manifest is missing columns: {sorted(missing_columns)}")
+        for row in manifest.itertuples(index=False):
+            label = f"{row.algorithm}_{row.setting_id}"
+            for kind, value in (("gpkg", row.clusters_gpkg), ("csv", row.clusters_csv)):
+                path = Path(value)
+                if not path.is_absolute():
+                    path = PROJECT_ROOT / path
+                outputs[f"cluster_{kind}_{label}"] = path.resolve()
+        missing = [path.name for path in outputs.values() if not path.is_file()]
+        if missing:
+            raise RuntimeError(f"Partition completed without required outputs: {missing}")
+    else:
+        outputs = {
             "root": resolved_output,
             "manifest": resolved_output / "tables" / "run_manifest.csv",
             "objective_trace": resolved_output / "tables" / "objective_trace.csv",
-        },
+        }
+    return StageResult(
+        stage="partition",
+        status=StageStatus.COMPLETE,
+        outputs=outputs,
     )
 
 

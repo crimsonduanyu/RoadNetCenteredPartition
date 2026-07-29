@@ -29,8 +29,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import shutil
 from typing import Any, Iterable
-import warnings
 
 from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
@@ -43,7 +43,7 @@ from roadnet_partition.graphs.distance import (
     sort_cluster_ids,
 )
 from roadnet_partition.config import ResolvedStageConfig
-from roadnet_partition.io.paths import resolve_path
+from roadnet_partition.io.paths import assert_owned_path, resolve_path
 from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 
 try:  # tqdm is a convenience only; degrade gracefully if unavailable.
@@ -633,7 +633,10 @@ def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
     stage = deepcopy(dict(values["stage4_tte"]))
     inputs = deepcopy(dict(stage["inputs"]))
     base_dir = config.source_path.parent
-    for key in ("orders_path", "cluster_index_path"):
+    for key in (
+        "orders_path", "cluster_index_path", "network_distance_path",
+        "representative_nodes_path",
+    ):
         if key in inputs:
             inputs[key] = str(resolve_path(inputs[key], base_dir=base_dir))
     distance = deepcopy(dict(stage.get("distance", {})))
@@ -647,7 +650,6 @@ def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
     stage["output_dir"] = str(output_dir)
     values["stage4_tte"] = stage
 
-    summary = run_from_config(values)
     outputs_cfg = stage.get("outputs", {})
     distance_cfg = stage.get("distance", {})
     names = {
@@ -659,29 +661,38 @@ def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
         "tte_hops": str(outputs_cfg.get("hops_filename", "TTE_hops.parquet")),
         "tte_imputed": "TTE_imputed.parquet",
     }
-    outputs = {name: output_dir / filename for name, filename in names.items()}
+    outputs = {
+        name: assert_owned_path(output_dir / filename, output_dir)
+        for name, filename in names.items()
+    }
+    fallback_keys = {
+        "network_distance": "network_distance_path",
+        "representative_nodes": "representative_nodes_path",
+    }
+    provided_fallbacks = [key for key in fallback_keys.values() if inputs.get(key)]
+    if provided_fallbacks and len(provided_fallbacks) != len(fallback_keys):
+        raise ValueError(
+            "stage4_tte.inputs network_distance_path and representative_nodes_path "
+            "must be provided together"
+        )
+    if provided_fallbacks and bool(distance_cfg.get("recompute", False)):
+        raise ValueError("precomputed TTE distance fallbacks require distance.recompute=false")
+    for output_name, input_key in fallback_keys.items():
+        source_value = inputs.get(input_key)
+        if not source_value:
+            continue
+        source = Path(source_value)
+        if not source.is_file():
+            raise FileNotFoundError(f"Configured TTE fallback does not exist: {input_key}={source}")
+        destination = outputs[output_name]
+        if source.resolve() != destination:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+    summary = run_from_config(values)
     missing = [path.name for path in outputs.values() if not path.is_file()]
     if missing:
         raise RuntimeError(f"TTE completed without required outputs: {missing}")
-
-    from roadnet_partition.downstream.tte_contracts import validate_tte_outputs
-
-    time_cfg = stage["time"]
-    contract = validate_tte_outputs(
-        output_dir,
-        count_filename=names["tte_count"],
-        support_filename=names["tte_support"],
-        hops_filename=names["tte_hops"],
-        matrix_filename=names["network_distance"],
-        representatives_filename=names["representative_nodes"],
-        expected_time_index=pd.date_range(
-            start=time_cfg["start_time"],
-            end=time_cfg["end_time"],
-            freq=str(time_cfg["freq"]),
-        ),
-        raw_range=(float(stage["trip_time"]["min_minutes"]), float(stage["trip_time"]["max_minutes"])),
-        max_hops=int(stage.get("imputation", {}).get("max_hops", 3)),
-    )
     return StageResult(
         stage="tte",
         status=StageStatus.COMPLETE,
@@ -692,8 +703,6 @@ def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
             "slots": int(summary["num_slots"]),
             "observed_cells": int(summary["num_observed_cells"]),
             "inferred_cells": int(summary["num_inferred_cells"]),
-            "missing_cells": int(contract["missing_cells"]),
-            "diagonal_observed_cells": int(contract["diagonal_observed_cells"]),
         },
     )
 

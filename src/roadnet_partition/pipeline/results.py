@@ -50,6 +50,7 @@ class StageResult:
     status: StageStatus
     outputs: Mapping[str, Path] = field(default_factory=dict)
     metrics: Mapping[str, Any] = field(default_factory=dict)
+    contract: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not STAGE_NAME.fullmatch(self.stage):

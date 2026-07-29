@@ -96,11 +96,6 @@ def test_run_tte_uses_owned_stage_directory_and_resolves_inputs(tmp_path: Path, 
         }
 
     monkeypatch.setattr(tte, "run_from_config", fake_run)
-    monkeypatch.setattr(
-        tte_contracts,
-        "validate_tte_outputs",
-        lambda *args, **kwargs: {"missing_cells": 14, "diagonal_observed_cells": 1},
-    )
     config = ResolvedStageConfig(
         tmp_path / "configs/tte.yaml",
         {
@@ -135,4 +130,5 @@ def test_run_tte_uses_owned_stage_directory_and_resolves_inputs(tmp_path: Path, 
     assert stage["inputs"]["orders_path"] == str((tmp_path / "configs/../inputs/orders.csv.gz").resolve())
     assert stage["distance"]["partition_gpkg"] == str((tmp_path / "configs/../inputs/partition.gpkg").resolve())
     assert all(path.parent == context.stage_dir for path in result.outputs.values())
+    assert result.contract == {}
     assert not (context.stage_dir / "_SUCCESS").exists()

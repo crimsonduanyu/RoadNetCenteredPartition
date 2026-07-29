@@ -12,8 +12,10 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from roadnet_partition.config import ResolvedStageConfig
 from roadnet_partition.downstream import tte
 from roadnet_partition.downstream.tte_contracts import validate_tte_outputs
+from roadnet_partition.pipeline.results import RunContext, StageStatus
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -224,6 +226,32 @@ def test_legacy_and_new_tiny_tte_outputs_are_exact(tmp_path: Path) -> None:
     )
     assert compared["mismatch_count"] == 0
     assert compared["mask_mismatch_count"] == 0
+
+
+def test_run_tte_reuses_explicit_precomputed_distance_fallbacks(tmp_path: Path) -> None:
+    orders_path, cluster_index_path, _ = write_tiny_inputs(tmp_path)
+    source_dir = tmp_path / "new"
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    values = tiny_config(orders_path, cluster_index_path, tmp_path / "ignored")
+    values["stage4_tte"]["inputs"].update({
+        "network_distance_path": "../new/cluster_network_distance.parquet",
+        "representative_nodes_path": "../new/cluster_representative_nodes.csv",
+    })
+    config = ResolvedStageConfig(config_dir / "tte.yaml", values, "fingerprint")
+    context = RunContext("tiny", tmp_path / "external-run", tmp_path).for_stage("tte")
+
+    result = tte.run_tte(config, context)
+
+    assert result.status is StageStatus.COMPLETE
+    assert result.contract == {}
+    assert {path.name for path in result.outputs.values()} == FORMAL_FILES
+    assert result.outputs["network_distance"].read_bytes() == (
+        source_dir / "cluster_network_distance.parquet"
+    ).read_bytes()
+    assert result.outputs["representative_nodes"].read_bytes() == (
+        source_dir / "cluster_representative_nodes.csv"
+    ).read_bytes()
 
 
 def test_stage4_wrapper_runs_tiny_config_outside_repository(tmp_path: Path) -> None:
