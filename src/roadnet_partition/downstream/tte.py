@@ -35,8 +35,8 @@ from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
 import pandas as pd
 
-from roadnet_partition.downstream.demand import (
-    active_scope_name,
+from roadnet_partition.graphs import distance as network_distance
+from roadnet_partition.graphs.distance import (
     load_project_config,
     project_path,
     sort_cluster_ids,
@@ -63,6 +63,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "window": 6,                  # rolling-outlier window (in slots)
     "outlier_std_threshold": 3,   # rolling-outlier rejection threshold (n * std)
 }
+
+
+def active_scope_name(config: dict[str, Any]) -> str:
+    study_area = config["study_area"]
+    return str(study_area.get("active", study_area.get("boundary_source", "fifth_ring")))
 
 
 # ==========================================================================
@@ -553,8 +558,6 @@ def run_from_config(config: dict[str, Any] | str | Path | None = None) -> dict[s
 
     # Distance source = precomputed cluster road-network shortest paths (built/cached
     # on first run). Replaces centroid Haversine; candidate logic is unchanged.
-    from roadnet_partition.graphs import distance as network_distance  # local import keeps heavy dependencies lazy
-
     distance_matrix_m = network_distance.build_or_load(config)
     # SpatialPruner works in km (matches the former Haversine convention and the
     # validate_estimates speed / min_dist checks); the cached matrix is in metres.
