@@ -156,6 +156,9 @@ def test_direct_and_isolated_full_pipeline_are_contract_equivalent(tmp_path: Pat
     for stage in STAGE_ORDER:
         assert set(direct_manifest["stages"][stage]["outputs"]) == set(isolated_manifest["stages"][stage]["outputs"])
         assert direct_manifest["stages"][stage]["contract"] == isolated_manifest["stages"][stage]["contract"]
+        for manifest in (direct_manifest, isolated_manifest):
+            for record in manifest["stages"][stage]["outputs"].values():
+                assert sha256_file(record["path"]) == record["sha256"]
     direct_mapping = pd.read_csv(next((direct.run_dir / "partition/clusters").glob("*.csv"))).sort_values("seg_id")
     isolated_mapping = pd.read_csv(next((isolated.run_dir / "partition/clusters").glob("*.csv"))).sort_values("seg_id")
     pd.testing.assert_frame_equal(direct_mapping.reset_index(drop=True), isolated_mapping.reset_index(drop=True))
@@ -165,6 +168,30 @@ def test_direct_and_isolated_full_pipeline_are_contract_equivalent(tmp_path: Pat
         assert left.files == right.files
         for name in left.files:
             np.testing.assert_array_equal(left[name], right[name])
+    for name in [
+        "cluster_index.csv", "cluster_od_15min.csv", "cluster_graph_road_edges.csv",
+        "cluster_graph_poi_edges.csv", "cluster_graph_distance_edges.csv",
+        "cluster_poi_features.csv", "cluster_poi_category_mapping.csv",
+    ]:
+        pd.testing.assert_frame_equal(
+            pd.read_csv(direct.run_dir / "demand" / name),
+            pd.read_csv(isolated.run_dir / "demand" / name),
+            check_dtype=False,
+        )
+    for name in [
+        "supply_inservice_od.csv.gz", "supply_available_floor.csv.gz", "supply_fleet_lower_bound.csv.gz",
+    ]:
+        pd.testing.assert_frame_equal(
+            pd.read_csv(direct.run_dir / "supply" / name),
+            pd.read_csv(isolated.run_dir / "supply" / name),
+            check_dtype=False,
+        )
+    for name in ["TTE_raw.parquet", "TTE_count.parquet", "TTE_support.parquet", "TTE_hops.parquet", "TTE_imputed.parquet"]:
+        pd.testing.assert_frame_equal(
+            pd.read_parquet(direct.run_dir / "tte" / name),
+            pd.read_parquet(isolated.run_dir / "tte" / name),
+            check_dtype=False,
+        )
 
 
 def test_pipeline_resume_and_overwrite_invalidate_only_downstream(tmp_path: Path) -> None:
