@@ -85,6 +85,8 @@ def test_migrated_modules_import_from_outside_repository(tmp_path: Path) -> None
     modules = [
         "roadnet_partition.io.geospatial",
         "roadnet_partition.downstream.demand",
+        "roadnet_partition.downstream.supply",
+        "roadnet_partition.downstream.supply_contracts",
         "roadnet_partition.graphs.build",
         "roadnet_partition.graphs.relations",
         "roadnet_partition.graphs.distance",

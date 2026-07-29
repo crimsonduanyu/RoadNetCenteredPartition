@@ -3,7 +3,8 @@
 Reads the unified ``config.yaml`` (the ``stage3_supply`` section) and runs the
 driver-chain / idle-window / fleet-lower-bound reconstruction over the Stage 2
 output (``orders_region_assigned.csv.gz``). The Fix-1 (natural-day slot clipping)
-and Fix-2 (origin-only in-service attribution) corrections live in ``lib.supply``.
+and Fix-2 (origin-only in-service attribution) corrections live in the migrated
+``roadnet_partition.downstream.supply`` module.
 
 Defaults come from config; CLI flags override them for partial/diagnostic runs:
 
