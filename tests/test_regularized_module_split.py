@@ -28,7 +28,9 @@ EXPECTED_DEFINITIONS = {
     "selection.py": {
         "SearchSetting", "clean_setting_value", "setting_id",
         "build_settings", "legacy_setting_id", "regularized_algorithm_name",
-        "baseline_for_algorithm",
+        "baseline_for_algorithm", "BestSelection", "project_path",
+        "require_file", "combined_metric_values", "add_balanced_score",
+        "pareto_non_dominated_flags", "select_best_run",
     },
     "partition.py": {
         "load_config", "require_keys", "validate_config", "load_graph",
