@@ -1,0 +1,112 @@
+{
+  "driver_chains.csv.gz": {
+    "classification": "historical intermediate",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-07T05:18:37.833210+00:00",
+    "repository_references": [
+      "tmp.ipynb"
+    ],
+    "size": 381638748
+  },
+  "idle_windows.csv.gz": {
+    "classification": "historical intermediate",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-07T05:21:28.674175+00:00",
+    "repository_references": [
+      "tmp.ipynb"
+    ],
+    "size": 399312091
+  },
+  "run_summary.partial.json": {
+    "classification": "historical partial status",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-07T05:12:17.118381+00:00",
+    "repository_references": [],
+    "size": 35254
+  },
+  "supply_available_by_cluster.csv.gz": {
+    "classification": "historical legacy",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-07T05:21:30.763919+00:00",
+    "repository_references": [
+      "scripts/analysis/step1_compare_daily_vs_fullmem.py",
+      "scripts/analysis/step1_logic_verify.py",
+      "scripts/analysis/step_chunk_verify.py",
+      "scripts/analysis/step_finalize_full.py",
+      "scripts/analysis/step_midnight_full.py",
+      "scripts/analysis/step_tau_idle_verify.py",
+      "tmp.ipynb"
+    ],
+    "size": 3205282
+  },
+  "supply_available_floor.csv.gz": {
+    "classification": "current formal",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-10T08:17:34.587627+00:00",
+    "repository_references": [
+      "scripts/analysis/step_finalize_full.py",
+      "src/lib/supply.py",
+      "tests/test_supply_pipeline.py"
+    ],
+    "size": 4622315
+  },
+  "supply_fleet_lower_bound.csv.gz": {
+    "classification": "current formal",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-10T08:17:37.056028+00:00",
+    "repository_references": [
+      "scripts/analysis/step1_compare_daily_vs_fullmem.py",
+      "scripts/analysis/step1_logic_verify.py",
+      "scripts/analysis/step_chunk_full.py",
+      "scripts/analysis/step_chunk_verify.py",
+      "scripts/analysis/step_midnight_full.py",
+      "src/lib/supply.py",
+      "tmp.ipynb"
+    ],
+    "size": 5342490
+  },
+  "supply_in_service_od.csv.gz": {
+    "classification": "historical legacy",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-07T05:22:13.564215+00:00",
+    "repository_references": [
+      "scripts/analysis/step1_compare_daily_vs_fullmem.py",
+      "scripts/analysis/step1_logic_verify.py",
+      "scripts/analysis/step_chunk_verify.py",
+      "scripts/analysis/step_finalize_full.py",
+      "scripts/analysis/step_midnight_full.py",
+      "scripts/analysis/step_tau_idle_verify.py",
+      "tmp.ipynb"
+    ],
+    "size": 91462894
+  },
+  "supply_inservice_od.csv.gz": {
+    "classification": "current formal",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-10T08:17:30.410909+00:00",
+    "repository_references": [
+      "scripts/analysis/step_finalize_full.py",
+      "src/lib/supply.py",
+      "tests/test_supply_pipeline.py"
+    ],
+    "size": 132329874
+  },
+  "trip_segments.csv.gz": {
+    "classification": "historical intermediate",
+    "exists": true,
+    "external_consumers": "unknown; requires manual confirmation by user",
+    "mtime_utc": "2026-06-07T05:16:32.619344+00:00",
+    "repository_references": [
+      "tmp.ipynb"
+    ],
+    "size": 895110356
+  }
+}

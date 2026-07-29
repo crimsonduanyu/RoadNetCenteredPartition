@@ -1,0 +1,89 @@
+{
+  "phase": "Phase 0 pre-refactor read-only audit",
+  "packaging": {
+    "pyproject_toml_exists": false,
+    "installable_src_package_exists": false,
+    "console_script_exists": false
+  },
+  "legacy_structure": {
+    "numbered_entries": [
+      "src/00_download_osm.py",
+      "src/01_preprocess_roads.py",
+      "src/02_build_order_features.py",
+      "src/02_build_poi_features.py",
+      "src/02_build_segment_relation_graph.py",
+      "src/03_cluster_segments.py",
+      "src/04_visualize_clusters.py",
+      "src/05_benchmark_clusters.py"
+    ],
+    "stage_wrappers": [
+      "src/stages/stage1_partition.py",
+      "src/stages/stage2_demand.py",
+      "src/stages/stage3_supply.py",
+      "src/stages/stage4_tte.py"
+    ],
+    "pipeline_entry": "src/run_pipeline.py",
+    "sys_path_injection_file_count": 13,
+    "from_lib_or_import_lib_file_count": 24,
+    "src_stages_reference_file_count": 12,
+    "numbered_entry_reference_file_count": 5,
+    "deletion_allowed_before_phase_10": false
+  },
+  "configuration": {
+    "single_mixed_config": "config.yaml",
+    "contains_dataset_scope": true,
+    "contains_legacy_00_05_settings": true,
+    "contains_formal_stage_settings": true,
+    "contains_experiment_settings": true,
+    "current_path_contract": "mixed project-root-relative paths resolved by local helpers and hard-coded repository roots",
+    "works_from_arbitrary_cwd_as_installed_cli": false
+  },
+  "pipeline": {
+    "current_stage_count": 4,
+    "uses_isolated_subprocesses": true,
+    "subprocess_target": "standalone stage scripts",
+    "resume_manifest_exists": false,
+    "run_directory_contract_exists": false,
+    "publish_transaction_exists": false
+  },
+  "frozen_assets": {
+    "directory": "IntermediateDataForReproduce",
+    "tracked_files": [
+      "IntermediateDataForReproduce/README.md"
+    ],
+    "binary_files_gitignored": true,
+    "roles_currently_mixed": [
+      "frozen non-reproducible inputs",
+      "algorithm initialization and comparison partitions",
+      "canonical regularized expected output"
+    ],
+    "privacy_and_publication_status": "not established; external/private/large assets require explicit human decisions",
+    "copy_policy_for_future_golden_and_release": "explicit allowlist only; manifests may reference external assets; never auto git-add"
+  },
+  "supply_contract": {
+    "current_formal": [
+      "supply_inservice_od.csv.gz",
+      "supply_available_floor.csv.gz",
+      "supply_fleet_lower_bound.csv.gz"
+    ],
+    "historical_legacy": [
+      "supply_in_service_od.csv.gz",
+      "supply_available_by_cluster.csv.gz"
+    ],
+    "external_consumers_confirmed": false,
+    "migration_document_required_before_deprecation": "docs/migrations/supply-output-contract-v1.md"
+  },
+  "analysis_scripts": {
+    "count": 14,
+    "externally_referenced_by_readme_claude_docs_tests": false,
+    "detail": "analysis-script-audit.json"
+  },
+  "phase_0_mutation_scope": {
+    "tracked_files_modified": false,
+    "data_files_copied": false,
+    "data_files_moved": false,
+    "data_files_deleted": false,
+    "git_add_run": false,
+    "generated_directory": "outputs/refactor-validation/pre-refactor"
+  }
+}

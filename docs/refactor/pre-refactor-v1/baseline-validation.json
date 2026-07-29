@@ -1,0 +1,49 @@
+{
+  "demand": {
+    "checks": {
+      "carpool_plus_exclusive_equals_total": true,
+      "metadata_staged_rows_equals_tensor_total": true
+    },
+    "carpool_total": 15350916,
+    "exclusive_total": 30651791,
+    "tensor_total": 46002707
+  },
+  "partition": {
+    "checks": {
+      "all_geometries_nonempty": true,
+      "all_geometries_present": true,
+      "all_geometries_valid": true,
+      "segment_ids_unique": true
+    },
+    "clusters": 100,
+    "segments": 59096
+  },
+  "supply": {
+    "checks": {
+      "all_current_formal_primary_keys_unique": true,
+      "all_current_formal_tables_cover_same_time_range": true,
+      "available_rows_match_run_summary": true,
+      "fleet_rows_match_run_summary": true,
+      "in_service_rows_match_run_summary": true
+    },
+    "time_range": [
+      "2017-06-01 00:00:00",
+      "2017-08-31 23:50:00"
+    ]
+  },
+  "tte": {
+    "checks": {
+      "cluster_order_equal_across_matrices": true,
+      "count_positive_equals_raw_non_null": true,
+      "hops_minus_one_equals_imputed_null": true,
+      "hops_zero_equals_raw_non_null": true,
+      "imputed_non_null_equals_observed_plus_inferred": true,
+      "support_positive_equals_inferred": true
+    },
+    "cells": 132480000,
+    "imputed_null": 30666386,
+    "imputed_non_null": 101813614,
+    "inferred": 82071287,
+    "raw_non_null": 19742327
+  }
+}
