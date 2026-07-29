@@ -1,17 +1,20 @@
 # Deferred validation gates
 
-## Gate before Phase 9 acceptance
+## Clustering runtime dependencies: passed in Phase 9
 
-The current `dydl` environment does not contain `python-louvain`,
-`python-igraph`/`leidenalg`, or `pymetis`, although `environment.yml` declares
-them. Phase 4 validated the Louvain, Leiden and METIS adapters with fixed
-deterministic fixtures, including argument, node/edge order, weight and seed
-handling, but did not execute the real third-party implementations.
+Phase 9 installed the dependencies declared by `environment.yml` without
+upgrading unrelated scientific packages: `python-louvain 0.16`,
+`python-igraph/igraph 1.0.0`, `leidenalg 0.12.0`, and `pymetis 2025.2.2`.
+The active `dydl` environment uses Python 3.12.13 although the environment file
+declares Python 3.11; the actual runtime is recorded rather than presented as
+an exact environment-file reproduction.
 
-Before Phase 9 full-pipeline acceptance, create or synchronize an environment
-that matches `environment.yml` and run real baseline smoke tests for Louvain,
-Leiden and METIS. This gate does not block Phase 5A and Phase 5A must not install,
-upgrade or otherwise change these dependencies.
+The project Louvain, Leiden and METIS runners were called directly, without
+adapters or monkeypatching, on a fixed connected graph with seed 42. Each
+returned two complete connected clusters and repeated deterministically. The
+real third-party runtime gate is therefore passed. See
+`tests/test_phase9_clustering_runtime.py` and
+`docs/refactor/phase9-preflight-v1.md`.
 
 ## Demand historical cross-platform spatial assignment
 
@@ -30,7 +33,7 @@ relative tolerance. It found no case where either candidate was clearly closer
 under the current Linux geometry stack. Exact historical Python, GeoPandas,
 Shapely, GEOS, pyproj and PROJ versions were not recorded.
 
-Before Phase 9, choose and document one of:
+The Phase 9 decision record retains these options:
 
 - reproduce the Demand run in the historical environment;
 - retain explicitly platform-specific historical and Linux baselines;
