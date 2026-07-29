@@ -27,6 +27,7 @@ effects); the thin ``src/stages/stage4_tte.py`` script points it at ``config.yam
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable
 import warnings
@@ -41,6 +42,9 @@ from roadnet_partition.graphs.distance import (
     project_path,
     sort_cluster_ids,
 )
+from roadnet_partition.config import ResolvedStageConfig
+from roadnet_partition.io.paths import resolve_path
+from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 
 try:  # tqdm is a convenience only; degrade gracefully if unavailable.
     from tqdm import tqdm
@@ -617,6 +621,81 @@ def run_from_config(config: dict[str, Any] | str | Path | None = None) -> dict[s
         "num_inferred_cells": int(inferred_mask.sum()),
         **hop_counts,
     }
+
+
+def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
+    """Run TTE inside its owned stage directory without updating a manifest."""
+    if context.stage_dir is None or context.stage_name != "tte":
+        raise ValueError("run_tte requires context.for_stage('tte')")
+    values = deepcopy(dict(config.values))
+    if "stage4_tte" not in values:
+        raise ValueError("configuration must contain a stage4_tte section")
+    stage = deepcopy(dict(values["stage4_tte"]))
+    inputs = deepcopy(dict(stage["inputs"]))
+    base_dir = config.source_path.parent
+    for key in ("orders_path", "cluster_index_path"):
+        if key in inputs:
+            inputs[key] = str(resolve_path(inputs[key], base_dir=base_dir))
+    distance = deepcopy(dict(stage.get("distance", {})))
+    for key in ("graphml_path", "classified_edges_path", "partition_gpkg"):
+        if key in distance:
+            distance[key] = str(resolve_path(distance[key], base_dir=base_dir))
+    output_dir = context.stage_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stage["inputs"] = inputs
+    stage["distance"] = distance
+    stage["output_dir"] = str(output_dir)
+    values["stage4_tte"] = stage
+
+    summary = run_from_config(values)
+    outputs_cfg = stage.get("outputs", {})
+    distance_cfg = stage.get("distance", {})
+    names = {
+        "network_distance": str(distance_cfg.get("matrix_filename", "cluster_network_distance.parquet")),
+        "representative_nodes": str(distance_cfg.get("representatives_filename", "cluster_representative_nodes.csv")),
+        "tte_raw": "TTE_raw.parquet",
+        "tte_count": str(outputs_cfg.get("count_filename", "TTE_count.parquet")),
+        "tte_support": str(outputs_cfg.get("support_filename", "TTE_support.parquet")),
+        "tte_hops": str(outputs_cfg.get("hops_filename", "TTE_hops.parquet")),
+        "tte_imputed": "TTE_imputed.parquet",
+    }
+    outputs = {name: output_dir / filename for name, filename in names.items()}
+    missing = [path.name for path in outputs.values() if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"TTE completed without required outputs: {missing}")
+
+    from roadnet_partition.downstream.tte_contracts import validate_tte_outputs
+
+    time_cfg = stage["time"]
+    contract = validate_tte_outputs(
+        output_dir,
+        count_filename=names["tte_count"],
+        support_filename=names["tte_support"],
+        hops_filename=names["tte_hops"],
+        matrix_filename=names["network_distance"],
+        representatives_filename=names["representative_nodes"],
+        expected_time_index=pd.date_range(
+            start=time_cfg["start_time"],
+            end=time_cfg["end_time"],
+            freq=str(time_cfg["freq"]),
+        ),
+        raw_range=(float(stage["trip_time"]["min_minutes"]), float(stage["trip_time"]["max_minutes"])),
+        max_hops=int(stage.get("imputation", {}).get("max_hops", 3)),
+    )
+    return StageResult(
+        stage="tte",
+        status=StageStatus.COMPLETE,
+        outputs=outputs,
+        metrics={
+            "clusters": int(summary["num_clusters"]),
+            "od_columns": int(summary["num_od_columns"]),
+            "slots": int(summary["num_slots"]),
+            "observed_cells": int(summary["num_observed_cells"]),
+            "inferred_cells": int(summary["num_inferred_cells"]),
+            "missing_cells": int(contract["missing_cells"]),
+            "diagonal_observed_cells": int(contract["diagonal_observed_cells"]),
+        },
+    )
 
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
