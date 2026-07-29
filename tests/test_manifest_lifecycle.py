@@ -12,6 +12,7 @@ import yaml
 from roadnet_partition.io.manifests import (
     MANIFEST_FILENAME,
     RUN_MARKER,
+    STAGE_RESULT_FILENAME,
     SUCCESS_MARKER,
     assert_run_fingerprints,
     atomic_write_json,
@@ -59,7 +60,13 @@ def complete_fixture_stage(context: RunContext, stage: str, content: str = "resu
     output.write_text(content, encoding="utf-8")
     complete_stage(
         stage_context,
-        StageResult(stage, StageStatus.COMPLETE, {"result": output}, {"rows": 1}),
+        StageResult(
+            stage,
+            StageStatus.COMPLETE,
+            {"result": output},
+            {"rows": 1},
+            {"status": "passed", "validated": True},
+        ),
         config_fingerprint="stage-config-v1",
         inputs_fingerprint="inputs-v1",
     )
@@ -175,6 +182,10 @@ def test_stage_lifecycle_and_resume_accept_exact_complete_output(tmp_path: Path)
     record = manifest["stages"]["partition"]
     assert record["status"] == StageStatus.COMPLETE.value
     assert record["metrics"] == {"rows": 1}
+    assert record["contract"] == {"status": "passed", "validated": True}
+    stage_result = json.loads((stage_context.stage_dir / STAGE_RESULT_FILENAME).read_text(encoding="utf-8"))
+    assert stage_result["status"] == StageStatus.COMPLETE.value
+    assert stage_result["contract"] == {"status": "passed", "validated": True}
     assert (stage_context.stage_dir / SUCCESS_MARKER).exists()
     decision = evaluate_resume(
         stage_context,
@@ -184,6 +195,55 @@ def test_stage_lifecycle_and_resume_accept_exact_complete_output(tmp_path: Path)
     )
     assert decision.reusable is True
     assert decision.reasons == ()
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["run_status", "success_schema", "success_stage", "success_outputs", "success_hash", "stage_result"],
+)
+def test_resume_rejects_invalid_lifecycle_documents(tmp_path: Path, change: str) -> None:
+    context = make_run(tmp_path)
+    stage_context, output = complete_fixture_stage(context, "partition")
+    if change == "run_status":
+        manifest = load_manifest(context.run_dir)
+        manifest["status"] = StageStatus.FAILED.value
+        atomic_write_json(context.run_dir / MANIFEST_FILENAME, manifest, validator=validate_manifest)
+    else:
+        name = STAGE_RESULT_FILENAME if change == "stage_result" else SUCCESS_MARKER
+        path = stage_context.stage_dir / name
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if change == "success_schema":
+            value["schema_version"] = 999
+        elif change == "success_stage":
+            value["stage"] = "demand"
+        elif change == "success_outputs":
+            value["outputs"] = {}
+        elif change == "success_hash":
+            value["outputs"]["result"]["sha256"] = "0" * 64
+        else:
+            value["status"] = StageStatus.FAILED.value
+        atomic_write_json(path, value)
+    decision = evaluate_resume(
+        stage_context,
+        config_fingerprint="stage-config-v1",
+        inputs_fingerprint="inputs-v1",
+        required_outputs={"result": output},
+    )
+    assert decision.reusable is False
+    assert decision.reasons
+
+
+def test_resume_requires_exact_output_allowlist(tmp_path: Path) -> None:
+    context = make_run(tmp_path)
+    stage_context, output = complete_fixture_stage(context, "partition")
+    decision = evaluate_resume(
+        stage_context,
+        config_fingerprint="stage-config-v1",
+        inputs_fingerprint="inputs-v1",
+        required_outputs={"renamed": output},
+    )
+    assert decision.reusable is False
+    assert any("allowlist" in reason for reason in decision.reasons)
 
 
 @pytest.mark.parametrize("change", ["config", "input", "output", "success", "manifest"])
@@ -223,6 +283,55 @@ def test_failed_and_interrupted_stage_states_are_recorded(tmp_path: Path) -> Non
     begin_stage(failed, config_fingerprint="c", inputs_fingerprint="i")
     end_stage_with_status(failed, StageStatus.INTERRUPTED)
     assert load_manifest(context.run_dir)["stages"]["demand"]["status"] == "interrupted"
+
+
+def test_manifest_completion_failure_removes_success_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import roadnet_partition.io.manifests as manifests
+
+    context = make_run(tmp_path)
+    stage_context = context.for_stage("supply")
+    begin_stage(stage_context, config_fingerprint="c", inputs_fingerprint="i")
+    output = stage_context.stage_dir / "result.txt"
+    output.write_text("result", encoding="utf-8")
+
+    def fail_manifest_write(*_args, **_kwargs) -> None:
+        raise OSError("manifest write failed")
+
+    monkeypatch.setattr(manifests, "_write_manifest", fail_manifest_write)
+    with pytest.raises(OSError, match="manifest write failed"):
+        complete_stage(
+            stage_context,
+            StageResult("supply", StageStatus.COMPLETE, {"result": output}),
+            config_fingerprint="c",
+            inputs_fingerprint="i",
+        )
+    assert (stage_context.stage_dir / STAGE_RESULT_FILENAME).exists()
+    assert not (stage_context.stage_dir / SUCCESS_MARKER).exists()
+
+
+def test_stage_result_is_written_before_success_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import roadnet_partition.io.manifests as manifests
+
+    context = make_run(tmp_path)
+    stage_context = context.for_stage("tte")
+    begin_stage(stage_context, config_fingerprint="c", inputs_fingerprint="i")
+    output = stage_context.stage_dir / "result.txt"
+    output.write_text("result", encoding="utf-8")
+    writes = []
+    original = manifests.atomic_write_json
+
+    def track_write(path, value, **kwargs) -> None:
+        writes.append(Path(path).name)
+        original(path, value, **kwargs)
+
+    monkeypatch.setattr(manifests, "atomic_write_json", track_write)
+    complete_stage(
+        stage_context,
+        StageResult("tte", StageStatus.COMPLETE, {"result": output}),
+        config_fingerprint="c",
+        inputs_fingerprint="i",
+    )
+    assert writes[:2] == [STAGE_RESULT_FILENAME, SUCCESS_MARKER]
 
 
 def test_resume_overwrite_and_run_fingerprint_guards(tmp_path: Path) -> None:

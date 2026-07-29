@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
@@ -25,6 +24,7 @@ SCHEMA_VERSION = 1
 RUN_MARKER = ".roadnet-run"
 MANIFEST_FILENAME = "manifest.json"
 SUCCESS_MARKER = "_SUCCESS"
+STAGE_RESULT_FILENAME = "stage_result.json"
 DEPENDENCY_ALLOWLIST = (
     "geopandas",
     "networkx",
@@ -312,6 +312,17 @@ def complete_stage(
     for name, path in result.outputs.items():
         owned = assert_owned_path(path, context.stage_dir)
         outputs[name] = file_record(owned)
+    stage_result = {
+        "schema_version": SCHEMA_VERSION,
+        "stage": result.stage,
+        "status": result.status.value,
+        "config_fingerprint": config_fingerprint,
+        "input_fingerprint": inputs_fingerprint,
+        "outputs": outputs,
+        "metrics": stable_value(result.metrics),
+        "contract": stable_value(result.contract),
+    }
+    atomic_write_json(context.stage_dir / STAGE_RESULT_FILENAME, stage_result)
     success = {
         "schema_version": SCHEMA_VERSION,
         "stage": result.stage,
@@ -319,18 +330,27 @@ def complete_stage(
         "input_fingerprint": inputs_fingerprint,
         "outputs": outputs,
     }
-    atomic_write_json(context.stage_dir / SUCCESS_MARKER, success)
+    success_path = context.stage_dir / SUCCESS_MARKER
+    atomic_write_json(success_path, success)
     record.update({
         "status": StageStatus.COMPLETE.value,
         "config_fingerprint": config_fingerprint,
         "input_fingerprint": inputs_fingerprint,
         "outputs": outputs,
-        "metrics": stable_value(result.metrics),
+        "metrics": stage_result["metrics"],
+        "contract": stage_result["contract"],
         "completed_at": utc_now(),
         "error": None,
     })
     manifest["status"] = StageStatus.COMPLETE.value
-    _write_manifest(context, manifest)
+    try:
+        _write_manifest(context, manifest)
+    except BaseException as error:
+        try:
+            success_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            error.add_note(f"could not remove incomplete success marker: {cleanup_error}")
+        raise
 
 
 def end_stage_with_status(context: RunContext, status: StageStatus, error: str | None = None) -> None:
@@ -352,40 +372,86 @@ def evaluate_resume(
     inputs_fingerprint: str,
     required_outputs: Mapping[str, Path],
 ) -> ResumeDecision:
+    if context.stage_name is None or context.stage_dir is None:
+        return ResumeDecision(False, ("stage context required",))
     reasons = []
     try:
         manifest = verify_run_ownership(context)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
         return ResumeDecision(False, (str(error),))
-    record = manifest["stages"].get(context.stage_name or "")
+    if manifest.get("status") != StageStatus.COMPLETE.value:
+        reasons.append("manifest run is not complete")
+    record = manifest["stages"].get(context.stage_name)
     if record is None or record.get("status") != StageStatus.COMPLETE.value:
         reasons.append("manifest stage is not complete")
+    stage_dir = context.stage_dir
+    expected_directory = stage_dir.relative_to(context.run_dir).as_posix()
+    if record is not None and record.get("directory") != expected_directory:
+        reasons.append("manifest stage directory differs")
     if record is not None and record.get("config_fingerprint") != config_fingerprint:
         reasons.append("config fingerprint changed")
     if record is not None and record.get("input_fingerprint") != inputs_fingerprint:
         reasons.append("input fingerprint changed")
-    success_path = (context.stage_dir or context.run_dir) / SUCCESS_MARKER
-    try:
-        success = json.loads(success_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        success = None
-        reasons.append("success marker missing or invalid")
-    if success is not None:
-        if success.get("config_fingerprint") != config_fingerprint:
-            reasons.append("success marker config fingerprint changed")
-        if success.get("input_fingerprint") != inputs_fingerprint:
-            reasons.append("success marker input fingerprint changed")
+    if record is not None and record.get("contract", {}).get("status") != "passed":
+        reasons.append("manifest contract is not passed")
+    required_names = set(required_outputs)
     recorded_outputs = record.get("outputs", {}) if record else {}
+    if not isinstance(recorded_outputs, dict) or set(recorded_outputs) != required_names:
+        reasons.append("manifest output allowlist differs")
+        recorded_outputs = recorded_outputs if isinstance(recorded_outputs, dict) else {}
+
+    documents = {
+        "success marker": stage_dir / SUCCESS_MARKER,
+        "stage result": stage_dir / STAGE_RESULT_FILENAME,
+    }
+    loaded_documents: dict[str, dict[str, Any] | None] = {}
+    for label, path in documents.items():
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            value = None
+            reasons.append(f"{label} missing or invalid")
+        if not isinstance(value, dict):
+            if value is not None:
+                reasons.append(f"{label} is not an object")
+            loaded_documents[label] = None
+            continue
+        loaded_documents[label] = value
+        if value.get("schema_version") != SCHEMA_VERSION:
+            reasons.append(f"{label} schema differs")
+        if value.get("stage") != context.stage_name:
+            reasons.append(f"{label} stage differs")
+        if value.get("config_fingerprint") != config_fingerprint:
+            reasons.append(f"{label} config fingerprint changed")
+        if value.get("input_fingerprint") != inputs_fingerprint:
+            reasons.append(f"{label} input fingerprint changed")
+        document_outputs = value.get("outputs")
+        if not isinstance(document_outputs, dict) or set(document_outputs) != required_names:
+            reasons.append(f"{label} output allowlist differs")
+        if label == "stage result" and value.get("status") != StageStatus.COMPLETE.value:
+            reasons.append("stage result is not complete")
+        if label == "stage result" and value.get("contract", {}).get("status") != "passed":
+            reasons.append("stage result contract is not passed")
+
     for name, path in required_outputs.items():
         try:
-            owned = assert_owned_path(path, context.stage_dir or context.run_dir)
-            digest = sha256_file(owned)
-        except (FileNotFoundError, IsADirectoryError, ValueError) as error:
+            owned = assert_owned_path(path, stage_dir)
+            actual = file_record(owned)
+        except (FileNotFoundError, IsADirectoryError, OSError, ValueError) as error:
             reasons.append(f"required output {name!r} invalid: {error}")
             continue
         expected = recorded_outputs.get(name)
-        if expected is None or expected.get("sha256") != digest:
+        if not isinstance(expected, dict) or expected.get("sha256") != actual["sha256"]:
             reasons.append(f"required output {name!r} hash mismatch")
+        elif expected != actual:
+            reasons.append(f"required output {name!r} record mismatch")
+        for label, value in loaded_documents.items():
+            document_outputs = value.get("outputs", {}) if value else {}
+            expected = document_outputs.get(name)
+            if not isinstance(expected, dict) or expected.get("sha256") != actual["sha256"]:
+                reasons.append(f"{label} output {name!r} hash mismatch")
+            elif expected != actual:
+                reasons.append(f"{label} output {name!r} record mismatch")
     return ResumeDecision(not reasons, tuple(reasons))
 
 
@@ -424,12 +490,21 @@ def invalidate_from_stage(
         if record is None:
             continue
         expected = context.for_stage(stage).stage_dir
-        if record.get("directory") != expected.relative_to(context.run_dir).as_posix():
+        expected_directory = expected.relative_to(context.run_dir).as_posix()
+        missing_clean_directory = (
+            record.get("status") == StageStatus.NOT_STARTED.value
+            and record.get("directory") is None
+            and not expected.exists()
+        )
+        if record.get("directory") != expected_directory and not missing_clean_directory:
             raise ValueError(f"manifest does not own stage directory: {stage}")
         if expected.exists():
             owned = assert_owned_path(expected, context.run_dir)
             shutil.rmtree(owned)
-        manifest["stages"][stage] = {"status": StageStatus.NOT_STARTED.value}
+        manifest["stages"][stage] = {
+            "status": StageStatus.NOT_STARTED.value,
+            "directory": expected_directory,
+        }
     manifest["status"] = StageStatus.NOT_STARTED.value
     _write_manifest(context, manifest)
     return backup
