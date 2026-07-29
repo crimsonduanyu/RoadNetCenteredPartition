@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 from pathlib import Path
@@ -8,6 +9,10 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
+
+from roadnet_partition.config import ResolvedStageConfig
+from roadnet_partition.io.paths import resolve_path
+from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 
 
 MAX_GAP_MINUTES = 60  # chain-formation gap: trips farther apart start a new driver chain
@@ -847,3 +852,50 @@ def _fleet_arrays_to_frame(Fc: np.ndarray, Fg: np.ndarray, slots: pd.DatetimeInd
     T, N = Fc.shape
     frame["global_fleet_lower_bound"] = np.repeat(Fg, N).astype("int64")
     return frame[FLEET_COLUMNS]
+
+
+def run_supply(config: ResolvedStageConfig, context: RunContext) -> StageResult:
+    """Run Supply inside its owned run directory without updating a manifest."""
+    if context.stage_dir is None or context.stage_name != "supply":
+        raise ValueError("run_supply requires context.for_stage('supply')")
+    values = deepcopy(dict(config.values))
+    if "stage3_supply" not in values:
+        raise ValueError("configuration must contain a stage3_supply section")
+    stage = deepcopy(dict(values["stage3_supply"]))
+    output_dir = context.stage_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    orders_path = resolve_path(stage["orders_path"], base_dir=config.source_path.parent)
+    summary = run_pipeline(
+        orders_path=orders_path,
+        output_dir=output_dir,
+        max_gap_minutes=int(stage["max_gap_minutes"]),
+        tau_idle_minutes=int(stage.get("tau_idle_minutes", TAU_IDLE_MINUTES)),
+        carpool_merge_gap_s=int(stage["carpool_merge_gap_s"]),
+        slot_duration_min=int(stage["slot_duration_min"]),
+        n_blocks=int(stage.get("n_blocks", DRIVER_BLOCKS)),
+    )
+    names = {
+        "inservice_od": "supply_inservice_od.csv.gz",
+        "available_floor": "supply_available_floor.csv.gz",
+        "fleet_lower_bound": "supply_fleet_lower_bound.csv.gz",
+        "run_summary": "run_summary.json",
+        "config_used": "config_used.json",
+    }
+    outputs = {name: output_dir / filename for name, filename in names.items()}
+    missing = [path.name for path in outputs.values() if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"Supply completed without required outputs: {missing}")
+    return StageResult(
+        stage="supply",
+        status=StageStatus.COMPLETE,
+        outputs=outputs,
+        metrics={
+            "orders": int(summary["orders_loaded"]),
+            "drivers": int(summary["n_drivers"]),
+            "slots": int(summary["global_slots"]),
+            "clusters": int(summary["global_clusters"]),
+            "inservice_rows": int(summary["in_service_rows"]),
+            "available_rows": int(summary["available_rows"]),
+            "fleet_rows": int(summary["fleet_rows"]),
+        },
+    )
