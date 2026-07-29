@@ -45,7 +45,20 @@ def build_parser() -> argparse.ArgumentParser:
         description="Road-network-centered partitioning and dataset tools.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    subparsers = parser.add_subparsers(dest="command", metavar="{partition,demand,supply,tte}")
+    subparsers = parser.add_subparsers(dest="command", metavar="{run,partition,demand,supply,tte}")
+    pipeline_parser = subparsers.add_parser("run", help="Run the fixed partition → demand → supply → tte pipeline.")
+    pipeline_parser.add_argument("--config", type=Path, required=True, help="Full pipeline YAML configuration.")
+    pipeline_parser.add_argument("--run-id")
+    pipeline_parser.add_argument("--run-dir", type=Path)
+    pipeline_parser.add_argument("--from-stage", choices=tuple(RESOLVERS))
+    pipeline_parser.add_argument("--to-stage", choices=tuple(RESOLVERS), default="tte")
+    pipeline_mode = pipeline_parser.add_mutually_exclusive_group()
+    pipeline_mode.add_argument("--resume", action="store_true")
+    pipeline_mode.add_argument("--overwrite", action="store_true")
+    pipeline_parser.add_argument(
+        "--isolate-stages", action=argparse.BooleanOptionalAction, default=None,
+        help="Run each stage in an internal child process (default comes from pipeline config).",
+    )
     for name in ("partition", "demand", "supply", "tte"):
         stage_parser = subparsers.add_parser(name, help=f"Run the {name} stage only.")
         _add_run_options(stage_parser)
@@ -69,6 +82,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     try:
+        if parsed.command == "run":
+            from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
+
+            if parsed.overwrite and parsed.from_stage is None:
+                parser.error("run --overwrite requires --from-stage")
+            result = run_pipeline(
+                resolve_pipeline_config(parsed.config),
+                run_id=parsed.run_id,
+                run_dir=parsed.run_dir,
+                from_stage=parsed.from_stage or "partition",
+                to_stage=parsed.to_stage,
+                resume=parsed.resume,
+                overwrite=parsed.overwrite,
+                isolate_stages=parsed.isolate_stages,
+            )
+            print(
+                f"pipeline: complete through {result.completed_through}; "
+                f"all_required_stages_complete={str(result.all_required_stages_complete).lower()}"
+            )
+            return 0
         config = RESOLVERS[parsed.command](parsed.config)
         overrides = None
         if parsed.command == "supply" and parsed.n_blocks is not None:
@@ -91,6 +124,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ResumeConflictError, RunConflictError) as error:
         print(str(error), file=sys.stderr)
         return 4
+    except KeyboardInterrupt:
+        print("pipeline interrupted", file=sys.stderr)
+        return 130
     reused = bool(result.metrics.get("resume_reused", False))
     print(f"{result.stage}: {'reused' if reused else result.status.value}")
     return 0
