@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roadnet-partition"
+version = "0.1.0"
+description = "Road-network-centered spatial partitioning and downstream dataset tools"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.scripts]
+roadnet-partition = "roadnet_partition.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["roadnet_partition*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
