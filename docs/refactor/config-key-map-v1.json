@@ -13,15 +13,15 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_active_scope_name"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_active_scope"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_center_point"
         },
         {
@@ -50,7 +50,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_active_scope_name"
         },
         {
@@ -79,7 +79,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_center_point"
         }
       ],
@@ -100,7 +100,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_center_point"
         }
       ],
@@ -121,7 +121,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_center_point"
         }
       ],
@@ -142,7 +142,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_active_scope"
         }
       ],
@@ -228,7 +228,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -249,7 +249,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -270,11 +270,11 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -295,7 +295,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -316,7 +316,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -382,11 +382,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -427,11 +427,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -472,11 +472,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -517,11 +517,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -867,7 +867,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -888,7 +888,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -909,11 +909,11 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -934,7 +934,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -955,7 +955,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         }
       ],
@@ -1021,11 +1021,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -1066,11 +1066,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -1111,11 +1111,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -1156,11 +1156,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -1469,15 +1469,15 @@
           "function": "render_cluster_outputs"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_center_point"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -1522,11 +1522,11 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -1571,15 +1571,15 @@
           "function": "render_cluster_outputs"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_center_point"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -2075,7 +2075,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         }
       ],
@@ -2141,7 +2141,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         }
       ],
@@ -2278,7 +2278,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2327,7 +2327,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         }
       ],
@@ -2352,7 +2352,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2385,7 +2385,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2418,7 +2418,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2447,7 +2447,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2480,7 +2480,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2509,7 +2509,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2538,7 +2538,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2567,7 +2567,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -2596,7 +2596,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         }
       ],
@@ -3044,7 +3044,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -3093,7 +3093,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -3326,7 +3326,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3355,7 +3355,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3388,7 +3388,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3421,7 +3421,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3496,7 +3496,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3525,7 +3525,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3554,7 +3554,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3583,7 +3583,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -3750,7 +3750,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -4898,11 +4898,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -4943,11 +4943,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -4988,11 +4988,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -5033,11 +5033,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -5275,7 +5275,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -5394,7 +5394,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         }
       ],
@@ -6789,7 +6789,7 @@
           "function": "resolve_run_paths"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -7468,11 +7468,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -7513,11 +7513,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -7558,11 +7558,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -7603,11 +7603,11 @@
           "function": "plot_zoom"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "project_bounds"
         },
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "build_harvest_polygon"
         }
       ],
@@ -7765,7 +7765,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -7967,7 +7967,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -8008,7 +8008,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -8078,7 +8078,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8099,7 +8099,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         },
         {
@@ -8232,7 +8232,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8253,7 +8253,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8274,7 +8274,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8295,7 +8295,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8316,11 +8316,11 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/geo.py",
+          "file": "src/roadnet_partition/io/geospatial.py",
           "function": "get_scope_paths"
         },
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8341,7 +8341,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8362,7 +8362,7 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
-          "file": "src/lib/network_distance.py",
+          "file": "src/roadnet_partition/graphs/distance.py",
           "function": "build_or_load"
         }
       ],
@@ -8429,7 +8429,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -8462,7 +8462,7 @@
           "function": "main"
         },
         {
-          "file": "src/lib/metrics.py",
+          "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
         },
         {
@@ -8868,5 +8868,6 @@
   "method": "All YAML mapping keys are listed. Reader evidence is an AST inventory of literal subscript/get accesses and may be conservative; empty evidence is not treated as permission to delete.",
   "schema_version": 1,
   "source": "config.yaml",
-  "source_commit": "841f596"
+  "source_commit": "841f596",
+  "reader_evidence_updated_for_phase": 3
 }

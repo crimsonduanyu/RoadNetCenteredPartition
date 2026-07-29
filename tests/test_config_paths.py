@@ -114,3 +114,12 @@ def test_config_key_map_covers_every_current_mapping_key_once() -> None:
     assert key_map["mapping_key_count"] == 341
     assert len(actual) == len(set(actual))
     assert sorted(actual) == sorted(expected)
+    migrated_legacy_readers = {
+        "src/lib/geo.py", "src/lib/graph.py", "src/lib/clustering.py",
+        "src/lib/network_distance.py", "src/lib/metrics.py",
+    }
+    assert not {
+        reader["file"]
+        for entry in key_map["entries"]
+        for reader in entry["readers"]
+    } & migrated_legacy_readers
