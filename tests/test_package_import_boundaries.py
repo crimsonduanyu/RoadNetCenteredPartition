@@ -84,6 +84,8 @@ def test_every_new_package_module_imports_without_cycles() -> None:
 def test_migrated_modules_import_from_outside_repository(tmp_path: Path) -> None:
     modules = [
         "roadnet_partition.io.geospatial",
+        "roadnet_partition.downstream.demand",
+        "roadnet_partition.graphs.build",
         "roadnet_partition.graphs.relations",
         "roadnet_partition.graphs.distance",
         "roadnet_partition.zoning.algorithms.common",
@@ -99,3 +101,21 @@ def test_migrated_modules_import_from_outside_repository(tmp_path: Path) -> None
     command = [sys.executable, "-c", "; ".join(f"import {module}" for module in modules)]
     result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_demand_package_boundaries_are_one_way() -> None:
+    demand_path = PACKAGE_ROOT / "downstream" / "demand.py"
+    contracts_path = PACKAGE_ROOT / "downstream" / "demand_contracts.py"
+    graph_path = PACKAGE_ROOT / "graphs" / "build.py"
+    geospatial_path = PACKAGE_ROOT / "io" / "geospatial.py"
+    imports = {}
+    for path in [demand_path, contracts_path, graph_path, geospatial_path]:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports[path.name] = {
+            node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+        }
+    assert not any(module.endswith(("order_dataset", "stage2_demand")) for modules in imports.values() for module in modules)
+    assert not any("supply" in module or "tte" in module for module in imports["demand.py"])
+    assert not any(module.endswith(".cli") for module in imports["demand.py"] | imports["demand_contracts.py"])
+    assert not any("downstream.demand" in module for module in imports["build.py"] | imports["geospatial.py"])
+    assert not any("graphs.build" in module for module in imports["demand_contracts.py"])

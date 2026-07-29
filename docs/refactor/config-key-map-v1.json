@@ -35,6 +35,10 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "active_scope_name"
         }
       ],
       "suspected_deprecated": false,
@@ -68,6 +72,10 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "active_scope_name"
         }
       ],
       "suspected_deprecated": false,
@@ -1495,6 +1503,14 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "build_cluster_index"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -1539,6 +1555,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "main"
         }
       ],
@@ -1600,6 +1620,18 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "build_cluster_index"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_poi_graph"
         }
       ],
@@ -2184,6 +2216,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -2209,6 +2245,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -2233,6 +2273,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_poi_graph"
         }
       ],
@@ -2299,6 +2343,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -2378,6 +2426,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -2411,6 +2463,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -2439,6 +2495,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -2473,6 +2533,14 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -2501,6 +2569,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -2531,6 +2603,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -2560,6 +2636,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -2588,6 +2668,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -3033,6 +3117,26 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "resolve_output_root"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_distance_graph"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -3106,6 +3210,18 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -3131,6 +3247,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -3151,6 +3271,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "main"
         }
       ],
@@ -3173,6 +3297,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3193,6 +3321,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_poi_graph"
         }
       ],
@@ -3243,6 +3375,10 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "resolve_output_root"
         }
       ],
       "suspected_deprecated": false,
@@ -3280,6 +3416,10 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "resolve_output_root"
         }
       ],
       "suspected_deprecated": false,
@@ -3300,6 +3440,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "main"
         }
       ],
@@ -3326,6 +3470,14 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -3346,6 +3498,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -3375,6 +3531,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -3409,6 +3569,14 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -3442,6 +3610,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3475,6 +3647,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3496,6 +3672,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3516,6 +3696,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -3546,6 +3730,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3574,6 +3762,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -3604,6 +3796,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3633,6 +3829,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3653,6 +3853,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "stage_order_assignments"
         }
       ],
@@ -3675,6 +3879,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -3695,6 +3903,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_poi_graph"
         }
       ],
@@ -3721,6 +3933,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -3746,6 +3962,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -3770,6 +3990,10 @@
         },
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_poi_graph"
         }
       ],
@@ -3804,6 +4028,14 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_poi_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -3824,6 +4056,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_poi_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_poi_graph"
         }
       ],
@@ -3846,6 +4082,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -3866,6 +4106,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "main"
         }
       ],
@@ -3888,6 +4132,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_distance_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_distance_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -3908,6 +4156,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "build_cluster_distance_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "build_cluster_distance_graph"
         }
       ],
@@ -3930,6 +4182,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "build_cluster_distance_graph"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "build_cluster_distance_graph"
         }
       ],
       "suspected_deprecated": false,
@@ -3950,6 +4206,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
           "function": "main"
         }
       ],
@@ -3972,6 +4232,10 @@
         {
           "file": "src/lib/order_dataset.py",
           "function": "save_graph_assets"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
+          "function": "save_graph_assets"
         }
       ],
       "suspected_deprecated": false,
@@ -3992,6 +4256,10 @@
       "readers": [
         {
           "file": "src/lib/order_dataset.py",
+          "function": "save_graph_assets"
+        },
+        {
+          "file": "src/roadnet_partition/graphs/build.py",
           "function": "save_graph_assets"
         }
       ],
@@ -5609,6 +5877,14 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -8402,6 +8678,10 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "verify_against_frozen"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "resolve_output_root"
         }
       ],
       "suspected_deprecated": false,
@@ -8798,6 +9078,14 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -8922,6 +9210,10 @@
         {
           "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "resolve_output_root"
         }
       ],
       "suspected_deprecated": false,
@@ -9211,6 +9503,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
@@ -9244,6 +9540,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/demand.py",
+          "function": "stage_order_assignments"
         }
       ],
       "suspected_deprecated": false,
