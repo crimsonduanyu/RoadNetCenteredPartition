@@ -3,8 +3,11 @@ from __future__ import annotations
 import importlib.metadata
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -69,3 +72,27 @@ def test_editable_package_imports_outside_repository(tmp_path: Path) -> None:
     version, module_path = result.stdout.strip().splitlines()
     assert version == importlib.metadata.version("roadnet-partition")
     assert Path(module_path).resolve() == PROJECT_ROOT / "src/roadnet_partition/__init__.py"
+
+
+@pytest.mark.parametrize("stage", [None, "partition", "demand", "supply", "tte"])
+def test_console_help_lists_only_phase6a_commands_outside_repository(tmp_path: Path, stage: str | None) -> None:
+    executable = shutil.which("roadnet-partition")
+    assert executable is not None
+    command = [executable, "--help"] if stage is None else [executable, stage, "--help"]
+    result = subprocess.run(
+        command,
+        cwd=tmp_path,
+        env=clean_environment(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "usage: roadnet-partition" in result.stdout
+    if stage is None:
+        assert "{partition,demand,supply,tte}" in result.stdout
+        assert not any(name in result.stdout for name in ["export-reproduction", "publish", "validate"])
+    else:
+        for option in ["--config", "--run-id", "--run-dir", "--resume", "--overwrite"]:
+            assert option in result.stdout
+        assert ("--n-blocks" in result.stdout) is (stage == "supply")
