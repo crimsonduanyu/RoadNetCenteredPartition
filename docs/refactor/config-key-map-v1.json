@@ -8751,6 +8751,10 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
+        },
+        {
           "file": "src/stages/stage3_supply.py",
           "function": "main"
         }
@@ -8774,6 +8778,10 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
         },
         {
           "file": "src/stages/stage3_supply.py",
@@ -8858,6 +8866,10 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
+        },
+        {
           "file": "src/stages/stage3_supply.py",
           "function": "build_parser"
         }
@@ -8878,6 +8890,10 @@
       "node_kind": "value",
       "reader_evidence_truncated": false,
       "readers": [
+        {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
+        },
         {
           "file": "src/stages/stage3_supply.py",
           "function": "build_parser"
@@ -8900,6 +8916,10 @@
       "reader_evidence_truncated": false,
       "readers": [
         {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
+        },
+        {
           "file": "src/stages/stage3_supply.py",
           "function": "build_parser"
         }
@@ -8920,6 +8940,10 @@
       "node_kind": "value",
       "reader_evidence_truncated": false,
       "readers": [
+        {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
+        },
         {
           "file": "src/stages/stage3_supply.py",
           "function": "build_parser"
@@ -8944,6 +8968,10 @@
         {
           "file": "scripts/analysis/supply_mem_probe.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/downstream/supply.py",
+          "function": "run_supply"
         },
         {
           "file": "src/stages/stage3_supply.py",
@@ -9945,5 +9973,5 @@
   "schema_version": 1,
   "source": "config.yaml",
   "source_commit": "841f596",
-  "reader_evidence_updated_for_phase": 3
+  "reader_evidence_updated_for_phase": 5
 }
