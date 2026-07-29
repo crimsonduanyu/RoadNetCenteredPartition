@@ -1,17 +1,24 @@
 from __future__ import annotations
 
-from pathlib import Path
-import sys
-
 import networkx as nx
 import numpy as np
+import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = PROJECT_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+from lib import network_distance as legacy
+from roadnet_partition.graphs import distance as nd
 
-from lib import network_distance as nd  # noqa: E402
+
+PUBLIC_NAMES = {
+    "project_path", "load_project_config", "sort_cluster_ids", "collapse_min_undirected",
+    "load_osm_graph_undirected_min", "build_filtered_subgraph", "cluster_osm_nodes",
+    "project_node_coords", "pick_representatives", "compute_distance_matrix", "build_or_load",
+}
+
+
+def test_legacy_network_distance_exports_are_compatibility_aliases() -> None:
+    assert set(legacy.__all__) == PUBLIC_NAMES
+    for name in PUBLIC_NAMES:
+        assert getattr(legacy, name) is getattr(nd, name)
 
 
 # --------------------------------------------------------------------------
@@ -86,3 +93,44 @@ def test_distance_matrix_filtered_path_preferred() -> None:
     g_raw.add_edge(1, 3, length=5.0)
     D = nd.compute_distance_matrix(g_filt, g_raw, {"0": 1, "1": 3}, ["0", "1"])
     assert D.loc["0", "1"] == 30.0  # filtered distance, raw shortcut ignored
+
+
+def test_distance_matrix_preserves_requested_nonnumeric_cluster_order() -> None:
+    graph = nx.Graph()
+    graph.add_edge(1, 2, length=1.0)
+    graph.add_edge(2, 3, length=1.0)
+    order = ["10", "2", "A"]
+    matrix = nd.compute_distance_matrix(graph, graph, {"10": 1, "2": 2, "A": 3}, order)
+    assert list(matrix.index) == order
+    assert list(matrix.columns) == order
+    assert matrix.loc["10", "A"] == 2.0
+
+
+def test_distance_matrix_isolated_node_and_unreachable_semantics() -> None:
+    graph = nx.Graph()
+    graph.add_edge(1, 2, length=2.0)
+    graph.add_node(9)
+    matrix = nd.compute_distance_matrix(graph, graph, {"a": 1, "isolated": 9}, ["isolated", "a"])
+    assert matrix.loc["isolated", "isolated"] == 0.0
+    assert np.isinf(matrix.loc["isolated", "a"])
+    assert np.isinf(matrix.loc["a", "isolated"])
+
+
+def test_equal_paths_and_missing_weight_keep_networkx_behavior() -> None:
+    equal = nx.Graph()
+    equal.add_edge(1, 2, length=1.0)
+    equal.add_edge(2, 4, length=1.0)
+    equal.add_edge(1, 3, length=1.0)
+    equal.add_edge(3, 4, length=1.0)
+    matrix = nd.compute_distance_matrix(equal, equal, {"x": 1, "y": 4}, ["x", "y"])
+    assert matrix.loc["x", "y"] == 2.0
+
+    missing_weight = nx.Graph()
+    missing_weight.add_edge(1, 2)
+    defaulted = nd.compute_distance_matrix(missing_weight, missing_weight, {"x": 1, "y": 2}, ["x", "y"])
+    assert defaulted.loc["x", "y"] == 1.0
+
+    absent_rep = nx.Graph()
+    absent_rep.add_node(1)
+    with pytest.raises(nx.NodeNotFound):
+        nd.compute_distance_matrix(absent_rep, absent_rep, {"x": 1, "missing": 2}, ["x", "missing"])
