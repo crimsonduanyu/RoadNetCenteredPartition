@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_PATH = PROJECT_ROOT / "src/lib/tte_dataset.py"
 NEW_PATH = PROJECT_ROOT / "src/roadnet_partition/downstream/tte.py"
 AST_BASELINE_PATH = PROJECT_ROOT / "docs/refactor/tte-mechanical-ast-v1.json"
+COMPARISON_PATH = PROJECT_ROOT / "scripts/analysis/compare_tte_outputs.py"
 FORMAL_FILES = {
     "cluster_network_distance.parquet",
     "cluster_representative_nodes.csv",
@@ -211,6 +212,19 @@ def test_legacy_and_new_tiny_tte_outputs_are_exact(tmp_path: Path) -> None:
     assert hops["2->A"].max() >= 1
     assert hops["2->B"].max() >= 2
     assert imputed["2->isolated"].isna().all()
+
+    comparison_spec = importlib.util.spec_from_file_location("tte_comparison", COMPARISON_PATH)
+    comparison = importlib.util.module_from_spec(comparison_spec)
+    assert comparison_spec.loader is not None
+    comparison_spec.loader.exec_module(comparison)
+    compared = comparison.compare_matrix(
+        legacy_dir / "TTE_imputed.parquet",
+        new_dir / "TTE_imputed.parquet",
+        batch_size=1,
+    )
+    assert compared["mismatch_count"] == 0
+    assert compared["mask_mismatch_count"] == 0
+
 
 def test_stage4_wrapper_runs_tiny_config_outside_repository(tmp_path: Path) -> None:
     orders_path, cluster_index_path, _ = write_tiny_inputs(tmp_path)
