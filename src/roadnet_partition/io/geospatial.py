@@ -6,6 +6,7 @@ from typing import Any
 from roadnet_partition.io import environment as _environment  # noqa: F401
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import yaml
 from shapely.geometry import Point, Polygon, box
 from shapely.ops import linemerge, polygonize, unary_union
@@ -80,7 +81,9 @@ def get_active_scope(config: dict[str, Any]) -> dict[str, Any]:
     return scope
 
 
-def project_path(path_value: str | Path) -> Path:
+def project_path(path_value: str | Path | None) -> Path | None:
+    if path_value is None:
+        return None
     path = Path(path_value)
     if path.is_absolute():
         return path
@@ -294,3 +297,48 @@ def make_gpkg_safe(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if not sample.empty and isinstance(sample.iloc[0], (list, dict, set, tuple)):
             safe[column] = safe[column].map(lambda value: None if value is None else str(value))
     return safe
+def display_path(path_value: str | Path) -> str:
+    path = Path(path_value)
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def match_points_to_segments_with_distance(
+    frame: pd.DataFrame,
+    lon_col: str,
+    lat_col: str,
+    segments,
+    source_crs: str,
+    max_distance_m: float,
+) -> pd.DataFrame:
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    result = pd.DataFrame(index=frame.index, data={"seg_id": pd.NA, "distance_m": np.nan})
+    valid = frame[[lon_col, lat_col]].notna().all(axis=1)
+    valid &= np.isfinite(frame[lon_col]) & np.isfinite(frame[lat_col])
+    if not bool(valid.any()):
+        return result
+
+    points = gpd.GeoDataFrame(
+        {"row_id": frame.index[valid]},
+        geometry=[Point(xy) for xy in zip(frame.loc[valid, lon_col], frame.loc[valid, lat_col])],
+        crs=source_crs,
+    ).to_crs(segments.crs)
+    joined = gpd.sjoin_nearest(
+        points,
+        segments[["seg_id", "geometry"]],
+        how="left",
+        max_distance=max_distance_m,
+        distance_col="distance_m",
+    )
+    matched = joined.dropna(subset=["seg_id"]).drop_duplicates("row_id")
+    if matched.empty:
+        return result
+
+    row_ids = matched["row_id"].to_numpy()
+    result.loc[row_ids, "seg_id"] = matched["seg_id"].astype(str).to_numpy()
+    result.loc[row_ids, "distance_m"] = matched["distance_m"].astype(float).to_numpy()
+    return result
