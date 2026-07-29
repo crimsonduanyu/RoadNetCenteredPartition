@@ -87,8 +87,7 @@ def test_public_cli_registers_phase6a_stages_and_phase6b_run() -> None:
     )
     registered = set(subparsers.choices)
 
-    assert registered == ALLOWED_STAGES | {"run"}
-    assert registered.isdisjoint(FORBIDDEN_COMMANDS - {"run"})
+    assert registered == ALLOWED_STAGES | FORBIDDEN_COMMANDS
 
 
 def test_stage_executor_has_dispatch_but_no_subprocess_or_stage_sequence() -> None:

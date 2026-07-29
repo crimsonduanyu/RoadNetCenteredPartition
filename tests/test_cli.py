@@ -90,8 +90,7 @@ def test_console_help_lists_only_phase6a_commands_outside_repository(tmp_path: P
     assert result.returncode == 0
     assert "usage: roadnet-partition" in result.stdout
     if stage is None:
-        assert "{run,partition,demand,supply,tte}" in result.stdout
-        assert not any(name in result.stdout for name in ["export-reproduction", "publish", "validate"])
+        assert "{run,validate,publish,export-reproduction,partition,demand,supply,tte}" in result.stdout
     else:
         for option in ["--config", "--run-id", "--run-dir", "--resume", "--overwrite"]:
             assert option in result.stdout

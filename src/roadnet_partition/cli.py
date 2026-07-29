@@ -14,12 +14,15 @@ from roadnet_partition.config import (
     resolve_tte_config,
 )
 from roadnet_partition.io.paths import UnsafePathError
+from roadnet_partition.pipeline.publishing import PublishError
+from roadnet_partition.pipeline.validation import ValidationError
 from roadnet_partition.pipeline.stages import (
     ResumeConflictError,
     RunConflictError,
     StageContractError,
     execute_stage,
 )
+from roadnet_partition.releases.reproduction import ExportError
 
 
 RESOLVERS = {
@@ -45,7 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Road-network-centered partitioning and dataset tools.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    subparsers = parser.add_subparsers(dest="command", metavar="{run,partition,demand,supply,tte}")
+    subparsers = parser.add_subparsers(
+        dest="command",
+        metavar="{run,validate,publish,export-reproduction,partition,demand,supply,tte}",
+    )
     pipeline_parser = subparsers.add_parser("run", help="Run the fixed partition → demand → supply → tte pipeline.")
     pipeline_parser.add_argument("--config", type=Path, required=True, help="Full pipeline YAML configuration.")
     pipeline_parser.add_argument("--run-id")
@@ -59,6 +65,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--isolate-stages", action=argparse.BooleanOptionalAction, default=None,
         help="Run each stage in an internal child process (default comes from pipeline config).",
     )
+    validate_parser = subparsers.add_parser("validate", help="Validate a completed pipeline run.")
+    validate_parser.add_argument("--run", type=Path, required=True)
+    validate_parser.add_argument("--golden", type=Path)
+    validate_parser.add_argument("--report", type=Path)
+    publish_parser = subparsers.add_parser("publish", help="Publish a validated run as one processed scope.")
+    publish_parser.add_argument("--run", type=Path, required=True)
+    publish_parser.add_argument("--scope", required=True)
+    publish_parser.add_argument("--overwrite", action="store_true")
+    publish_parser.add_argument("--allow-dirty", action="store_true")
+    publish_parser.add_argument("--dry-run", action="store_true")
+    export_parser = subparsers.add_parser("export-reproduction", help="Export a fixed-profile reproduction package.")
+    export_parser.add_argument("--run", type=Path, required=True)
+    export_parser.add_argument("--output", type=Path, required=True)
+    export_parser.add_argument("--overwrite", action="store_true")
+    export_parser.add_argument("--allow-dirty", action="store_true")
+    export_parser.add_argument("--profile", choices=("minimal", "full"), default="minimal")
+    export_parser.add_argument("--dry-run", action="store_true")
     for name in ("partition", "demand", "supply", "tte"):
         stage_parser = subparsers.add_parser(name, help=f"Run the {name} stage only.")
         _add_run_options(stage_parser)
@@ -82,6 +105,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     try:
+        if parsed.command == "validate":
+            from roadnet_partition.pipeline.validation import validate_run
+
+            report = validate_run(parsed.run, golden=parsed.golden, report=parsed.report)
+            print(f"validation: {report['overall_status']}")
+            return 0 if report["overall_status"] == "passed" else 5
+        if parsed.command == "publish":
+            from roadnet_partition.pipeline.publishing import publish_scope
+
+            result = publish_scope(
+                parsed.run, scope=parsed.scope, overwrite=parsed.overwrite,
+                allow_dirty=parsed.allow_dirty, dry_run=parsed.dry_run,
+            )
+            if parsed.allow_dirty and (
+                result["git"]["source"].get("dirty") is True
+                or result["git"]["current"].get("dirty") is True
+            ):
+                print("warning: publishing from dirty Git state", file=sys.stderr)
+            print(f"publish: {result['status']} -> {result['target']}")
+            return 0
+        if parsed.command == "export-reproduction":
+            from roadnet_partition.releases.reproduction import export_reproduction
+
+            result = export_reproduction(
+                parsed.run, output=parsed.output, overwrite=parsed.overwrite,
+                allow_dirty=parsed.allow_dirty, profile=parsed.profile, dry_run=parsed.dry_run,
+            )
+            if parsed.allow_dirty and (
+                result["git"]["source"].get("dirty") is True
+                or result["git"]["current"].get("dirty") is True
+            ):
+                print("warning: exporting from dirty Git state", file=sys.stderr)
+            print(f"export-reproduction: {result['status']} -> {result['output']}")
+            if result.get("blocked_classifications"):
+                print(f"blocked classifications: {result['blocked_classifications']}", file=sys.stderr)
+            return 0
         if parsed.command == "run":
             from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
 
@@ -127,6 +186,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("pipeline interrupted", file=sys.stderr)
         return 130
+    except (ValidationError, PublishError, ExportError) as error:
+        print(str(error), file=sys.stderr)
+        return 6
+    except FileExistsError as error:
+        print(str(error), file=sys.stderr)
+        return 6
     reused = bool(result.metrics.get("resume_reused", False))
     print(f"{result.stage}: {'reused' if reused else result.status.value}")
     return 0
