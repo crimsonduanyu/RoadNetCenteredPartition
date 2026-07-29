@@ -1,0 +1,21 @@
+{
+  "definitions": {
+    "SpatialPruner": "f0fa86e5ccbaefe57ebc3e1c90e597bf872c582fbb8851549d61305adbc5ecb9",
+    "_imputation_config": "1585d8067a3b9d67ab139507af98b62a6fc4efa37c0edda662845839bc15e4b7",
+    "_nan_ratio": "fa8fa6e0bc62b11404f14b63c5dea1dd34b09d412baf9555c5bab7a574542c6e",
+    "build_od_columns": "bed40177f0f994ea31793068f0f8b152f356387cd4879402427603d72fc917c1",
+    "build_tte_raw": "da4c9af08bec3aba641b472013247cedbacc5c10fabbc02ed64b23fd23106f44",
+    "calculate_transitive_time": "884e02481e95407520c29f54d7b72db009a67d07b943b8779685d90730b0ada7",
+    "compute_keep_clusters": "a9907e6f14c92532a5c6172e855bcf3ae753eb9ca195c91d3f8ca8fe1a6c7014",
+    "get_transitive_data": "0f73ce738ae04a5df0f79d4e7e756d88590e3715b97dc19ec4a79fc7f9936ba8",
+    "main": "f4e21425cdc64112f171a9bc7191cd1db9d2a44210743575266383dec6966288",
+    "parse_columns": "7236863c3e528151399415a33f243a36569d59058521d5f4cbad7d7453b635a9",
+    "resolve_output_dir": "1ac014e8d9108e03e489b8646548fb5360b6de361add5575a591bc2e54d1479d",
+    "run_from_config": "5fc213d7126110abe312d6a98be0fa27fd3be224716ebb90899f13ae27643f5c",
+    "run_imputation_pipeline": "17f7da4875a987a53d4e1e326f84544f59e728b3ea272708362ec6b664130fb7",
+    "validate_estimates": "e3cf3509874d02fd688108ddf9ac7edde8a6defb633bb8d2d6127222cd31791a",
+    "vectorize_transitive_impute": "ea5c42f72d5cd5dc485310dc1376e33e3deb2f173e59ea9e748301c75793f68f"
+  },
+  "normalization": "ast.unparse(); run_from_config removes function-local imports",
+  "source_commit": "f015a9d"
+}

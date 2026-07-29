@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
+import sys
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from roadnet_partition.downstream import tte
 from roadnet_partition.downstream.tte_contracts import validate_tte_outputs
@@ -14,6 +19,7 @@ from roadnet_partition.downstream.tte_contracts import validate_tte_outputs
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_PATH = PROJECT_ROOT / "src/lib/tte_dataset.py"
 NEW_PATH = PROJECT_ROOT / "src/roadnet_partition/downstream/tte.py"
+AST_BASELINE_PATH = PROJECT_ROOT / "docs/refactor/tte-mechanical-ast-v1.json"
 FORMAL_FILES = {
     "cluster_network_distance.parquet",
     "cluster_representative_nodes.csv",
@@ -22,6 +28,14 @@ FORMAL_FILES = {
     "TTE_support.parquet",
     "TTE_hops.parquet",
     "TTE_imputed.parquet",
+}
+LEGACY_PUBLIC_NAMES = {
+    "DEPARTURE_COL", "FINISH_COL", "ORIGIN_COL", "DESTINATION_COL", "DEFAULT_CONFIG",
+    "SpatialPruner", "active_scope_name", "load_project_config", "project_path",
+    "sort_cluster_ids", "parse_columns", "get_transitive_data", "calculate_transitive_time",
+    "vectorize_transitive_impute", "validate_estimates", "run_imputation_pipeline",
+    "compute_keep_clusters", "build_od_columns", "build_tte_raw", "resolve_output_dir",
+    "run_from_config", "main",
 }
 
 
@@ -123,23 +137,24 @@ def tiny_config(orders_path: Path, cluster_index_path: Path, output_dir: Path) -
 
 
 def test_mechanical_tte_definitions_match_legacy_ast() -> None:
-    legacy_tree = ast.parse(LEGACY_PATH.read_text(encoding="utf-8"))
     new_tree = ast.parse(NEW_PATH.read_text(encoding="utf-8"))
-    legacy = {node.name: node for node in legacy_tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
     new = {node.name: node for node in new_tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
-    names = {
-        "SpatialPruner", "parse_columns", "get_transitive_data", "calculate_transitive_time",
-        "vectorize_transitive_impute", "validate_estimates", "run_imputation_pipeline",
-        "compute_keep_clusters", "build_od_columns", "build_tte_raw", "_imputation_config",
-        "_nan_ratio", "resolve_output_dir", "run_from_config", "main",
-    }
-    for name in names - {"run_from_config"}:
-        assert ast.dump(legacy[name], include_attributes=False) == ast.dump(new[name], include_attributes=False)
-    legacy_run = legacy["run_from_config"]
-    new_run = new["run_from_config"]
-    legacy_run.body = [node for node in legacy_run.body if not isinstance(node, (ast.Import, ast.ImportFrom))]
-    new_run.body = [node for node in new_run.body if not isinstance(node, (ast.Import, ast.ImportFrom))]
-    assert ast.dump(legacy_run, include_attributes=False) == ast.dump(new_run, include_attributes=False)
+    baseline = json.loads(AST_BASELINE_PATH.read_text(encoding="utf-8"))["definitions"]
+    for name, expected in baseline.items():
+        node = new[name]
+        if name == "run_from_config":
+            node.body = [item for item in node.body if not isinstance(item, (ast.Import, ast.ImportFrom))]
+        actual = hashlib.sha256(ast.unparse(node).encode()).hexdigest()
+        assert actual == expected
+
+
+def test_legacy_tte_bridge_exports_authoritative_objects() -> None:
+    legacy = load_legacy_tte()
+    assert set(legacy.__all__) == LEGACY_PUBLIC_NAMES
+    for name in LEGACY_PUBLIC_NAMES:
+        assert getattr(legacy, name) is getattr(tte, name)
+    assert legacy._imputation_config is tte._imputation_config
+    assert legacy._nan_ratio is tte._nan_ratio
 
 
 def test_legacy_and_new_tiny_tte_outputs_are_exact(tmp_path: Path) -> None:
@@ -196,3 +211,26 @@ def test_legacy_and_new_tiny_tte_outputs_are_exact(tmp_path: Path) -> None:
     assert hops["2->A"].max() >= 1
     assert hops["2->B"].max() >= 2
     assert imputed["2->isolated"].isna().all()
+
+def test_stage4_wrapper_runs_tiny_config_outside_repository(tmp_path: Path) -> None:
+    orders_path, cluster_index_path, _ = write_tiny_inputs(tmp_path)
+    output_dir = tmp_path / "stage"
+    output_dir.mkdir()
+    for filename in ["cluster_network_distance.parquet", "cluster_representative_nodes.csv"]:
+        source = tmp_path / "new" / filename
+        (output_dir / filename).write_bytes(source.read_bytes())
+    config = tiny_config(orders_path, cluster_index_path, output_dir)
+    config_path = tmp_path / "tte.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "src/stages/stage4_tte.py"), str(config_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Stage 4 (TTE) summary:" in result.stdout
+    assert {path.name for path in output_dir.iterdir()} == FORMAL_FILES
