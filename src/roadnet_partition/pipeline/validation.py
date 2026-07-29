@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
+import geopandas as gpd
 import yaml
 
 from roadnet_partition import __version__
@@ -13,6 +15,7 @@ from roadnet_partition.io.manifests import (
     atomic_write_json,
     atomic_write_text,
     evaluate_resume,
+    file_record,
     input_fingerprint,
     load_manifest,
     utc_now,
@@ -22,9 +25,11 @@ from roadnet_partition.io.paths import assert_owned_path
 from roadnet_partition.pipeline.results import RunContext, StageStatus
 from roadnet_partition.pipeline.stages import (
     STAGE_ORDER,
+    canonical_partition_output_key,
     formal_stage_outputs,
     validate_stage_contract,
 )
+from roadnet_partition.zoning.contracts import compare_partitions, partition_groups, validate_partition
 
 
 class ValidationError(RuntimeError):
@@ -72,14 +77,168 @@ def _field(values: Mapping[str, Any], dotted: str) -> Any:
     return stable_value(current)
 
 
-def _golden_result(golden: Path | None, manifest: Mapping[str, Any]) -> dict[str, Any] | None:
+def _grouping_hash(clusters: gpd.GeoDataFrame) -> str:
+    digest = hashlib.sha256()
+    groups = sorted((sorted(group) for group in partition_groups(clusters)), key=lambda members: (len(members), members))
+    for members in groups:
+        digest.update("\t".join(members).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _asset_path(root: Path, project_root: Path, asset: Mapping[str, Any]) -> Path:
+    if "relative_path" in asset:
+        owner, value = root, asset["relative_path"]
+    elif "external_reference" in asset:
+        owner, value = project_root, asset["external_reference"]
+    else:
+        raise ValueError(f"Golden asset {asset.get('logical_name')!r} has no location")
+    raw = owner / str(value)
+    for current in (raw, *raw.parents):
+        if current.exists() and current.is_symlink():
+            raise ValueError(f"Golden asset path contains a symbolic link: {current}")
+        if current == owner:
+            break
+    resolved = raw.resolve()
+    if not resolved.is_relative_to(owner.resolve()):
+        raise ValueError(f"Golden asset escapes its owner: {value}")
+    return resolved
+
+
+def _golden_v1(
+    root: Path,
+    value: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    project_root: Path,
+    run_dir: Path,
+) -> dict[str, Any]:
+    required = {
+        "schema_version", "golden_id", "scope", "created_at", "source_inventory",
+        "source_git_context", "assets", "expected_contracts", "known_provenance",
+        "unknown_provenance", "privacy_summary",
+    }
+    if set(value) != required or value.get("schema_version") != 1:
+        raise ValueError("Golden v1 manifest schema is invalid")
+    if value["scope"] != manifest.get("scope"):
+        raise ValueError("Golden scope differs")
+    assets = value["assets"]
+    if not isinstance(assets, list) or not assets:
+        raise ValueError("Golden assets must be a non-empty list")
+    by_name: dict[str, tuple[Mapping[str, Any], Path]] = {}
+    local_checksums: dict[str, str] = {}
+    allowed_classes = {
+        "production-input", "golden-input", "golden-expected", "legacy-comparison",
+        "release-candidate", "archive-only", "unknown",
+    }
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise ValueError("Golden asset entry is invalid")
+        name = asset.get("logical_name")
+        if not isinstance(name, str) or name in by_name:
+            raise ValueError(f"Golden logical asset name is invalid or duplicated: {name!r}")
+        if asset.get("classification") not in allowed_classes:
+            raise ValueError(f"Golden asset classification is invalid: {name}")
+        path = _asset_path(root, project_root, asset)
+        if not path.is_file():
+            raise ValueError(f"Golden asset is missing: {path}")
+        record = file_record(path)
+        if record["size"] != asset.get("size") or record["sha256"] != asset.get("sha256"):
+            raise ValueError(f"Golden asset checksum differs: {name}")
+        by_name[name] = asset, path
+        if "relative_path" in asset:
+            local_checksums[str(asset["relative_path"])] = str(asset["sha256"])
+
+    checksum_path = root / "checksums.sha256"
+    declared = {}
+    for line in checksum_path.read_text(encoding="utf-8").splitlines():
+        digest, relative = line.split("  ", 1)
+        if relative in declared:
+            raise ValueError(f"Golden checksum path is duplicated: {relative}")
+        declared[relative] = digest
+    if declared != local_checksums:
+        raise ValueError("Golden checksums.sha256 differs from local asset inventory")
+
+    contract = value["expected_contracts"].get("partition")
+    if not isinstance(contract, dict):
+        raise ValueError("Golden Partition expected contract is missing")
+    expected_asset, expected_path = by_name[contract["asset"]]
+    if expected_asset.get("classification") != "golden-expected":
+        raise ValueError("Golden Partition contract does not reference golden-expected")
+    expected = gpd.read_file(expected_path)
+    expected_summary = validate_partition(
+        expected,
+        expected_crs=contract["crs"],
+        expected_bounds=contract["bounds"],
+    )
+    if expected_summary["segment_count"] != contract["segment_count"]:
+        raise ValueError("Golden Partition segment count differs")
+    if expected_summary["cluster_count"] != contract["cluster_count"]:
+        raise ValueError("Golden Partition cluster count differs")
+    grouping_hash = _grouping_hash(expected)
+    if grouping_hash != contract["grouping_sha256"]:
+        raise ValueError("Golden Partition grouping hash differs")
+    geometry_types = expected.geometry.geom_type.value_counts().sort_index().to_dict()
+    if geometry_types != contract["geometry"]["types"]:
+        raise ValueError("Golden Partition geometry types differ")
+
+    partition_outputs = manifest["stages"]["partition"]["outputs"]
+    actual_path = Path(partition_outputs[canonical_partition_output_key(partition_outputs)]["path"])
+    actual = gpd.read_file(actual_path)
+    actual_summary = validate_partition(
+        actual,
+        expected_segment_ids=expected["seg_id"].astype(str),
+        expected_crs=expected.crs,
+        expected_bounds=expected.total_bounds,
+    )
+    if not compare_partitions(actual, expected):
+        raise ValueError("run Partition grouping differs from Golden expected")
+
+    baseline = contract.get("baseline_initialization")
+    if baseline:
+        baseline_asset, baseline_path = by_name[baseline["asset"]]
+        if baseline_asset.get("classification") != "golden-input":
+            raise ValueError("Golden baseline initialization is not a golden-input")
+        config, _ = _load_stage_config(
+            run_dir / "resolved_configs/partition.yaml", "partition", project_root,
+        )
+        configured = Path(config.values["inputs"]["baseline_clusters"][baseline["name"]])
+        if file_record(configured)["sha256"] != file_record(baseline_path)["sha256"]:
+            raise ValueError("run baseline initialization differs from Golden")
+
+    return {
+        "status": "passed",
+        "golden_id": value["golden_id"],
+        "manifest": (root / "manifest.json").as_posix(),
+        "asset_count": len(assets),
+        "partition": {
+            "segment_count": actual_summary["segment_count"],
+            "cluster_count": actual_summary["cluster_count"],
+            "crs": actual_summary["crs"],
+            "grouping_sha256": grouping_hash,
+        },
+    }
+
+
+def _golden_result(
+    golden: Path | None,
+    manifest: Mapping[str, Any],
+    project_root: Path,
+    run_dir: Path,
+) -> dict[str, Any] | None:
     if golden is None:
         return None
-    root = golden.resolve()
+    raw_root = golden.expanduser().absolute()
+    if any(current.exists() and current.is_symlink() for current in (raw_root, *raw_root.parents)):
+        raise ValueError("Golden path may not contain a symbolic link")
+    root = raw_root.resolve()
     source = root / "manifest.json" if root.is_dir() else root
     value = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("schema_version") != 1:
         raise ValueError("Golden manifest schema is invalid")
+    if "golden_id" in value:
+        return _golden_v1(
+            root if root.is_dir() else source.parent, value, manifest, project_root, run_dir,
+        )
     checksums = value.get("checksums")
     expected_contract = value.get("expected_contract")
     if not isinstance(checksums, list) or not isinstance(expected_contract, dict):
@@ -256,7 +415,9 @@ def validate_run(
                 errors.append(f"{stage} bindings: {error}")
 
         try:
-            golden_results = _golden_result(None if golden is None else Path(golden), manifest)
+            golden_results = _golden_result(
+                None if golden is None else Path(golden), manifest, context.project_root, run_dir,
+            )
         except Exception as error:
             golden_results = {"status": "failed", "error": str(error)}
             errors.append(f"Golden: {error}")
