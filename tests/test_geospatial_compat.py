@@ -5,6 +5,7 @@ import os
 import geopandas as gpd
 from shapely.geometry import LineString, Point
 
+import env_setup
 from lib import geo as legacy
 from roadnet_partition.io import geospatial as current
 from roadnet_partition.io.environment import initialize_geospatial_environment
@@ -59,3 +60,5 @@ def test_geospatial_environment_initialization_is_repeatable() -> None:
     initialize_geospatial_environment()
     initialize_geospatial_environment()
     assert os.environ.get("GDAL_DATA") == before
+    assert env_setup.conda_prefix
+    assert hasattr(env_setup, "gdal_data") == ("gdal_data" in env_setup.__all__)

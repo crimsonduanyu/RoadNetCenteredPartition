@@ -10,7 +10,7 @@ _initialized = False
 
 
 def initialize_geospatial_environment() -> None:
-    global _initialized
+    global _initialized, gdal_data
     if _initialized:
         return
     if os.name == "nt":

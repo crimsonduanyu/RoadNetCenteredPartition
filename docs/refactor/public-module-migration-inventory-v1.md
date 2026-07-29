@@ -19,7 +19,8 @@ Legacy modules remain import-compatible bridges until Phase 10.
 - `lib.clustering`: `allocate_component_cluster_counts`.
 - `lib.network_distance`: all eight distance functions plus the three historically imported project/config/sort helpers.
 - `lib.metrics`: `EPS`, `MetricThresholds`, and all 25 public functions.
-- `env_setup`: `conda_prefix` and the new repeat-safe initializer.
+- `env_setup`: `conda_prefix`, the conditionally present historical `gdal_data`,
+  and the new repeat-safe initializer.
 
 No target module had `from ... import *`, dynamic source-file loading, `Path.cwd()`,
 or `os.getcwd()` usage. Existing dynamic imports elsewhere target Supply/Demand
