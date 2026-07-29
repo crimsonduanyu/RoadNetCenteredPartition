@@ -86,6 +86,13 @@ def test_owned_path_rejects_escape_owner_and_symlink(tmp_path: Path) -> None:
     with pytest.raises(UnsafePathError):
         assert_owned_path(link / "child", owner)
 
+    inside = owner / "inside"
+    inside.mkdir()
+    internal_link = owner / "internal-link"
+    os.symlink(inside, internal_link)
+    with pytest.raises(UnsafePathError):
+        assert_owned_path(internal_link / "child", owner)
+
 
 def test_config_key_map_covers_every_current_mapping_key_once() -> None:
     import yaml

@@ -42,9 +42,17 @@ def assert_owned_path(target: Path, owner: Path, *, allow_owner: bool = False) -
     """Validate a deletion/replacement target without following owned symlinks."""
     owner_path = Path(owner).expanduser().resolve()
     raw_target = Path(target).expanduser()
-    if raw_target.is_symlink():
-        raise UnsafePathError(f"symbolic-link target is not owned: {raw_target}")
-    target_path = raw_target.resolve()
+    lexical_target = raw_target if raw_target.is_absolute() else owner_path / raw_target
+    lexical_target = Path(os.path.normpath(lexical_target))
+    if lexical_target != owner_path and not lexical_target.is_relative_to(owner_path):
+        raise UnsafePathError(f"target escapes owned directory: {lexical_target}")
+    current = owner_path
+    for part in lexical_target.relative_to(owner_path).parts:
+        current = current / part
+        if current.is_symlink():
+            raise UnsafePathError(f"owned path contains a symbolic link: {current}")
+
+    target_path = lexical_target.resolve()
     if target_path == owner_path:
         if allow_owner:
             return target_path
@@ -52,12 +60,6 @@ def assert_owned_path(target: Path, owner: Path, *, allow_owner: bool = False) -
     if not target_path.is_relative_to(owner_path):
         raise UnsafePathError(f"target escapes owned directory: {target_path}")
 
-    relative = target_path.relative_to(owner_path)
-    current = owner_path
-    for part in relative.parts:
-        current = current / part
-        if current.exists() and current.is_symlink():
-            raise UnsafePathError(f"owned path contains a symbolic link: {current}")
     return target_path
 
 
