@@ -1,5 +1,10 @@
 """Road-network-centered partitioning package."""
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("roadnet-partition")
+except PackageNotFoundError:  # Source checkout before installation.
+    __version__ = "0+unknown"
 
 __all__ = ["__version__"]

@@ -1,0 +1,8 @@
+project_root: ../..
+inputs:
+  source: data/input.csv
+  sources:
+    - data/a.csv
+    - ~/roadnet-test/b.csv
+output_dir: results
+value: 7
