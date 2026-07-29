@@ -262,6 +262,12 @@ def test_driver_chunked_equals_whole_frame(tmp_path) -> None:
     av = w_av.merge(c_av, on=["slot_start", "cluster_id"], how="left", suffixes=("_w", "_c"))
     assert (av["available_vehicles_w"] == av["available_vehicles_c"]).all()
 
+    c_fl = norm(pd.read_csv(out_dir / "supply_fleet_lower_bound.csv.gz"), ["slot_start", "cluster_id"])
+    w_fl = norm(whole["supply_fleet_lower_bound"], ["slot_start", "cluster_id"])
+    fleet = w_fl.merge(c_fl, on=["slot_start", "cluster_id"], how="left", suffixes=("_w", "_c"))
+    assert (fleet["fleet_lower_bound_cluster_w"] == fleet["fleet_lower_bound_cluster_c"]).all()
+    assert (fleet["global_fleet_lower_bound_w"] == fleet["global_fleet_lower_bound_c"]).all()
+
 
 def test_fleet_lower_bound_in_service_counts_origin_only() -> None:
     """Fix-2: an in-service driver is attributed to the origin cluster only."""
