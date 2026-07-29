@@ -23,12 +23,51 @@ def test_new_package_has_no_legacy_imports_or_path_injection() -> None:
                         violations.append(f"{path}:{node.lineno}: import {alias.name}")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == "lib" or module.startswith("lib."):
+                if module == "lib" or module.startswith("lib.") or module == "src" or module.startswith("src."):
                     violations.append(f"{path}:{node.lineno}: from {module}")
             elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 if node.func.attr in {"insert", "append"} and isinstance(node.func.value, ast.Attribute):
                     if isinstance(node.func.value.value, ast.Name) and node.func.value.value.id == "sys" and node.func.value.attr == "path":
                         violations.append(f"{path}:{node.lineno}: sys.path.{node.func.attr}")
+    assert violations == []
+
+
+def test_zoning_layer_boundaries_and_regularized_import_graph() -> None:
+    regularized_root = PACKAGE_ROOT / "zoning" / "regularized"
+    graph = {}
+    violations = []
+    for path in sorted((PACKAGE_ROOT / "zoning").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        module_name = ".".join(path.relative_to(PACKAGE_ROOT.parent).with_suffix("").parts)
+        graph.setdefault(module_name, set())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            imported = node.module or ""
+            if imported.startswith("roadnet_partition.zoning.regularized") and path.is_relative_to(regularized_root):
+                graph[module_name].add(imported)
+            if path.name == "contracts.py" and imported.endswith(".cli"):
+                violations.append(f"{path}:{node.lineno}: contracts imports CLI")
+            if "algorithms" in path.parts and imported.startswith("roadnet_partition.pipeline"):
+                violations.append(f"{path}:{node.lineno}: algorithm imports pipeline")
+            if imported.startswith(("lib", "src", "stages", "adaptive_clustering")):
+                violations.append(f"{path}:{node.lineno}: legacy import {imported}")
+
+    visiting = set()
+    visited = set()
+    def visit(module: str) -> None:
+        if module in visiting:
+            violations.append(f"regularized import cycle at {module}")
+            return
+        if module in visited:
+            return
+        visiting.add(module)
+        for dependency in graph.get(module, ()):
+            visit(dependency)
+        visiting.remove(module)
+        visited.add(module)
+    for module in graph:
+        visit(module)
     assert violations == []
 
 
@@ -48,6 +87,13 @@ def test_migrated_modules_import_from_outside_repository(tmp_path: Path) -> None
         "roadnet_partition.graphs.relations",
         "roadnet_partition.graphs.distance",
         "roadnet_partition.zoning.algorithms.common",
+        "roadnet_partition.zoning.algorithms.leiden",
+        "roadnet_partition.zoning.algorithms.region_growing",
+        "roadnet_partition.zoning.partition",
+        "roadnet_partition.zoning.contracts",
+        "roadnet_partition.zoning.regularized.objective",
+        "roadnet_partition.zoning.regularized.search",
+        "roadnet_partition.zoning.regularized.selection",
         "roadnet_partition.zoning.metrics",
     ]
     command = [sys.executable, "-c", "; ".join(f"import {module}" for module in modules)]

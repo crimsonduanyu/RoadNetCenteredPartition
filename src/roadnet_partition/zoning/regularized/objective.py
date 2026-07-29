@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import networkx as nx
-
-if TYPE_CHECKING:
-    from roadnet_partition.zoning.regularized.search import SearchParams
 
 EPS = 1.0e-12
 

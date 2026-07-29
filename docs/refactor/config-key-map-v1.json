@@ -31,6 +31,10 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -59,6 +63,10 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
         }
       ],
@@ -2028,6 +2036,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "region_candidate_score"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "region_candidate_score"
         }
       ],
       "suspected_deprecated": false,
@@ -2077,6 +2089,10 @@
         {
           "file": "src/roadnet_partition/zoning/metrics.py",
           "function": "load_or_build_hourly_segment_od"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -2778,6 +2794,10 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -3074,6 +3094,18 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -3203,6 +3235,14 @@
         {
           "file": "src/lib/tte_dataset.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -3235,6 +3275,10 @@
         },
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -3994,6 +4038,26 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "metric_thresholds"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_pareto_summary"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "save_partition_outputs"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -4023,6 +4087,10 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "save_partition_outputs"
         }
       ],
       "suspected_deprecated": false,
@@ -4084,6 +4152,38 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/louvain.py",
+          "function": "run_louvain"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/leiden.py",
+          "function": "run_leiden"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "configured_target_clusters"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/skater.py",
+          "function": "run_skater"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "metis_vertex_weights"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/metis.py",
+          "function": "run_metis"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4112,6 +4212,10 @@
         },
         {
           "file": "src/05_benchmark_clusters.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "main"
         }
       ],
@@ -4142,6 +4246,10 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "main"
         }
       ],
       "suspected_deprecated": false,
@@ -4171,6 +4279,14 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "clustering_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/louvain.py",
+          "function": "run_louvain"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/leiden.py",
+          "function": "run_leiden"
         }
       ],
       "suspected_deprecated": false,
@@ -4200,6 +4316,14 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "clustering_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/louvain.py",
+          "function": "run_louvain"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/leiden.py",
+          "function": "run_leiden"
         }
       ],
       "suspected_deprecated": false,
@@ -4237,6 +4361,22 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "configured_target_clusters"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -4262,6 +4402,10 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "clustering_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/skater.py",
+          "function": "run_skater"
         }
       ],
       "suspected_deprecated": false,
@@ -4282,6 +4426,10 @@
       "readers": [
         {
           "file": "src/03_cluster_segments.py",
+          "function": "run_skater"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/skater.py",
           "function": "run_skater"
         }
       ],
@@ -4312,6 +4460,14 @@
         {
           "file": "src/05_benchmark_clusters.py",
           "function": "clustering_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "metis_vertex_weights"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/metis.py",
+          "function": "run_metis"
         }
       ],
       "suspected_deprecated": false,
@@ -4333,6 +4489,10 @@
         {
           "file": "src/03_cluster_segments.py",
           "function": "metis_vertex_weights"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "metis_vertex_weights"
         }
       ],
       "suspected_deprecated": false,
@@ -4353,6 +4513,10 @@
       "readers": [
         {
           "file": "src/03_cluster_segments.py",
+          "function": "run_metis"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/metis.py",
           "function": "run_metis"
         }
       ],
@@ -4379,6 +4543,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4399,6 +4567,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4421,6 +4593,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4442,6 +4618,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4462,6 +4642,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4492,6 +4676,18 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -4512,6 +4708,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4534,6 +4734,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4554,6 +4758,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4576,6 +4784,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4596,6 +4808,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4618,6 +4834,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4638,6 +4858,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4660,6 +4884,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4680,6 +4908,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4702,6 +4934,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -4722,6 +4958,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -4788,6 +5028,14 @@
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "add_balanced_score"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
         }
       ],
       "suspected_deprecated": false,
@@ -5072,6 +5320,22 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "verify_against_frozen"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "verify_output_root"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "verify_against_frozen"
         }
       ],
       "suspected_deprecated": false,
@@ -5100,6 +5364,14 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -5145,6 +5417,10 @@
         },
         {
           "file": "src/05_benchmark_clusters.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "main"
         }
       ],
@@ -5203,6 +5479,14 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -5243,6 +5527,18 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -5301,6 +5597,18 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -5329,6 +5637,10 @@
         },
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -5470,6 +5782,18 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "load_context"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -5544,6 +5868,14 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "load_context"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -5585,6 +5917,10 @@
       "readers": [
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "build_regularized_config"
         }
       ],
@@ -5691,6 +6027,46 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/search.py",
+          "function": "build_macro_candidate"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/search.py",
+          "function": "best_merge_only_candidate"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/search.py",
+          "function": "best_split_only_candidate"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/search.py",
+          "function": "run_search"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -5724,6 +6100,18 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -5748,6 +6136,14 @@
         },
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -5774,6 +6170,14 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -5799,6 +6203,14 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -5819,6 +6231,10 @@
       "readers": [
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -5848,6 +6264,18 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -5886,6 +6314,18 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -5918,6 +6358,22 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -5952,6 +6408,22 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -5976,6 +6448,14 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -6005,6 +6485,18 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -6039,6 +6531,14 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -6067,6 +6567,18 @@
         },
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "canonical_setting_stem"
         }
       ],
@@ -6101,6 +6613,22 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6122,6 +6650,10 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6142,6 +6674,10 @@
       "readers": [
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -6168,6 +6704,14 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6188,6 +6732,10 @@
       "readers": [
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -6218,6 +6766,18 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6238,6 +6798,10 @@
       "readers": [
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -6260,6 +6824,10 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6281,6 +6849,10 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6301,6 +6873,10 @@
       "readers": [
         {
           "file": "src/lib/regularized.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -6335,6 +6911,22 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "canonical_setting_stem"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "canonical_setting_stem"
         }
       ],
       "suspected_deprecated": false,
@@ -6359,6 +6951,14 @@
         },
         {
           "file": "src/lib/regularized.py",
+          "function": "build_settings"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
           "function": "build_settings"
         }
       ],
@@ -6405,6 +7005,26 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "metric_thresholds"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_pareto_summary"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "save_partition_outputs"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -6425,6 +7045,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
+          "function": "metric_thresholds"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
           "function": "metric_thresholds"
         }
       ],
@@ -6511,6 +7135,10 @@
         {
           "file": "src/adaptive_clustering.py",
           "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
         }
       ],
       "suspected_deprecated": false,
@@ -6531,6 +7159,10 @@
       "readers": [
         {
           "file": "src/adaptive_clustering.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
           "function": "adaptive_params"
         }
       ],
@@ -6617,6 +7249,10 @@
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
           "function": "build_pareto_summary"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_pareto_summary"
         }
       ],
       "suspected_deprecated": false,
@@ -6637,6 +7273,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
           "function": "build_candidate_selection"
         }
       ],
@@ -6659,6 +7299,10 @@
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
           "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_candidate_selection"
         }
       ],
       "suspected_deprecated": false,
@@ -6680,6 +7324,10 @@
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
           "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_candidate_selection"
         }
       ],
       "suspected_deprecated": false,
@@ -6700,6 +7348,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
           "function": "build_candidate_selection"
         }
       ],
@@ -6766,6 +7418,14 @@
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
           "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "add_balanced_score"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
         }
       ],
       "suspected_deprecated": false,
@@ -7075,6 +7735,14 @@
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
           "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "add_balanced_score"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
         }
       ],
       "suspected_deprecated": false,
@@ -7095,6 +7763,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
           "function": "select_best_run"
         }
       ],
@@ -7117,6 +7789,10 @@
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
           "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
         }
       ],
       "suspected_deprecated": false,
@@ -7137,6 +7813,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
           "function": "select_best_run"
         }
       ],
@@ -7171,6 +7851,18 @@
         {
           "file": "src/lib/regularized.py",
           "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/algorithms/adaptive.py",
+          "function": "adaptive_params"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
         }
       ],
       "suspected_deprecated": false,
@@ -7191,6 +7883,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
+          "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
           "function": "select_best_run"
         }
       ],
@@ -7217,6 +7913,14 @@
         {
           "file": "regularized_zoning_experiments/visualize_regularized_results.py",
           "function": "select_best_run"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "add_balanced_score"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/regularized/selection.py",
+          "function": "select_best_run"
         }
       ],
       "suspected_deprecated": false,
@@ -7237,6 +7941,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
           "function": "build_candidate_selection"
         }
       ],
@@ -7279,6 +7987,14 @@
         {
           "file": "src/03_cluster_segments.py",
           "function": "build_ranked_summary"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_ranked_summary"
         }
       ],
       "suspected_deprecated": false,
@@ -7304,6 +8020,14 @@
         {
           "file": "src/03_cluster_segments.py",
           "function": "build_ranked_summary"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
+          "function": "build_ranked_summary"
         }
       ],
       "suspected_deprecated": false,
@@ -7324,6 +8048,10 @@
       "readers": [
         {
           "file": "regularized_zoning_experiments/evaluate_regularized.py",
+          "function": "build_candidate_selection"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/evaluate.py",
           "function": "build_candidate_selection"
         }
       ],
@@ -7658,6 +8386,22 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "verify_against_frozen"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "verify_output_root"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "verify_against_frozen"
         }
       ],
       "suspected_deprecated": false,
@@ -7679,6 +8423,10 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "verify_output_root"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "verify_output_root"
         }
       ],
       "suspected_deprecated": false,
@@ -7699,6 +8447,10 @@
       "readers": [
         {
           "file": "src/stages/stage1_partition.py",
+          "function": "verify_against_frozen"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "verify_against_frozen"
         }
       ],
@@ -8034,6 +8786,18 @@
         {
           "file": "src/stages/stage1_partition.py",
           "function": "build_regularized_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "build_regularized_config"
         }
       ],
       "suspected_deprecated": false,
@@ -8149,6 +8913,14 @@
         },
         {
           "file": "src/lib/tte_dataset.py",
+          "function": "run_from_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
+          "function": "validate_config"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "run_from_config"
         }
       ],
@@ -8676,6 +9448,10 @@
         },
         {
           "file": "src/05_benchmark_clusters.py",
+          "function": "main"
+        },
+        {
+          "file": "src/roadnet_partition/zoning/partition.py",
           "function": "main"
         }
       ],
