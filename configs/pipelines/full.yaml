@@ -1,0 +1,21 @@
+schema_version: 1
+project_root: ../..
+scope: fifth_ring
+
+run:
+  root: ../../outputs/runs
+  isolate_stages: true
+
+stages:
+  partition:
+    config: ../zoning/regularized.yaml
+    required: true
+  demand:
+    config: demand.yaml
+    required: true
+  supply:
+    config: supply.yaml
+    required: true
+  tte:
+    config: tte.yaml
+    required: true
