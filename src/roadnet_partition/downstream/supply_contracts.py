@@ -46,11 +46,16 @@ def _validate_table(
     clusters: set[str] = set()
     totals = {column: 0 for column in values}
     key_hash = hashlib.sha256()
-    for chunk in pd.read_csv(path, chunksize=chunksize, dtype={column: str for column in cluster_columns}):
+    row_hash = hashlib.sha256()
+    cluster_columns = list(cluster_columns)
+    for chunk in pd.read_csv(path, chunksize=chunksize):
         if list(chunk.columns) != columns:
             raise ValueError(f"{path.name} schema differs: {list(chunk.columns)}")
         if chunk[keys].isna().any().any() or chunk[values].isna().any().any():
             raise ValueError(f"{path.name} contains null key or value fields")
+        for column in cluster_columns:
+            if not pd.api.types.is_integer_dtype(chunk[column].dtype):
+                raise ValueError(f"{path.name} {column} must be integer")
         for column in values:
             if not pd.api.types.is_integer_dtype(chunk[column].dtype):
                 raise ValueError(f"{path.name} {column} must be integer")
@@ -73,6 +78,7 @@ def _validate_table(
         for column in cluster_columns:
             clusters.update(chunk[column].astype(str))
         key_hash.update(pd.util.hash_pandas_object(chunk[keys], index=False).to_numpy().tobytes())
+        row_hash.update(pd.util.hash_pandas_object(chunk[columns], index=False).to_numpy().tobytes())
         rows += len(chunk)
     return {
         "rows": rows,
@@ -84,6 +90,7 @@ def _validate_table(
         ),
         "totals": totals,
         "key_hash": key_hash.hexdigest(),
+        "row_hash": row_hash.hexdigest(),
     }
 
 
