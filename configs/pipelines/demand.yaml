@@ -4,7 +4,8 @@ scope: fifth_ring
 
 order_pipeline:
   inputs:
-    partition_gpkg: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg
+    # Standalone fallback only. Full pipelines bind the same-run Partition output.
+    partition_gpkg: ../../data/processed/fifth_ring/partition/canonical_partition.gpkg
     road_relation_edges_csv: ../../data/processed/fifth_ring/segment_relation_edges_road_poi_order.csv
     order_datasets:
       - ../../data/raw/beijing_orders_2017-06_2017-08.csv

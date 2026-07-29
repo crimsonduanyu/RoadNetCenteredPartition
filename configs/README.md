@@ -1,9 +1,14 @@
-# Configuration migration workspace
+# Production split configuration
 
-The legacy `config.yaml` remains authoritative for existing entrypoints during
-the staged refactor. New configuration fixtures in this directory exercise the
-new rule that relative paths are resolved against the containing configuration
-file, never against the current working directory.
+`configs/pipelines/full.yaml` is the recommended fixed four-stage entrypoint.
+All relative paths resolve against the file containing them, never the current
+working directory.
 
-Production dataset, zoning, and pipeline configurations will be introduced only
-when their corresponding business stages migrate.
+Normal production inputs live under `data/`. Partition initialization and its
+canonical expected contract are explicitly versioned under
+`artifacts/golden/beijing-fifth-ring-v1/`. Demand, Supply, and TTE receive
+same-run upstream outputs through fixed runtime bindings; their configured
+`data/processed/` paths are standalone fallbacks only.
+
+The root `config.yaml` remains unchanged for legacy wrappers during the
+compatibility period.

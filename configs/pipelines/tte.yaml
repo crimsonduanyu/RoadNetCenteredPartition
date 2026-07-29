@@ -21,8 +21,9 @@ stage4_tte:
     representatives_filename: "cluster_representative_nodes.csv"
     recompute: false
     graphml_path: ../../data/raw/beijing_drive_within_fifth_ring.graphml
-    classified_edges_path: ../../IntermediateDataForReproduce/road_edges_classified.gpkg
-    partition_gpkg: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg
+    classified_edges_path: ../../data/interim/fifth_ring/road_edges_classified.gpkg
+    # Standalone recompute fallback; full pipelines bind the same-run Partition output.
+    partition_gpkg: ../../data/processed/fifth_ring/partition/canonical_partition.gpkg
   time:
     freq: "10min"
     start_time: "2017-06-01 00:00:00"

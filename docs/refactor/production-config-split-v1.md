@@ -1,5 +1,8 @@
 # Production config split audit v1
 
+> Legacy Phase 6A audit snapshot. Path values below record the pre-Phase 8
+> state and are superseded by `production-config-path-migration-v2.md`.
+
 本报告是 Phase 6A 的 341-key 审计。根 `config.yaml` 继续服务旧 wrapper；split config 只由新公开单阶段入口读取。
 
 ## Inventory and rules

@@ -7,6 +7,8 @@ run:
   isolate_stages: true
 
 stages:
+  # Fixed order and runtime bindings are owned by the runner; stage fallback
+  # paths are used only by standalone commands.
   partition:
     config: ../zoning/regularized.yaml
     required: true

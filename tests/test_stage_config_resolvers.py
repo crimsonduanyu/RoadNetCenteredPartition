@@ -329,7 +329,18 @@ def _same_shape(actual: Any, expected: Any) -> Any:
     return actual
 
 
-def test_production_effective_parameters_match_root_config() -> None:
+def _mask_fields(values: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
+    result = deepcopy(values)
+    for field in fields:
+        current = result
+        parts = field.split(".")
+        for part in parts[:-1]:
+            current = current[part]
+        current[parts[-1]] = "<phase8-path>"
+    return result
+
+
+def test_production_effective_algorithm_parameters_match_root_config() -> None:
     root = yaml.safe_load((PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8"))
 
     partition = resolve_partition_config(PRODUCTION["partition"][1])
@@ -344,14 +355,19 @@ def test_production_effective_parameters_match_root_config() -> None:
          "inputs.segment_nodes", "inputs.poi_features", "inputs.order_features", "inputs.hourly_od",
          "inputs.baseline_clusters"),
     )
-    assert {key: partition.values[key] for key in expected_partition} == expected_partition
+    actual_partition = {key: partition.values[key] for key in expected_partition}
+    assert _mask_fields(actual_partition, ("inputs", "outputs")) == _mask_fields(
+        expected_partition, ("inputs", "outputs"),
+    )
 
     demand = resolve_demand_config(PRODUCTION["demand"][1])
     expected_demand = _absolute_project_paths(
         root["order_pipeline"],
         ("inputs.partition_gpkg", "inputs.road_relation_edges_csv", "inputs.order_datasets", "inputs.poi_path"),
     )
-    assert demand.values["order_pipeline"] == expected_demand
+    assert _mask_fields(demand.values["order_pipeline"], ("inputs", "outputs")) == _mask_fields(
+        expected_demand, ("inputs", "outputs"),
+    )
 
     supply = resolve_supply_config(PRODUCTION["supply"][1])
     expected_supply = {
@@ -359,7 +375,10 @@ def test_production_effective_parameters_match_root_config() -> None:
         if key not in {"demand_path", "demand_dir", "peak_morning_hours", "peak_evening_hours"}
     }
     expected_supply = _absolute_project_paths(expected_supply, ("orders_path", "output_dir"))
-    assert supply.values["stage3_supply"] == expected_supply
+    supply_paths = ("orders_path", "cluster_index_path", "output_dir")
+    assert _mask_fields(supply.values["stage3_supply"], supply_paths) == _mask_fields(
+        expected_supply, supply_paths,
+    )
 
     tte = resolve_tte_config(PRODUCTION["tte"][1])
     expected_tte = _absolute_project_paths(
@@ -367,4 +386,10 @@ def test_production_effective_parameters_match_root_config() -> None:
         ("inputs.orders_path", "inputs.cluster_index_path", "output_dir", "distance.graphml_path",
          "distance.classified_edges_path", "distance.partition_gpkg"),
     )
-    assert _same_shape(tte.values["stage4_tte"], expected_tte) == expected_tte
+    actual_tte = _same_shape(tte.values["stage4_tte"], expected_tte)
+    tte_paths = (
+        "inputs.orders_path", "inputs.cluster_index_path", "inputs.network_distance_path",
+        "inputs.representative_nodes_path", "output_dir", "distance.graphml_path",
+        "distance.classified_edges_path", "distance.partition_gpkg",
+    )
+    assert _mask_fields(actual_tte, tte_paths) == _mask_fields(expected_tte, tte_paths)
