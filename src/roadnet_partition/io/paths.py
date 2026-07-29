@@ -50,7 +50,6 @@ def assert_safe_run_dir(
         protected.extend((
             (root, False),
             (root / "data", True),
-            (root / "IntermediateDataForReproduce", True),
             (root / "artifacts/golden", True),
             (root / "Golden", True),
             (root / "golden", True),

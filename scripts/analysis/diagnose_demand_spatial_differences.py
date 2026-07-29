@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FORMAL = PROJECT_ROOT / "data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz"
 DEFAULT_LINUX = PROJECT_ROOT / "outputs/refactor-validation/phase5a-demand/phase5a-full-v1/demand/orders_region_assigned.csv.gz"
 DEFAULT_ORDERS = PROJECT_ROOT / "data/raw/beijing_orders_2017-06_2017-08.csv"
-DEFAULT_PARTITION = PROJECT_ROOT / "IntermediateDataForReproduce/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg"
+DEFAULT_PARTITION = PROJECT_ROOT / "artifacts/golden/beijing-fifth-ring-v1/expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg"
 DEFAULT_OUTPUT = PROJECT_ROOT / "outputs/refactor-validation/phase5a-demand/phase5a-spatial-diagnostics-v1.json"
 
 ASSIGNED_COLUMNS = [

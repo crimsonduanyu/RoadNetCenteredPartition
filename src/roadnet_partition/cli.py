@@ -124,6 +124,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             ):
                 print("warning: publishing from dirty Git state", file=sys.stderr)
             print(f"publish: {result['status']} -> {result['target']}")
+            if parsed.dry_run:
+                print(f"inventory: {result['file_count']} files, {result['total_size']} bytes")
             return 0
         if parsed.command == "export-reproduction":
             from roadnet_partition.releases.reproduction import export_reproduction
@@ -138,8 +140,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             ):
                 print("warning: exporting from dirty Git state", file=sys.stderr)
             print(f"export-reproduction: {result['status']} -> {result['output']}")
+            if parsed.dry_run:
+                for item in result["inventory"]:
+                    print(
+                        f"candidate: {item['classification']} {item['release_path']} "
+                        f"({item['size']} bytes)"
+                    )
             if result.get("blocked_classifications"):
                 print(f"blocked classifications: {result['blocked_classifications']}", file=sys.stderr)
+                print(result["blocking_reason"], file=sys.stderr)
             return 0
         if parsed.command == "run":
             from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline

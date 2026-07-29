@@ -70,7 +70,7 @@ def test_safe_run_directory_rejects_protected_roots_and_allows_external(tmp_path
     project.mkdir()
     for relative in [
         ".", "data", "data/raw", "data/interim", "data/processed/x",
-        "IntermediateDataForReproduce/v1", "artifacts/golden/v1", "Golden/v1",
+        "artifacts/golden/v1", "Golden/v1",
         "golden/v1", "release/v1", "releases/v1",
     ]:
         with pytest.raises(UnsafePathError):

@@ -211,7 +211,6 @@ def test_minimal_export_checksum_manifest_and_no_run_mutation(tmp_path: Path) ->
     assert (output / "manifest.json").is_file()
     assert (output / "checksums.sha256").is_file()
     assert not list(output.rglob("orders_region_assigned.csv.gz"))
-    assert not list(output.rglob("IntermediateDataForReproduce"))
     assert "does not imply permission" in (output / "README.md").read_text(encoding="utf-8")
     for line in (output / "checksums.sha256").read_text(encoding="utf-8").splitlines():
         digest, relative = line.split("  ", 1)
@@ -222,6 +221,8 @@ def test_export_profiles_dry_run_privacy_overwrite_and_rollback(tmp_path: Path) 
     _, run_dir = complete_run(tmp_path)
     full = export_reproduction(run_dir, output=tmp_path / "full", profile="full", dry_run=True)
     assert full["blocked_classifications"] == ["private", "restricted"]
+    assert full["blocking_reason"]
+    assert all(set(item) == {"stage", "logical_key", "release_path", "classification", "size"} for item in full["inventory"])
     with pytest.raises(ExportError, match="blocked classifications"):
         export_reproduction(run_dir, output=tmp_path / "full", profile="full")
 

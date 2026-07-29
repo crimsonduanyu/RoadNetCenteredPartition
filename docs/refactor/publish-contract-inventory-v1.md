@@ -46,3 +46,9 @@ Demand metadata, and Supply summaries. Production classification remains
 `unknown` unless a later phase supplies an explicit distribution decision;
 `full` contains private/restricted candidates and therefore cannot be exported
 without a future, explicit approval mechanism.
+
+Phase 8 boundary: resolved configs, sanitized manifests, validation reports,
+and explicitly classified run outputs remain release candidates. Raw inputs and
+Golden payload are never imported into a release inventory. Demand, Supply, and
+TTE production artifacts remain private/restricted; only synthetic fixtures may
+become `minimal` payload without a separate distribution decision.

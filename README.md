@@ -1,237 +1,169 @@
-# Beijing Road-Centered Semantic Network Partitioning Prototype
+# RoadNet-Centered Partition Pipeline
 
-This project builds a reproducible road-centered partitioning pipeline for configurable Beijing ring-road study areas, currently **inside the Fifth Ring Road** or **inside the Fourth Ring Road**.
+This project builds a fixed four-stage Beijing road-network data pipeline:
 
-The key modeling choice is:
-
-- ordinary road segments are graph nodes;
-- short connector roads such as OSM `*_link` ramps are compressed into relation edges between adjacent ordinary road segments.
-
-The study area is **not** a bbox. The shared raw road network is the Fifth-Ring network in `data/raw/`; narrower scopes such as Fourth Ring reuse that raw network and apply a different boundary filter during preprocessing.
-
-Switch the active scope in `config.yaml`:
-
-```yaml
-study_area:
-  active: "fifth_ring"   # or "fourth_ring"
+```text
+partition → demand → supply → tte
 ```
 
-## Repository structure and three-stage pipeline
+The new runner, stage contracts, validation, transactional publishing, and
+reproduction export are the recommended interfaces. Legacy scripts and the
+root `config.yaml` remain available during the compatibility period but are no
+longer the recommended workflow.
 
-Code is split into pure library modules under `src/lib/` (importable, no I/O) and thin run scripts under `src/stages/` that read the single `config.yaml`. The pipeline has three stages:
+## Environment
 
-1. **Stage 1 — spatial partitioning** (`src/stages/stage1_partition.py`, core `src/lib/regularized.py`): a deterministic regularized local search, initialized from the leiden baseline, optimizes a capacity-balanced cut objective into the canonical 100-cluster partition.
-2. **Stage 2 — demand dataset** (`src/stages/stage2_demand.py`, core `src/lib/order_dataset.py`): assigns orders to clusters and builds the cluster OD table/tensor and road/POI/distance cluster graphs.
-3. **Stage 3 — supply state** (`src/stages/stage3_supply.py`, core `src/lib/supply.py`): reconstructs driver chains/idle windows and slot-level supply tables.
-
-The random, OSM-dependent inputs and baselines are frozen in `IntermediateDataForReproduce/` so the canonical partition is exactly reproducible; `config.yaml` points Stage 1's inputs/baselines and Stage 2's partition there. See `CLAUDE.md` for details.
-
-The detailed **Pipeline overview** below describes the *legacy baseline pipeline* (`src/00`–`src/05`) that builds the road graph and baseline clusterings — its products are now frozen and consumed by Stage 1.
-
-## Environment setup
-
-Recommended conda workflow:
+Use the project `dydl` environment for every command:
 
 ```bash
-conda env create -f environment.yml
-conda activate bj_road_partition
+conda run -n dydl pip install -e . --no-deps
+conda run -n dydl python -m pytest
 ```
 
-If `python-louvain` is unavailable through conda on your machine:
+Do not install the deferred clustering dependency or change Demand spatial
+assignment as part of ordinary operation.
+
+## Full pipeline
 
 ```bash
-pip install python-louvain
+conda run -n dydl roadnet-partition run \
+  --config configs/pipelines/full.yaml
 ```
 
-## How to run
+Runs are isolated by stage by default and write only beneath:
 
-Run the full three-stage pipeline from the project root:
+```text
+outputs/runs/<run_id>/
+├── manifest.json
+├── resolved_config.yaml
+├── resolved_configs/
+├── logs/
+├── partition/
+├── demand/
+├── supply/
+└── tte/
+```
+
+Continue an existing run after validating completed upstream stages:
 
 ```bash
-python src/run_pipeline.py
+conda run -n dydl roadnet-partition run \
+  --config configs/pipelines/full.yaml \
+  --run-dir outputs/runs/<run_id> \
+  --from-stage supply \
+  --resume
 ```
 
-Or run a single stage (each reads the unified `config.yaml`):
+Explicitly invalidate one stage and everything downstream:
 
 ```bash
-python src/stages/stage1_partition.py --verify   # reproduce canonical partition + verify vs frozen
-python src/stages/stage2_demand.py               # demand dataset (OD / POI / distance graphs)
-python src/stages/stage3_supply.py               # supply-state reconstruction
+conda run -n dydl roadnet-partition run \
+  --config configs/pipelines/full.yaml \
+  --run-dir outputs/runs/<run_id> \
+  --from-stage demand \
+  --overwrite
 ```
 
-Run the tests:
+## Single-stage commands
+
+Standalone execution remains available for diagnostics and controlled partial
+runs. Each command still writes an owned run directory rather than modifying
+stable processed data directly.
 
 ```bash
-python -m pytest tests/
+conda run -n dydl roadnet-partition partition --config configs/zoning/regularized.yaml
+conda run -n dydl roadnet-partition demand --config configs/pipelines/demand.yaml
+conda run -n dydl roadnet-partition supply --config configs/pipelines/supply.yaml
+conda run -n dydl roadnet-partition tte --config configs/pipelines/tte.yaml
 ```
 
-The legacy baseline pipeline (used to build the now-frozen road graph and baseline clusterings) is still runnable stage by stage:
+Demand standalone mode expects the published canonical partition under
+`data/processed/<scope>/partition/`. Full pipeline runs instead bind the
+same-run Partition output directly. Supply and TTE likewise receive same-run
+Demand outputs through fixed bindings.
+
+## Validate and Golden
+
+Golden assets are versioned regression expectations under
+`artifacts/golden/`; they are not production inputs or reproduction releases.
+The Fifth Ring v1 contract freezes 59,096 segments, 100 clusters, EPSG:32650,
+and the canonical label-invariant grouping hash.
 
 ```bash
-python src/00_download_osm.py
-python src/01_preprocess_roads.py
-python src/02_build_poi_features.py
-python src/02_build_order_features.py
-python src/02_build_segment_relation_graph.py
-python src/03_cluster_segments.py
-python src/04_visualize_clusters.py
+conda run -n dydl roadnet-partition validate \
+  --run outputs/runs/<run_id> \
+  --golden artifacts/golden/beijing-fifth-ring-v1
 ```
 
-## VSCode one-click run
+Validation is read-only except for optional run-owned reports. Golden payload
+is local-only, checksum-verified, and must not be modified in place; create a
+new version directory for a new expected result.
 
-Open this repository root folder in VSCode. The workspace config in `.vscode/` selects the `bj_road_partition` conda interpreter, so opening a script such as `src/04_visualize_clusters.py` and clicking Run should use the same environment as the command-line workflow.
+## Publish
 
-Visualization scripts save PNG files under `outputs/<active_scope>/figures/`; they do not open a popup window.
+Publishing constructs and atomically swaps one complete
+`data/processed/<scope>/` product. It never reruns algorithms.
 
-## Pipeline overview
-
-### 1. Prepare ring boundary and shared raw network
-
-`src/00_download_osm.py`:
-
-- reuses existing `data/raw/beijing_edges_raw.gpkg` when available;
-- for `fifth_ring`, downloads the shared Fifth-Ring road network only if the shared raw files are missing;
-- for `fourth_ring`, extracts Fourth Ring segments from the shared raw edges without re-downloading OSM;
-- polygonizes the configured ring-road linework and selects the central Beijing boundary polygon.
-
-Saved raw artifacts include:
-
-- `data/raw/beijing_fifth_ring_segments.gpkg`
-- `data/raw/beijing_fifth_ring_boundary.gpkg`
-- `data/raw/beijing_fourth_ring_segments.gpkg`
-- `data/raw/beijing_fourth_ring_boundary.gpkg`
-- `data/raw/beijing_drive_within_fifth_ring.graphml`
-- `data/raw/beijing_edges_raw.gpkg`
-- `data/raw/beijing_nodes_raw.gpkg`
-
-### 2. Classify ordinary vs connector segments
-
-`src/01_preprocess_roads.py` filters motor-vehicle roads, enforces the active scope boundary, and classifies each edge as either:
-
-- `ordinary`
-- `connector`
-
-The spatial filter keeps roads whose geometry lies almost entirely inside the active boundary polygon, plus named boundary ring segments that overlap the saved ring linework. Roads that merely intersect the boundary but mostly lie outside are discarded.
-
-The motor-vehicle filter uses an explicit OSM `highway` allowlist plus access/service exclusions. Pedestrian, cycle, path, track, construction, and proposed road classes are excluded, and roads tagged with non-motor-vehicle access values such as `no`, `private`, `agricultural`, or `forestry` are removed. Service roads remain configurable but parking aisles, driveways, drive-throughs, and emergency-access service subtypes are excluded by default.
-
-A segment is treated as a connector when it is an OSM `*_link` road and its length is below the configured threshold.
-
-### 3. Build the segment relation graph
-
-`src/02_build_poi_features.py` assigns 2017 Beijing POIs to 100m buffers around ordinary road segments and saves segment-level POI composition, density, entropy, and dominant type features.
-
-`src/02_build_order_features.py` reads the October 2017 ride-hailing order CSV in chunks, keeps the configured one-week window, matches pickup/dropoff points to nearest ordinary road segments, and saves segment-level demand features plus segment OD pair counts.
-
-`src/02_build_segment_relation_graph.py` creates three undirected graph variants where:
-
-- each ordinary road segment is a node;
-- direct adjacency becomes a relation edge;
-- connector-mediated adjacency becomes a relation edge;
-- same-road continuity strengthens the relation weight.
-- POI and order similarity are added only on existing road relation edges.
-
-The graph contains three relation types:
-
-1. direct topological adjacency between road segments sharing an endpoint;
-2. connector-mediated adjacency through short link/ramp segments;
-3. same-road continuity relations that encourage consecutive segments belonging to the same named road or road corridor to stay in the same cluster.
-
-The graph variants are:
-
-- `road_only`
-- `road_poi`
-- `road_poi_order`
-
-### 4. Cluster segments
-
-`src/03_cluster_segments.py` applies the configured clustering algorithms to each weighted graph variant and saves cluster labels plus diagnostic and evaluation tables. The default experiment is a 3x4 cross comparison:
-
-- graph variants: `road_only`, `road_poi`, `road_poi_order`
-- algorithms: `louvain`, `leiden`, `skater`, `metis`
-
-Louvain and Leiden use the configured resolution and random seed. SKATER and METIS use the configured fixed `target_clusters` value.
-
-### 5. Visualize outputs
-
-`src/04_visualize_clusters.py` creates:
-
-- ordinary vs connector segment map with the active boundary outline;
-- clustered road segment map with the active boundary outline for the configured default graph/algorithm pair;
-- zoomed connector-compression illustration.
-
-Pass a graph variant and algorithm to visualize another result:
+Before Phase 9, use dry-run only for real data:
 
 ```bash
-python src/04_visualize_clusters.py road_poi_order leiden
+conda run -n dydl roadnet-partition publish \
+  --run outputs/runs/<run_id> \
+  --scope fifth_ring \
+  --dry-run
 ```
 
-## Connector compression
+Real publish remains gated on a complete validated run and a clean Git tree.
+The Demand Windows/Linux spatial-assignment gate is unresolved, so a real
+Fifth Ring publish is not yet recommended.
 
-This prototype constructs a road-centered partitioning representation for ride-hailing applications. Ordinary road segments are treated as clustering units, while short connector roads such as ramps and OSM link roads are compressed into relationship edges between ordinary road segments. This avoids treating connectors as independent functional regions while preserving their role in network connectivity.
+## Reproduction export
 
-## Road continuity regularization
+Inspect the fixed privacy allowlist without creating a release:
 
-Same-road continuity is modeled as a soft weighting term rather than a hard constraint. When adjacent segments share the same road name, OSM way identity, highway class, or similar bearing, their graph relation is strengthened. This encourages contiguous road corridors to remain together during clustering while still allowing splits when topology suggests they should separate.
+```bash
+conda run -n dydl roadnet-partition export-reproduction \
+  --run outputs/runs/<run_id> \
+  --output releases/reproduction/<version> \
+  --profile minimal \
+  --dry-run
+```
 
-## Main outputs
+Demand, Supply, TTE, raw inputs, Golden payload, assigned orders, driver-level
+records, and unknown-license assets are private/restricted by default. A
+successful export does not grant public-distribution permission.
 
-Expected artifacts include:
+## Data boundaries
 
-- `data/raw/beijing_fifth_ring_segments.gpkg`
-- `data/raw/beijing_fifth_ring_boundary.gpkg`
-- `data/raw/beijing_fourth_ring_segments.gpkg`
-- `data/raw/beijing_fourth_ring_boundary.gpkg`
-- `data/raw/beijing_drive_within_fifth_ring.graphml`
-- `data/raw/beijing_edges_raw.gpkg`
-- `data/raw/beijing_nodes_raw.gpkg`
-- `data/interim/<active_scope>/road_edges_classified.gpkg`
-- `data/processed/<active_scope>/segment_nodes.gpkg`
-- `data/processed/<active_scope>/segment_poi_features.csv`
-- `data/processed/<active_scope>/segment_order_features.csv`
-- `data/processed/<active_scope>/segment_order_od_pairs.csv`
-- `data/processed/<active_scope>/segment_relation_edges_{variant}.csv`
-- `data/processed/<active_scope>/segment_clusters_{variant}_{algorithm}.gpkg`
-- `outputs/<active_scope>/graphs/segment_relation_graph_{variant}.gpickle`
-- `outputs/<active_scope>/tables/cluster_summary_{variant}_{algorithm}.csv`
-- `outputs/<active_scope>/tables/road_name_split_diagnostics_{variant}_{algorithm}.csv`
-- `outputs/<active_scope>/tables/graph_variant_evaluation.csv`
-- `outputs/<active_scope>/tables/graph_algorithm_evaluation.csv`
-- `outputs/<active_scope>/tables/graph_algorithm_ranked_summary.csv`
-- `outputs/<active_scope>/figures/01_ordinary_vs_connector_segments.png`
-- `outputs/<active_scope>/figures/02_segment_clusters_{variant}_{algorithm}.png`
-- `outputs/<active_scope>/figures/03_connector_compression_zoom_{variant}_{algorithm}.png`
+```text
+data/                  production inputs and stable published products
+artifacts/golden/      versioned regression validation assets
+outputs/runs/          one execution and its provenance
+releases/              separately allowlisted reproduction packages
+```
 
-## Validation signals
+These trees are not copied wholesale into one another. Publish is
+`run → data/processed`; Golden is explicit regression validation; export is an
+independent privacy-reviewed package.
 
-A successful run should print at least:
+## Configuration
 
-- number of candidate active ring segments found;
-- number of boundary polygons generated before selection;
-- chosen boundary polygon area;
-- number of raw edges;
-- number of edges retained by the active ring rule;
-- number of additional active boundary edges retained;
-- number of edges discarded outside the active ring;
-- number of edges removed by highway class filter;
-- number of edges removed by motor-vehicle access filter;
-- number of service edges removed by service subtype filter;
-- number of ordinary segments;
-- number of connector segments;
-- number of segment graph nodes;
-- number of direct adjacency edges;
-- number of connector-mediated edges;
-- number of continuity-enhanced edges;
-- number of POI-weighted and order-weighted edges per graph variant;
-- number of clusters;
-- graph variant x algorithm evaluation metrics;
-- top 10 largest clusters by total road length.
+- `configs/datasets/` owns scope, CRS, and normal data roots.
+- `configs/zoning/regularized.yaml` owns Partition and its explicit Golden
+  initialization/expected contract.
+- `configs/pipelines/{demand,supply,tte}.yaml` owns standalone fallbacks.
+- `configs/pipelines/full.yaml` owns the fixed four-stage composition.
 
-## Known limitations
+All paths resolve relative to their containing configuration file. Algorithm
+parameters remain equivalent to the legacy root configuration; Phase 8 changes
+only audited asset paths.
 
-- Ring extraction depends on OSM road naming quality.
-- Connector identification still uses a simple `*_link` plus length threshold heuristic.
-- Continuity strengthening is local and depends on OSM naming quality.
-- POI and order semantics are added as local edge-weight terms on existing road relation edges, not as long-range semantic edges.
-- The current stage does not yet implement downstream OD prediction, dispatch simulation, or service-type ratios.
-- The zoom view is still configured manually for inspection rather than selected automatically.
+## Legacy compatibility
+
+`src/run_pipeline.py`, `src/stages/`, and root `config.yaml` remain intact for
+comparison until final migration. They may still reference the read-only
+legacy mixed asset directory. Do not delete that directory before Phase 9.
+
+The preprocessing and historical clustering scripts under `src/00_*` through
+`src/05_*` remain legacy asset builders, not the recommended production entry.
+Detailed algorithm notes live under `docs/`.

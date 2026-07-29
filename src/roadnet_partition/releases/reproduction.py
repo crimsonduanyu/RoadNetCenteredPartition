@@ -39,7 +39,6 @@ def _safe_destination(output: str | Path, run_dir: Path, project_root: Path) -> 
         run_dir.resolve(),
         project_root.resolve(),
         (project_root / "data").resolve(),
-        (project_root / "IntermediateDataForReproduce").resolve(),
     }
     if destination in forbidden or destination.is_relative_to(run_dir.resolve()):
         raise ExportError(f"unsafe release destination: {destination}")
@@ -256,6 +255,20 @@ def export_reproduction(
         "file_count": len(selected),
         "total_size": sum(item["size"] for item in selected),
         "blocked_classifications": blocked,
+        "blocking_reason": (
+            None if not blocked
+            else "real export rejects private, restricted, and unknown assets"
+        ),
+        "inventory": [
+            {
+                "stage": item["stage"],
+                "logical_key": item["logical_key"],
+                "release_path": item["release_path"],
+                "classification": item["classification"],
+                "size": item["size"],
+            }
+            for item in selected
+        ],
         "git": git,
     }
     if dry_run:
