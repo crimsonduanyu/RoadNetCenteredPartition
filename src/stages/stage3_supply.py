@@ -19,14 +19,10 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = PROJECT_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+import yaml
 
-import yaml  # noqa: E402
-
-from lib import supply  # noqa: E402
-from lib.geo import project_path  # noqa: E402
+from roadnet_partition.downstream import supply
+from roadnet_partition.io.paths import resolve_path
 
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
@@ -59,8 +55,8 @@ def main(argv: list[str] | None = None) -> dict:
         handlers=[logging.StreamHandler(sys.stdout)],
     )
     summary = supply.run_pipeline(
-        orders_path=project_path(args.orders_path),
-        output_dir=project_path(args.output_dir),
+        orders_path=resolve_path(args.orders_path, base_dir=PROJECT_ROOT),
+        output_dir=resolve_path(args.output_dir, base_dir=PROJECT_ROOT),
         max_gap_minutes=args.max_gap,
         tau_idle_minutes=args.tau_idle,
         carpool_merge_gap_s=args.carpool_merge_gap_s,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import importlib.util
+import ast
 import json
 from pathlib import Path
 
@@ -23,6 +24,21 @@ FORMAL_FILES = {
     "run_summary.json",
     "config_used.json",
 }
+LEGACY_PUBLIC_NAMES = {
+    "CARPOOL_MERGE_GAP_S", "DEMAND_DIR", "DEMAND_TABLE", "DRIVER_BLOCKS",
+    "FLEET_COLUMNS", "IN_SERVICE_COLUMNS", "LOGGER", "MAX_GAP_MINUTES",
+    "MERGE_WITH_DEMAND", "ORDERS_PATH", "ORDER_USE_COLUMNS", "OUTPUT_DIR",
+    "SLOT_DURATION_MIN", "TAU_IDLE_MINUTES", "TRIP_SEGMENT_COLUMNS",
+    "attach_global_fleet_to_all_clusters", "build_cluster_universe",
+    "build_exclusive_trip_segments", "build_global_cluster_index",
+    "build_global_slot_index", "build_trip_segments", "complete_slot_cluster_grid",
+    "compute_available_by_cluster", "compute_fleet_lower_bound",
+    "compute_in_service_od", "compute_supply_variables", "configure_file_logging",
+    "driver_block_id", "extract_idle_windows", "filter_valid_orders", "generate_slots",
+    "load_orders", "merge_supply_with_demand", "process_orders_frame",
+    "reconstruct_driver_chains", "resolve_carpool_trip_groups", "run_chunked_pipeline",
+    "run_pipeline", "save_csv_gz", "serialize_list_columns", "write_json",
+}
 
 
 def load_legacy_supply():
@@ -31,6 +47,77 @@ def load_legacy_supply():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def test_legacy_supply_bridge_exports_original_names() -> None:
+    legacy = load_legacy_supply()
+    assert set(legacy.__all__) == LEGACY_PUBLIC_NAMES
+    for name in LEGACY_PUBLIC_NAMES:
+        assert getattr(legacy, name) is getattr(supply, name)
+    for name in [
+        "_expand_interval_slots", "_slot_positions", "_cluster_positions",
+        "_inservice_array_to_frame", "_dense_cluster_array_to_frame", "_fleet_arrays_to_frame",
+    ]:
+        assert getattr(legacy, name) is getattr(supply, name)
+
+
+def test_supply_import_boundaries_are_one_way() -> None:
+    package_root = PROJECT_ROOT / "src/roadnet_partition"
+    supply_tree = ast.parse((package_root / "downstream/supply.py").read_text(encoding="utf-8"))
+    contract_tree = ast.parse((package_root / "downstream/supply_contracts.py").read_text(encoding="utf-8"))
+    stage_tree = ast.parse((PROJECT_ROOT / "src/stages/stage3_supply.py").read_text(encoding="utf-8"))
+    supply_imports = {node.module or "" for node in ast.walk(supply_tree) if isinstance(node, ast.ImportFrom)}
+    contract_imports = {node.module or "" for node in ast.walk(contract_tree) if isinstance(node, ast.ImportFrom)}
+    stage_imports = {node.module or "" for node in ast.walk(stage_tree) if isinstance(node, ast.ImportFrom)}
+    assert not any(module.startswith(("lib", "src", "stages")) for module in supply_imports | contract_imports)
+    assert not any("demand" in module or "tte" in module or module.endswith(".cli") for module in supply_imports)
+    assert not any(module.startswith("roadnet_partition.pipeline") for module in contract_imports)
+    assert "roadnet_partition.downstream" in stage_imports
+    assert not any(module.startswith("lib") for module in stage_imports)
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"insert", "append"}
+        and ast.unparse(node.func).startswith("sys.path.")
+        for node in ast.walk(stage_tree)
+    )
+
+
+def test_stage3_wrapper_preserves_arguments_and_summary(tmp_path: Path, monkeypatch, capsys) -> None:
+    spec = importlib.util.spec_from_file_location("stage3_supply_compat", PROJECT_ROOT / "src/stages/stage3_supply.py")
+    stage = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(stage)
+    monkeypatch.setattr(stage, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(stage, "load_unified_config", lambda: {"stage3_supply": {
+        "orders_path": "default-orders.csv.gz", "output_dir": "default-output",
+        "max_gap_minutes": 60, "tau_idle_minutes": 30,
+        "carpool_merge_gap_s": 0, "slot_duration_min": 10, "n_blocks": 8,
+    }})
+    calls = []
+
+    def fake_run_pipeline(**kwargs):
+        calls.append(kwargs)
+        return {"execution_mode": "driver-chunked", "block_summaries": []}
+
+    monkeypatch.setattr(stage.supply, "run_pipeline", fake_run_pipeline)
+    result = stage.main([
+        "--orders-path", "input/orders.csv.gz", "--output-dir", "validation/supply",
+        "--max-gap", "61", "--tau-idle", "31", "--carpool-merge-gap-s", "2",
+        "--slot-duration", "15", "--n-blocks", "3",
+    ])
+
+    assert result["execution_mode"] == "driver-chunked"
+    assert calls == [{
+        "orders_path": (tmp_path / "input/orders.csv.gz").resolve(),
+        "output_dir": (tmp_path / "validation/supply").resolve(),
+        "max_gap_minutes": 61,
+        "tau_idle_minutes": 31,
+        "carpool_merge_gap_s": 2,
+        "slot_duration_min": 15,
+        "n_blocks": 3,
+    }]
+    assert "Supply reconstruction summary:" in capsys.readouterr().out
 
 
 def synthetic_orders() -> pd.DataFrame:
