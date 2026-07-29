@@ -1,0 +1,55 @@
+schema_version: 1
+dataset_config: ../datasets/fifth_ring.yaml
+scope: fifth_ring
+
+contract:
+  verify_canonical: true
+
+stage1_partition:
+  graph_variant: road_poi_order
+  regularized:
+    initialization: leiden
+    inputs:
+      graph: ../../IntermediateDataForReproduce/segment_relation_graph_road_poi_order.gpickle
+      relation_edges: ../../IntermediateDataForReproduce/segment_relation_edges_road_poi_order.csv
+      classified_edges: ../../IntermediateDataForReproduce/road_edges_classified.gpkg
+      boundary: ../../IntermediateDataForReproduce/beijing_fifth_ring_boundary.gpkg
+      segment_nodes: ../../IntermediateDataForReproduce/segment_nodes.gpkg
+      poi_features: ../../IntermediateDataForReproduce/segment_poi_features.csv
+      order_features: ../../IntermediateDataForReproduce/segment_order_features.csv
+      hourly_od: ../../IntermediateDataForReproduce/segment_order_od_hourly.csv
+    baseline_clusters:
+      louvain: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_louvain_res0p522.gpkg
+      leiden: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_leiden_res0p6.gpkg
+      demand_region_growing: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_demand_region_growing.gpkg
+    objective:
+      target_clusters: 100
+      capacity_loss: squared_hinge
+      capacity_min_ratio: 0.5
+      capacity_max_ratio: 1.5
+      lambda_g: 1.0
+      lambda_r: 1.0
+      alpha_cont: 1.0
+      alpha_conn: 1.0
+      grid:
+        lambda_c: [1.0]
+        lambda_r: [1.0]
+        alpha_cont: [1.0]
+        alpha_conn: [1.0]
+    search:
+      max_passes: 5
+      min_delta: 1.0e-9
+      move_policy: best_improving
+      enforce_connectivity: true
+      allow_merge_split: false
+      max_merge_candidates: 8
+      max_merge_targets_per_cluster: 3
+      max_split_candidates: 8
+      split_cleanup_passes: 2
+      # This is the effective canonical Stage 1 value after the legacy wrapper's
+      # build_regularized_config adapter, not the wider experiment grid in config.yaml.
+      grid:
+        merge_split_enabled: [false]
+  outputs:
+    run_root: ../../regularized_zoning_experiments/runs/v2_fifth_ring_road_poi_order_lc1_lr1_k100
+    canonical_partition: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg

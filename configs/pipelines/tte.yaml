@@ -1,0 +1,46 @@
+schema_version: 1
+dataset_config: ../datasets/fifth_ring.yaml
+scope: fifth_ring
+
+stage4_tte:
+  inputs:
+    orders_path: ../../data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz
+    cluster_index_path: ../../data/processed/fifth_ring/order_pipeline/cluster_index.csv
+    # Optional standalone fallbacks. A run still records/copies the distance
+    # products into its owned TTE output allowlist.
+    network_distance_path: ../../data/processed/fifth_ring/tte/cluster_network_distance.parquet
+    representative_nodes_path: ../../data/processed/fifth_ring/tte/cluster_representative_nodes.csv
+  # Public single-stage execution replaces this with its owned run directory.
+  output_dir: ../../data/processed/fifth_ring/tte
+  outputs:
+    count_filename: "TTE_count.parquet"
+    hops_filename: "TTE_hops.parquet"
+    support_filename: "TTE_support.parquet"
+  distance:
+    matrix_filename: "cluster_network_distance.parquet"
+    representatives_filename: "cluster_representative_nodes.csv"
+    recompute: false
+    graphml_path: ../../data/raw/beijing_drive_within_fifth_ring.graphml
+    classified_edges_path: ../../IntermediateDataForReproduce/road_edges_classified.gpkg
+    partition_gpkg: ../../IntermediateDataForReproduce/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg
+  time:
+    freq: "10min"
+    start_time: "2017-06-01 00:00:00"
+    end_time: "2017-08-31 23:59:00"
+  trip_time:
+    min_minutes: 3
+    max_minutes: 80
+    aggregation: median
+  keep_place:
+    min_origin_orders: 1
+    min_dest_orders: 1
+  imputation:
+    method: transitive
+    max_hops: 3
+    source_min_count: 1
+    detour_ratio: 1.3
+    speed_limit_kmh: [5, 120]
+    min_dist_km: 0.01
+    window: 6
+    outlier_std_threshold: 3
+    use_validation: true

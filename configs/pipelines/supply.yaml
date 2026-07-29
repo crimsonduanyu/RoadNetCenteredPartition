@@ -1,0 +1,13 @@
+schema_version: 1
+dataset_config: ../datasets/fifth_ring.yaml
+scope: fifth_ring
+
+stage3_supply:
+  orders_path: ../../data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz
+  # Public single-stage execution replaces this with its owned run directory.
+  output_dir: ../../data/processed/fifth_ring/supply
+  max_gap_minutes: 60
+  tau_idle_minutes: 30
+  carpool_merge_gap_s: 0
+  slot_duration_min: 10
+  n_blocks: 8

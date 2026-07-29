@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import os
 import shutil
-from typing import Callable
+from typing import Callable, Iterable
 
 
 class UnsafePathError(ValueError):
@@ -17,23 +17,50 @@ class ScopeSwapError(RuntimeError):
 def resolve_path(value: str | Path, *, base_dir: Path) -> Path:
     """Resolve a path without consulting the process working directory."""
     base = Path(base_dir).expanduser().resolve()
-    path = Path(value).expanduser()
+    raw_value = os.fspath(value)
+    if os.name != "nt":
+        windows = PureWindowsPath(raw_value)
+        if "\\" in raw_value or windows.drive or raw_value.startswith("//"):
+            raise ValueError(f"Windows path is not valid on this platform: {raw_value!r}")
+    path = Path(raw_value).expanduser()
     return (path if path.is_absolute() else base / path).resolve()
 
 
-def assert_safe_run_dir(run_dir: Path, project_root: Path) -> Path:
+def assert_safe_run_dir(
+    run_dir: Path,
+    project_root: Path,
+    *,
+    additional_project_roots: Iterable[Path] = (),
+    protected_roots: Iterable[Path] = (),
+) -> Path:
     """Allow external run roots while rejecting project data/release locations."""
-    root = Path(project_root).expanduser().resolve()
-    candidate = Path(run_dir).expanduser().resolve()
-    protected = [
-        root,
-        root / "data",
-        root / "artifacts/golden",
-        root / "releases",
-    ]
-    for location in protected:
+    roots = tuple(
+        dict.fromkeys(
+            Path(value).expanduser().resolve()
+            for value in (project_root, *additional_project_roots)
+        )
+    )
+    raw_candidate = Path(run_dir).expanduser().absolute()
+    for current in (raw_candidate, *raw_candidate.parents):
+        if current.is_symlink():
+            raise UnsafePathError(f"run directory path contains a symbolic link: {current}")
+    candidate = raw_candidate.resolve()
+    protected = []
+    for root in roots:
+        protected.extend((
+            (root, False),
+            (root / "data", True),
+            (root / "IntermediateDataForReproduce", True),
+            (root / "artifacts/golden", True),
+            (root / "Golden", True),
+            (root / "golden", True),
+            (root / "release", True),
+            (root / "releases", True),
+        ))
+    protected.extend((Path(value).expanduser().resolve(), True) for value in protected_roots)
+    for location, recursive in protected:
         location = location.resolve()
-        if candidate == location or (location != root and candidate.is_relative_to(location)):
+        if candidate == location or (recursive and candidate.is_relative_to(location)):
             raise UnsafePathError(f"run directory is protected: {candidate}")
     return candidate
 

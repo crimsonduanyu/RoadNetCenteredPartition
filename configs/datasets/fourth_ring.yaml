@@ -1,0 +1,49 @@
+schema_version: 1
+project_root: ../..
+scope: fourth_ring
+
+crs:
+  projected: "EPSG:32650"
+  geographic: "EPSG:4326"
+
+study_area:
+  label: "Fourth Ring"
+  center_point:
+    lon: 116.4074
+    lat: 39.9042
+  harvest_bbox:
+    north: 40.08
+    south: 39.75
+    east: 116.62
+    west: 116.15
+  ring_name_patterns:
+    - "东四环"
+    - "西四环"
+    - "南四环"
+    - "北四环"
+  exclude_name_patterns:
+    - "辅路"
+  retain_boundary_roads: true
+  min_ring_segment_count: 60
+  min_ring_total_length_km: 50
+  min_ring_span_km: 12
+  min_boundary_area_km2: 200
+  max_boundary_area_km2: 450
+  boundary_buffer_m: 80
+  inside_length_ratio_threshold: 0.98
+  boundary_tolerance_m: 5
+  ring_overlap_tolerance_m: 20
+
+paths:
+  raw_root: ../../data/raw
+  interim_root: ../../data/interim/fourth_ring
+  processed_root: ../../data/processed/fourth_ring
+  raw_edges: ../../data/raw/beijing_edges_raw.gpkg
+  raw_nodes: ../../data/raw/beijing_nodes_raw.gpkg
+  # Preserve the current scope value; it intentionally names the harvested
+  # fifth-ring drive graph used as the source graph for the fourth-ring cut.
+  graphml: ../../data/raw/beijing_drive_within_fifth_ring.graphml
+  boundary: ../../data/raw/beijing_fourth_ring_boundary.gpkg
+  ring_segments: ../../data/raw/beijing_fourth_ring_segments.gpkg
+  classified_edges: ../../data/interim/fourth_ring/road_edges_classified.gpkg
+  segment_nodes: ../../data/processed/fourth_ring/segment_nodes.gpkg

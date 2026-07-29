@@ -58,13 +58,42 @@ def test_resolve_path_requires_explicit_base_and_supports_absolute_paths(tmp_pat
     assert resolve_path(tmp_path / "absolute", base_dir=Path("/")) == (tmp_path / "absolute").resolve()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX-specific foreign path check")
+@pytest.mark.parametrize("value", [r"..\data\file.csv", Path(r"data\file.csv")])
+def test_resolve_path_rejects_windows_separators_on_posix(tmp_path: Path, value: str | Path) -> None:
+    with pytest.raises(ValueError, match="Windows path"):
+        resolve_path(value, base_dir=tmp_path)
+
+
 def test_safe_run_directory_rejects_protected_roots_and_allows_external(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
-    for relative in [".", "data", "data/raw", "data/interim", "data/processed/x", "artifacts/golden/v1", "releases/v1"]:
+    for relative in [
+        ".", "data", "data/raw", "data/interim", "data/processed/x",
+        "IntermediateDataForReproduce/v1", "artifacts/golden/v1", "Golden/v1",
+        "golden/v1", "release/v1", "releases/v1",
+    ]:
         with pytest.raises(UnsafePathError):
             assert_safe_run_dir(project / relative, project)
     assert assert_safe_run_dir(tmp_path / "external-runs/run-1", project) == (tmp_path / "external-runs/run-1").resolve()
+
+    target = tmp_path / "real-run"
+    target.mkdir()
+    link = tmp_path / "run-link"
+    try:
+        os.symlink(target, link)
+    except OSError:
+        pytest.skip("symbolic links are unavailable")
+    with pytest.raises(UnsafePathError, match="symbolic link"):
+        assert_safe_run_dir(link, project)
+
+    configured_data = tmp_path / "external-data"
+    with pytest.raises(UnsafePathError):
+        assert_safe_run_dir(
+            configured_data / "processed/run",
+            project,
+            protected_roots=(configured_data,),
+        )
 
 
 def test_owned_path_rejects_escape_owner_and_symlink(tmp_path: Path) -> None:
