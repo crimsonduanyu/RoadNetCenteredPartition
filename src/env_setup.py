@@ -1,17 +1,7 @@
-from __future__ import annotations
+"""Compatibility bridge for the historical geospatial environment import."""
 
-import os
-import sys
-from pathlib import Path
+from roadnet_partition.io.environment import conda_prefix, initialize_geospatial_environment
 
-conda_prefix = Path(os.environ.get("CONDA_PREFIX") or sys.prefix)
+initialize_geospatial_environment()
 
-if os.name == "nt":
-    for dll_dir in [conda_prefix, conda_prefix / "Library" / "bin"]:
-        if dll_dir.exists():
-            os.add_dll_directory(str(dll_dir))
-
-if not os.environ.get("GDAL_DATA"):
-    gdal_data = conda_prefix / "Library" / "share" / "gdal"
-    if (gdal_data / "header.dxf").exists():
-        os.environ["GDAL_DATA"] = str(gdal_data)
+__all__ = ["conda_prefix", "initialize_geospatial_environment"]
