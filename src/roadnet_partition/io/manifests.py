@@ -104,6 +104,10 @@ def atomic_write_yaml(path: str | Path, value: Any) -> None:
     yaml.safe_load(destination.read_text(encoding="utf-8"))
 
 
+def atomic_write_text(path: str | Path, value: str) -> None:
+    _atomic_write(Path(path), value)
+
+
 def collect_runtime_info() -> dict[str, Any]:
     dependencies = {}
     for name in DEPENDENCY_ALLOWLIST:
