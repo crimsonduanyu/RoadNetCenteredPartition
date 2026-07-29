@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import shutil
+from typing import Callable
 
 
 class UnsafePathError(ValueError):
     """Raised when an operation would escape an explicitly owned directory."""
+
+
+class ScopeSwapError(RuntimeError):
+    """Raised when a transactional directory replacement cannot complete."""
 
 
 def resolve_path(value: str | Path, *, base_dir: Path) -> Path:
@@ -52,3 +59,81 @@ def assert_owned_path(target: Path, owner: Path, *, allow_owner: bool = False) -
         if current.exists() and current.is_symlink():
             raise UnsafePathError(f"owned path contains a symbolic link: {current}")
     return target_path
+
+
+def transactional_scope_swap(
+    target: Path,
+    staging: Path,
+    *,
+    validate: Callable[[Path], bool | None],
+    overwrite: bool = False,
+    _step_hook: Callable[[str], None] | None = None,
+) -> None:
+    """Atomically switch one complete sibling staging directory into place."""
+    raw_target = Path(target).expanduser()
+    raw_staging = Path(staging).expanduser()
+    if not raw_target.name or raw_target.is_symlink() or raw_staging.is_symlink():
+        raise UnsafePathError("scope target and staging must be ordinary named paths")
+    target_path = raw_target.resolve()
+    staging_path = raw_staging.resolve()
+    if target_path.parent != staging_path.parent:
+        raise UnsafePathError("scope staging directory must be a sibling of the target")
+    expected_prefix = f".{target_path.name}.staging-"
+    if not staging_path.name.startswith(expected_prefix):
+        raise UnsafePathError(f"staging directory must start with {expected_prefix!r}")
+    if not staging_path.is_dir():
+        raise FileNotFoundError(f"staging directory does not exist: {staging_path}")
+
+    backup = target_path.parent / f".{target_path.name}.backup"
+    other_staging = [
+        path for path in target_path.parent.glob(f"{expected_prefix}*")
+        if path.resolve() != staging_path
+    ]
+    if backup.exists() or backup.is_symlink():
+        raise ScopeSwapError(f"leftover backup requires manual resolution: {backup}")
+    if other_staging:
+        raise ScopeSwapError(f"leftover staging directories require manual resolution: {other_staging}")
+
+    validation_result = validate(staging_path)
+    if validation_result is False:
+        raise ScopeSwapError("staging validation failed")
+    if _step_hook:
+        _step_hook("validated")
+    if target_path.exists() and not overwrite:
+        raise FileExistsError(f"scope already exists; explicit overwrite required: {target_path}")
+
+    old_moved = False
+    new_moved = False
+    try:
+        if target_path.exists():
+            if not target_path.is_dir() or target_path.is_symlink():
+                raise UnsafePathError(f"scope target is not an ordinary directory: {target_path}")
+            os.replace(target_path, backup)
+            old_moved = True
+            if _step_hook:
+                _step_hook("old_moved_to_backup")
+
+        os.replace(staging_path, target_path)
+        new_moved = True
+        if _step_hook:
+            _step_hook("staging_moved_to_target")
+
+        if old_moved:
+            if _step_hook:
+                _step_hook("before_backup_cleanup")
+            shutil.rmtree(backup)
+    except BaseException as error:
+        rollback_errors = []
+        try:
+            if new_moved and target_path.exists():
+                os.replace(target_path, staging_path)
+        except BaseException as rollback_error:
+            rollback_errors.append(rollback_error)
+        try:
+            if old_moved and backup.exists():
+                os.replace(backup, target_path)
+        except BaseException as rollback_error:
+            rollback_errors.append(rollback_error)
+        if rollback_errors:
+            raise ScopeSwapError(f"scope swap failed and rollback was incomplete: {rollback_errors}") from error
+        raise ScopeSwapError("scope swap failed; previous scope restored") from error
