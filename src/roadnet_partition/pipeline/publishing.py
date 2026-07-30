@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
@@ -201,6 +203,22 @@ def _stage_output_paths(staging: Path, inventory: list[dict[str, Any]], stage: s
     }
 
 
+def _contract_config(stage: str, config, manifest: Mapping[str, Any]):
+    if stage != "partition":
+        return config
+    original = Path(config.values["inputs"]["segment_nodes"])
+    if original.is_file():
+        return config
+    candidate = config.project_root / "data/interim" / config.scope / "frozen_inputs" / original.name
+    expected = manifest["stages"]["partition"]["input_records"]["segment_nodes"]
+    actual = file_record(candidate)
+    if actual["size"] != expected["size"] or actual["sha256"] != expected["sha256"]:
+        raise PublishError("relocated Partition segment_nodes differs from source run input")
+    values = deepcopy(config.values)
+    values["inputs"]["segment_nodes"] = candidate.as_posix()
+    return replace(config, values=values)
+
+
 def _validate_staging(staging: Path, run_dir: Path, inventory: list[dict[str, Any]]) -> bool:
     expected = {item["formal_relative_path"] for item in inventory} | {"source_manifest.json"}
     actual = {
@@ -220,6 +238,7 @@ def _validate_staging(staging: Path, run_dir: Path, inventory: list[dict[str, An
             raise PublishError(f"published file hash differs: {item['formal_relative_path']}")
     for stage in STAGE_ORDER:
         config, _ = _load_stage_config(run_dir / "resolved_configs" / f"{stage}.yaml", stage, context.project_root)
+        config = _contract_config(stage, config, manifest)
         contract = validate_stage_contract(stage, config, _stage_output_paths(staging, inventory, stage))
         if contract.get("status") != "passed":
             raise PublishError(f"published {stage} contract did not pass")
