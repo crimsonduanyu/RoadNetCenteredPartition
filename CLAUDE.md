@@ -1,20 +1,19 @@
 # RoadNet repository guidance
 
-## Required environment
+## Environment
 
-Run project commands through the existing environment:
+Use only the existing `dydl` Conda environment:
 
 ```bash
 conda run -n dydl pip install -e . --no-deps
 conda run -n dydl python -m pytest
 ```
 
-Do not install deferred clustering dependencies or alter Demand spatial
-assignment without a separately approved phase.
+Do not use the system Python, add dependencies, change Demand spatial
+assignment or introduce deterministic tie-breaking without a separately
+approved phase.
 
-## Recommended workflow
-
-The supported pipeline is fixed:
+## Supported workflow
 
 ```text
 partition → demand → supply → tte
@@ -29,49 +28,22 @@ conda run -n dydl roadnet-partition publish \
   --run outputs/runs/<run_id> --scope fifth_ring --dry-run
 ```
 
-Before Phase 9, do not run the complete production pipeline or perform a real
-publish. The Demand Windows/Linux assignment gate remains unresolved.
+The public CLI and `roadnet_partition` package are the only executable system.
+New code must not import retired paths or inject `sys.path`.
 
-## Ownership boundaries
+## Ownership and privacy
 
-- `outputs/runs/`: owned execution directories only.
-- `data/`: raw/interim production inputs and transactionally published stable
-  products.
-- `artifacts/golden/`: versioned regression inputs and expected results.
-- `releases/`: independently allowlisted reproduction packages.
+- ordinary execution writes only to `outputs/runs/`;
+- Golden is versioned, local-only regression data;
+- publish is the only writer of stable `data/processed/<scope>/` products;
+- reproduction export uses a separate privacy allowlist;
+- never log or publish order/driver rows, coordinates, credentials or private
+  payload contents.
 
-Golden is never a general downstream input directory and is never copied as a
-whole into a release. Demand/Supply/TTE full-pipeline inputs come from fixed
-same-run bindings. Standalone Demand uses the published canonical Partition.
+Linux is the current Fifth Ring canonical. The Windows baseline remains a
+private/local-only archive. Equal-distance nearest-neighbor assignment is not
+guaranteed cross-platform; deterministic assignment v2 remains deferred.
 
-The Fifth Ring Golden v1 payload is local-only and read-only. Metadata and
-checksums are tracked; private/large payload is ignored. Updating an expected
-result requires a new Golden version directory.
-
-## Configuration
-
-Use split configs under `configs/`. Paths resolve relative to the containing
-file, not the current working directory. Root `config.yaml` remains only for
-legacy wrappers and must not be deleted or treated as the new authority.
-
-Algorithm values stay aligned with the legacy configuration. Phase 8 path
-migrations are recorded in `docs/refactor/golden-migration-inventory-v1.md`.
-
-## Compatibility boundary
-
-The old `src/run_pipeline.py` and `src/stages/` entrypoints remain available for
-comparison and may still reference the read-only legacy mixed directory through
-root `config.yaml`. Do not remove old entrypoints or the old directory before
-Phase 9.
-
-New package code must not import `src`, `lib`, or legacy wrappers, mutate
-Golden, write directly to stable processed data during ordinary runs, invoke
-Git write commands, or bypass stage contracts.
-
-## Privacy
-
-Never write order/driver rows, coordinates, credentials, environment variables,
-or private payload contents to manifests, logs, reports, or release metadata.
-Paths, hashes, sizes, shapes, aggregate statistics, classifications, and stage
-status are permitted. Real export rejects private, restricted, and unknown
-assets unless a later explicit approval mechanism is introduced.
+Use split configs under `configs/`; paths resolve relative to the declaring
+file. `configs/legacy/config.pre-refactor.yaml` is historical audit data only
+and has no active reader. Do not edit a published scope in place.

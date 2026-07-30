@@ -21,15 +21,16 @@ preprocessing into `RoadNetCenteredPartition` with two substantive changes:
    transitive imputation is generalized from single-hop to **bounded multi-hop** with an
    **edge-level observation gate** and **provenance** outputs.
 
-The pipeline runs as **Stage 4** of the unified pipeline (`src/run_pipeline.py`), depending
-only on Stage 2 (demand) products.
+The pipeline runs as **Stage 4** of `roadnet-partition run`, depending only on
+Stage 2 (demand) products.
 
 ## 2. Data and products
 
 **Inputs** (both Stage 2 `order_pipeline` products):
 - `orders_region_assigned.csv.gz` — one row per assigned order; columns used:
   `departure_time`, `finish_time`, `origin_cluster_id`, `destination_cluster_id`
-  (`src/lib/tte_dataset.py`, `DEPARTURE_COL`/`FINISH_COL`/`ORIGIN_COL`/`DESTINATION_COL`).
+  (`roadnet_partition.downstream.tte`,
+  `DEPARTURE_COL`/`FINISH_COL`/`ORIGIN_COL`/`DESTINATION_COL`).
   `trip_time = finish_time − departure_time` (minutes).
 - `cluster_index.csv` — per-cluster `centroid_x/y` (EPSG:32650) and `centroid_lon/lat`
   (EPSG:4326), used for representative-node selection.
@@ -229,7 +230,7 @@ downstream weighting.
 
 **Done:** baseline migration to clusters; network-distance topological pruning; bounded
 multi-hop TDSP; edge-level source gate; provenance (`TTE_hops`, `TTE_support`); Stage 4 wired
-into `run_pipeline.py`; 44 unit tests passing.
+into the package pipeline runner and covered by the repository test suite.
 
 **Deferred (explicitly out of scope here):** the downstream KoopmanTTE confidence-weighted hinge /
 MAE split consuming `TTE_support`; cluster-internal traversal cost (node-splitting `k_in→k_out`);
@@ -239,16 +240,17 @@ train/val/test splitting; visualization.
 ## 6. Reproduction
 
 ```bash
-conda activate bj_road_partition
-# Full pipeline (Stage 1 verify → 2 demand → 3 supply → 4 TTE):
-python src/run_pipeline.py
-# Stage 4 alone (depends only on Stage 2 products; reuses the cached distance matrix):
-python src/stages/stage4_tte.py
+conda run -n dydl pip install -e . --no-deps
+# Full pipeline (partition → demand → supply → TTE):
+conda run -n dydl roadnet-partition run --config configs/pipelines/full.yaml
+# Stage 4 alone (uses the standalone fallbacks in the TTE config):
+conda run -n dydl roadnet-partition tte --config configs/pipelines/tte.yaml
 # Tests:
-python -m pytest tests/ -q
+conda run -n dydl python -m pytest
 ```
 
-Key knobs (`config.yaml`, `stage4_tte.imputation`): `source_min_count` (k), `max_hops`,
+Key knobs (`configs/pipelines/tte.yaml`, `stage4_tte.imputation`): `source_min_count` (k), `max_hops`,
 `detour_ratio`, `use_validation`, `speed_limit_kmh`. The network distance matrix is built and
 cached on first run (`stage4_tte.distance.recompute: false` reuses it). Products land in
+the command-owned run directory; only the publish transaction writes
 `data/processed/fifth_ring/tte/`.
