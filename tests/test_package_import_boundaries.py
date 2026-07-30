@@ -23,6 +23,7 @@ def test_repository_has_no_active_legacy_execution_references() -> None:
         "docs/history/pre-refactor-pipeline.md",
         "docs/refactor/config-key-map-v1.json",
         "docs/refactor/demand-migration-inventory-v1.md",
+        "docs/refactor/phase10-final-report-v1.md",
         "docs/refactor/phase10-removal-inventory-v1.md",
         "docs/refactor/phase9-final-acceptance-v1.md",
         "docs/refactor/pre-refactor-v1/current-state-audit.json",

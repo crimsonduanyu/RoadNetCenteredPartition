@@ -67,6 +67,7 @@ test readers must be removed or redirected before the listed action occurs.
 | `scripts/analysis/gap_distribution.py` | read-only Supply gap analysis | same script | human analysis | `outputs/analysis` only | none | Supply history | paper/diagnostic value | retain-analysis |
 | `scripts/analysis/tte_distribution_report.py` | read-only trip-time distribution report | same script | human analysis | `reports/` only | none | TTE method docs | paper/reporting value | retain-analysis |
 | `tmp.ipynb` | one-off Supply inspection notebook reading the published scope directly | retained Supply contracts and analysis scripts | human scratch use only | notebook output cells | none | none | no unique conclusion or reusable method | delete |
+| `tests/Make_Beijing_TTE.ipynb` | historical KoopmanTTE preprocessing reference notebook | current TTE package and method record | human reference only | notebook outputs | none | TTE method documentation | independent historical method context | retain-analysis |
 
 ## Serialization decision
 
