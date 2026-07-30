@@ -54,7 +54,7 @@ def _tiny_golden(run_dir: Path, destination: Path) -> Path:
         "golden_id": "tiny-v1",
         "scope": "tiny",
         "created_at": "2026-01-01T00:00:00Z",
-        "source_inventory": {"path": "synthetic", "file_count": 1, "total_size": record["size"]},
+        "source_inventory": {"path": "synthetic", "file_count": 2, "total_size": record["size"]},
         "source_git_context": {"commit": None, "historical_runtime": "synthetic"},
         "assets": [{
             "logical_name": "canonical_partition_gpkg", "classification": "golden-expected",
@@ -62,6 +62,12 @@ def _tiny_golden(run_dir: Path, destination: Path) -> Path:
             "sha256": record["sha256"], "format": "GeoPackage", "schema": "partition",
             "source_old_path": "synthetic", "reader": "validate", "writer": "tiny fixture",
             "storage": "local-only", "privacy": "synthetic",
+        }, {
+            "logical_name": "retired_readme", "classification": "archive-only",
+            "external_reference": "retired/README.md", "size": 0,
+            "sha256": "0" * 64, "format": "markdown", "schema": "none",
+            "source_old_path": "README.md", "reader": "human", "writer": "tiny fixture",
+            "storage": "external", "privacy": "public",
         }],
         "expected_contracts": {"partition": {
             "asset": "canonical_partition_gpkg", "segment_count": summary["segment_count"],

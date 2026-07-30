@@ -141,6 +141,8 @@ def _golden_v1(
             raise ValueError(f"Golden asset classification is invalid: {name}")
         path = _asset_path(root, project_root, asset)
         if not path.is_file():
+            if asset.get("classification") == "archive-only" and "external_reference" in asset:
+                continue
             raise ValueError(f"Golden asset is missing: {path}")
         record = file_record(path)
         if record["size"] != asset.get("size") or record["sha256"] != asset.get("sha256"):

@@ -38,6 +38,8 @@ def test_repository_has_no_active_legacy_execution_references() -> None:
         "docs/refactor/zoning-migration-inventory-v1.md",
         "outputs/refactor-validation/phase5a-demand/phase5a-full-v1/demand/metadata.json",
         "outputs/refactor-validation/phase5c-tte/run_full.py",
+        "outputs/refactor-validation/phase9/full-runs/20260730T020500Z-fifth-ring-full-02fce2f7/validation/validation_report.json",
+        "outputs/refactor-validation/phase9/full-runs/20260730T020500Z-fifth-ring-full-02fce2f7/validation/validation_report.md",
         "outputs/refactor-validation/pre-refactor/current-state-audit.json",
         "outputs/refactor-validation/pre-refactor/file-hashes.sha256",
         "outputs/refactor-validation/pre-refactor/generate_baseline.py",
