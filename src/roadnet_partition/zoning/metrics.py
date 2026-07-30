@@ -423,6 +423,27 @@ def order_cluster_metrics(clusters: gpd.GeoDataFrame) -> dict[str, float]:
     return {"mean_within_cluster_imbalance_var": float(variance.mean()) if not variance.empty else float("nan")}
 
 
+def cluster_mean_origin_orders_per_slot(
+    hourly_od: pd.DataFrame,
+    partition: dict[str, Any],
+) -> pd.Series:
+    """Mean origin-order count per observed time slot for every partition cluster."""
+    frame = hourly_od[["slot_start", "origin_seg_id", "order_count"]].copy()
+    frame["slot_start"] = pd.to_datetime(frame["slot_start"], errors="coerce")
+    frame["cluster_id"] = frame["origin_seg_id"].astype(str).map(partition)
+    frame["order_count"] = pd.to_numeric(frame["order_count"], errors="coerce").fillna(0.0)
+    frame = frame.dropna(subset=["slot_start", "cluster_id"])
+    cluster_ids = sorted(set(partition.values()), key=str)
+    slots = pd.Index(sorted(frame["slot_start"].unique()))
+    if slots.empty:
+        return pd.Series(0.0, index=cluster_ids, name="mean_orders_per_slot")
+    totals = frame.groupby(["slot_start", "cluster_id"], observed=True)["order_count"].sum()
+    matrix = totals.unstack(fill_value=0).astype(float).reindex(index=slots, columns=cluster_ids, fill_value=0.0)
+    means = matrix.mean()
+    means.name = "mean_orders_per_slot"
+    return means
+
+
 def od_metrics(
     hourly_od: pd.DataFrame | None,
     partition: dict[str, Any],

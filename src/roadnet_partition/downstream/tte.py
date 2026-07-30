@@ -68,6 +68,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
+def trip_time_minutes(frame: pd.DataFrame) -> pd.Series:
+    """Return ``finish_time - departure_time`` in minutes."""
+    departure = pd.to_datetime(frame[DEPARTURE_COL], errors="coerce")
+    finish = pd.to_datetime(frame[FINISH_COL], errors="coerce")
+    return (finish - departure).dt.total_seconds() / 60.0
+
+
 def active_scope_name(config: dict[str, Any]) -> str:
     study_area = config["study_area"]
     return str(study_area.get("active", study_area.get("boundary_source", "fifth_ring")))
@@ -459,7 +466,7 @@ def build_tte_raw(
     df = orders.copy()
     df[DEPARTURE_COL] = pd.to_datetime(df[DEPARTURE_COL])
     df[FINISH_COL] = pd.to_datetime(df[FINISH_COL])
-    df["trip_time"] = (df[FINISH_COL] - df[DEPARTURE_COL]).dt.total_seconds() / 60.0
+    df["trip_time"] = trip_time_minutes(df)
     df = df[(df["trip_time"] >= min_minutes) & (df["trip_time"] <= max_minutes)]
 
     df[ORIGIN_COL] = df[ORIGIN_COL].astype(str)
