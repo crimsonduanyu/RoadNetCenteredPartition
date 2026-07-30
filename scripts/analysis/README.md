@@ -13,5 +13,6 @@ They are not pipeline stages, do not publish data and are never imported by the
   report and figures.
 
 Run them from the repository root with `conda run -n dydl python ...`. Their
-outputs belong under `outputs/analysis/` or `reports/`; none may write a
+outputs belong under `outputs/analysis/`, `reports/`, or an explicit historical
+archive under `artifacts/archive/`; none may write a
 published `data/processed/<scope>/` tree.

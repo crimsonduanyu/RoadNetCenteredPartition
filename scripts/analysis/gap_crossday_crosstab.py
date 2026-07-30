@@ -16,7 +16,7 @@ inter-block gap on two axes:
 R5 can only ever rescue gaps that are cross-day AND <= 360 min (intra-day gaps
 were never cut by midnight bucketing; cross-day >360 gaps are discarded anyway).
 
-Does not modify any existing source / pipeline file. Writes only NEW artifacts.
+Does not modify any existing source / pipeline file. Writes only diagnostic artifacts.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ORDERS_PATH = "data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz"
-IMG_DIR = "outputs/analysis"
+IMG_DIR = "artifacts/archive/supply-gap-diagnostics-v1"
 REPORT_JSON = os.path.join(IMG_DIR, "gap_crossday_crosstab_report.json")
 IMG_PATH = os.path.join(IMG_DIR, "gap_crossday_crosstab.png")
 
