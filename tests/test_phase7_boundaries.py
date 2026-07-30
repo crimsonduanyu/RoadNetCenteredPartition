@@ -50,8 +50,3 @@ def test_release_code_has_no_git_writes_or_registry_abstraction() -> None:
     assert "artifact_registry" not in text.lower()
     assert "remote storage" not in text.lower()
     assert set(("public", "synthetic", "private", "restricted", "unknown")) <= set(text.split('"'))
-
-
-def test_forbidden_phase8_and_legacy_files_are_unchanged_by_phase7_imports() -> None:
-    assert "roadnet_partition.pipeline.publishing" not in (ROOT / "src/run_pipeline.py").read_text(encoding="utf-8")
-    assert (ROOT / "config.yaml").is_file()

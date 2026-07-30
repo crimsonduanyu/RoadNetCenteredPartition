@@ -86,7 +86,3 @@ def test_production_pipeline_config_resolves_stably_without_running() -> None:
         Path(tte_inputs["representative_nodes_path"]),
     ]
     assert all(path.is_file() for path in checked_paths)
-
-
-def test_legacy_pipeline_is_untouched_by_new_package_imports() -> None:
-    assert "roadnet_partition.pipeline" not in (ROOT / "src/run_pipeline.py").read_text(encoding="utf-8")

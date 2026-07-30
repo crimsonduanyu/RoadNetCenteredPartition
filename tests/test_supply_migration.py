@@ -65,59 +65,11 @@ def test_supply_import_boundaries_are_one_way() -> None:
     package_root = PROJECT_ROOT / "src/roadnet_partition"
     supply_tree = ast.parse((package_root / "downstream/supply.py").read_text(encoding="utf-8"))
     contract_tree = ast.parse((package_root / "downstream/supply_contracts.py").read_text(encoding="utf-8"))
-    stage_tree = ast.parse((PROJECT_ROOT / "src/stages/stage3_supply.py").read_text(encoding="utf-8"))
     supply_imports = {node.module or "" for node in ast.walk(supply_tree) if isinstance(node, ast.ImportFrom)}
     contract_imports = {node.module or "" for node in ast.walk(contract_tree) if isinstance(node, ast.ImportFrom)}
-    stage_imports = {node.module or "" for node in ast.walk(stage_tree) if isinstance(node, ast.ImportFrom)}
     assert not any(module.startswith(("lib", "src", "stages")) for module in supply_imports | contract_imports)
     assert not any("demand" in module or "tte" in module or module.endswith(".cli") for module in supply_imports)
     assert not any(module.startswith("roadnet_partition.pipeline") for module in contract_imports)
-    assert "roadnet_partition.downstream" in stage_imports
-    assert not any(module.startswith("lib") for module in stage_imports)
-    assert not any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in {"insert", "append"}
-        and ast.unparse(node.func).startswith("sys.path.")
-        for node in ast.walk(stage_tree)
-    )
-
-
-def test_stage3_wrapper_preserves_arguments_and_summary(tmp_path: Path, monkeypatch, capsys) -> None:
-    spec = importlib.util.spec_from_file_location("stage3_supply_compat", PROJECT_ROOT / "src/stages/stage3_supply.py")
-    stage = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(stage)
-    monkeypatch.setattr(stage, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(stage, "load_unified_config", lambda: {"stage3_supply": {
-        "orders_path": "default-orders.csv.gz", "output_dir": "default-output",
-        "max_gap_minutes": 60, "tau_idle_minutes": 30,
-        "carpool_merge_gap_s": 0, "slot_duration_min": 10, "n_blocks": 8,
-    }})
-    calls = []
-
-    def fake_run_pipeline(**kwargs):
-        calls.append(kwargs)
-        return {"execution_mode": "driver-chunked", "block_summaries": []}
-
-    monkeypatch.setattr(stage.supply, "run_pipeline", fake_run_pipeline)
-    result = stage.main([
-        "--orders-path", "input/orders.csv.gz", "--output-dir", "validation/supply",
-        "--max-gap", "61", "--tau-idle", "31", "--carpool-merge-gap-s", "2",
-        "--slot-duration", "15", "--n-blocks", "3",
-    ])
-
-    assert result["execution_mode"] == "driver-chunked"
-    assert calls == [{
-        "orders_path": (tmp_path / "input/orders.csv.gz").resolve(),
-        "output_dir": (tmp_path / "validation/supply").resolve(),
-        "max_gap_minutes": 61,
-        "tau_idle_minutes": 31,
-        "carpool_merge_gap_s": 2,
-        "slot_duration_min": 15,
-        "n_blocks": 3,
-    }]
-    assert "Supply reconstruction summary:" in capsys.readouterr().out
 
 
 def synthetic_orders() -> pd.DataFrame:

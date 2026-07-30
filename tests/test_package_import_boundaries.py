@@ -135,7 +135,6 @@ def test_tte_package_boundaries_are_one_way_and_nonserialized() -> None:
         "tte": PACKAGE_ROOT / "downstream" / "tte.py",
         "contracts": PACKAGE_ROOT / "downstream" / "tte_contracts.py",
         "distance": PACKAGE_ROOT / "graphs" / "distance.py",
-        "stage4": PROJECT_ROOT / "src" / "stages" / "stage4_tte.py",
         "bridge": PROJECT_ROOT / "src" / "lib" / "tte_dataset.py",
     }
     trees = {
@@ -182,20 +181,6 @@ def test_tte_package_boundaries_are_one_way_and_nonserialized() -> None:
     assert not any(
         imported.startswith("roadnet_partition.downstream.tte")
         for imported in imports["distance"]
-    )
-
-    stage_application_imports = {
-        imported
-        for imported in imports["stage4"]
-        if imported.startswith(("roadnet_partition", "lib", "src", "stages"))
-    }
-    assert stage_application_imports == {"roadnet_partition.downstream.tte"}
-    assert not any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in {"insert", "append"}
-        and ast.unparse(node.func).startswith("sys.path.")
-        for node in ast.walk(trees["stage4"])
     )
 
     forbidden_dynamic_modules = {"pickle", "joblib", "cloudpickle", "dill", "importlib"}

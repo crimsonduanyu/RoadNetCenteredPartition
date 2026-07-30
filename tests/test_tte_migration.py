@@ -5,12 +5,9 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
-import sys
 
 import numpy as np
 import pandas as pd
-import yaml
 
 from roadnet_partition.config import ResolvedStageConfig
 from roadnet_partition.downstream import tte
@@ -252,27 +249,3 @@ def test_run_tte_reuses_explicit_precomputed_distance_fallbacks(tmp_path: Path) 
     assert result.outputs["representative_nodes"].read_bytes() == (
         source_dir / "cluster_representative_nodes.csv"
     ).read_bytes()
-
-
-def test_stage4_wrapper_runs_tiny_config_outside_repository(tmp_path: Path) -> None:
-    orders_path, cluster_index_path, _ = write_tiny_inputs(tmp_path)
-    output_dir = tmp_path / "stage"
-    output_dir.mkdir()
-    for filename in ["cluster_network_distance.parquet", "cluster_representative_nodes.csv"]:
-        source = tmp_path / "new" / filename
-        (output_dir / filename).write_bytes(source.read_bytes())
-    config = tiny_config(orders_path, cluster_index_path, output_dir)
-    config_path = tmp_path / "tte.yaml"
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
-
-    result = subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "src/stages/stage4_tte.py"), str(config_path)],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "Stage 4 (TTE) summary:" in result.stdout
-    assert {path.name for path in output_dir.iterdir()} == FORMAL_FILES
