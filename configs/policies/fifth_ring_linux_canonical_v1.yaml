@@ -16,7 +16,7 @@ source_run:
     supply: e5ff3c5e1e426e33a180968f1845930d1878406127091fccfc815e58bb2eab6f
     tte: 8eb1b32fd6d274b557efedae1d6e6ea0ad5dce2165abde9767a6faf32d4aadb3
   demand_assigned_orders_sha256: fb5b14e869e07cf11a8661650555b7a6f114566ef3d66167fbdd22ed26e4bb06
-  validation_report_sha256: 437e1b508f3d25b4fdc986b453fd21550adadb8ad4bf766b1a2413d71e3705d2
+  validation_report_sha256: 7721d0540709282efeedee3983d9a379d78c421a336f0ec34913d29f8a4b5a8f
 
 previous_canonical:
   platform: windows
