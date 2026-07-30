@@ -1,25 +1,16 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
-import sys
-
 import networkx as nx
 import pytest
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXPERIMENT_ROOT = PROJECT_ROOT / "regularized_zoning_experiments"
-if str(EXPERIMENT_ROOT) not in sys.path:
-    sys.path.insert(0, str(EXPERIMENT_ROOT))
+from roadnet_partition.zoning import regularized
 
 
 @pytest.fixture(scope="module")
 def search_module():
     pytest.importorskip("geopandas")
-    import run_regularized_search
-
-    return run_regularized_search
+    return regularized
 
 
 def objective_params(search_module, target_clusters: int = 3):

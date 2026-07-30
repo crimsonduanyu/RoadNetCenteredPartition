@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import sys
 import types
 
@@ -11,12 +10,6 @@ from roadnet_partition.zoning.algorithms.leiden import run_leiden
 from roadnet_partition.zoning.algorithms.louvain import run_louvain
 from roadnet_partition.zoning.algorithms.metis import run_metis
 from roadnet_partition.zoning.algorithms.skater import run_skater
-
-
-@pytest.fixture(scope="module")
-def legacy():
-    return importlib.import_module("03_cluster_segments")
-
 
 @pytest.fixture
 def graph() -> nx.Graph:
@@ -45,7 +38,7 @@ def config() -> dict:
     }
 
 
-def test_louvain_mapping_and_parameters_match_legacy(legacy, graph, config, monkeypatch) -> None:
+def test_louvain_mapping_and_parameters(graph, config, monkeypatch) -> None:
     calls = []
     def best_partition(current_graph, **kwargs):
         calls.append(kwargs)
@@ -54,18 +47,15 @@ def test_louvain_mapping_and_parameters_match_legacy(legacy, graph, config, monk
     community.community_louvain = types.SimpleNamespace(best_partition=best_partition)
     monkeypatch.setitem(sys.modules, "community", community)
     expected = {"isolated": 0, "a": 1, "b": 0, "c": 1, "d": 0}
-    assert run_louvain(graph, config) == legacy.run_louvain(graph, config) == expected
-    assert calls == [
-        {"weight": "weight", "resolution": 1.0, "random_state": 42},
-        {"weight": "weight", "resolution": 1.0, "random_state": 42},
-    ]
+    assert run_louvain(graph, config) == expected
+    assert calls == [{"weight": "weight", "resolution": 1.0, "random_state": 42}]
 
 
-def test_skater_mapping_matches_legacy(legacy, graph, config) -> None:
-    assert run_skater(graph, config) == legacy.run_skater(graph, config)
+def test_skater_mapping_is_stable(graph, config) -> None:
+    assert run_skater(graph, config) == {"a": 0, "b": 0, "c": 1, "d": 1, "isolated": 2}
 
 
-def test_leiden_mapping_order_and_parameters_match_legacy(legacy, graph, config, monkeypatch) -> None:
+def test_leiden_mapping_order_and_parameters(graph, config, monkeypatch) -> None:
     calls = []
     class EdgeSequence(dict):
         pass
@@ -84,13 +74,13 @@ def test_leiden_mapping_order_and_parameters_match_legacy(legacy, graph, config,
     monkeypatch.setitem(sys.modules, "igraph", igraph)
     monkeypatch.setitem(sys.modules, "leidenalg", leidenalg)
     expected = {"isolated": 2, "a": 0, "b": 0, "c": 1, "d": 1}
-    assert run_leiden(graph, config) == legacy.run_leiden(graph, config) == expected
+    assert run_leiden(graph, config) == expected
     assert calls[0] == ("graph", 5, [(1, 2), (2, 3), (3, 4)], False)
     assert calls[1][0:2] == ("partition", [5.0, 1.0, 5.0])
     assert calls[1][3] == {"weights": "weight", "resolution_parameter": 1.0, "seed": 42}
 
 
-def test_metis_mapping_order_and_parameters_match_legacy(legacy, graph, config, monkeypatch) -> None:
+def test_metis_mapping_order_and_parameters(graph, config, monkeypatch) -> None:
     calls = []
     class CSRAdjacency:
         def __init__(self, *, adj_starts, adjacent):
@@ -104,7 +94,7 @@ def test_metis_mapping_order_and_parameters_match_legacy(legacy, graph, config, 
     pymetis.part_graph = part_graph
     monkeypatch.setitem(sys.modules, "pymetis", pymetis)
     expected = {"a": 0, "b": 0, "c": 1, "d": 1, "isolated": 2}
-    assert run_metis(graph, config) == legacy.run_metis(graph, config) == expected
+    assert run_metis(graph, config) == expected
     assert calls[0][0] == 3
     assert calls[0][1]["recursive"] is False
     assert calls[0][1]["contiguous"] is False
