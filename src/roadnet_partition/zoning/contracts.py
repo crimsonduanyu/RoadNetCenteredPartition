@@ -145,8 +145,6 @@ def save_baseline_partition_outputs(
     if graph_variant == default_variant and algorithm == "louvain":
         segments.to_file(paths["data_processed"] / "segment_clusters.gpkg", driver="GPKG")
         segments.drop(columns="geometry").to_csv(paths["data_processed"] / "segment_clusters.csv", index=False)
-        summary.to_csv(paths["outputs_tables"] / "cluster_summary.csv", index=False)
-        diagnostics.to_csv(paths["outputs_tables"] / "road_name_split_diagnostics.csv", index=False)
 
     print(f"{label} clustering completed")
     print(f"number of clusters: {segments['cluster_id'].nunique():,}")
