@@ -1,4 +1,38 @@
-# Python
+# Runtime outputs
+outputs/**
+
+# Private/local data payloads
+data/raw/**
+data/interim/**
+data/processed/**
+
+# Keep reviewed documentation, schemas, and synthetic/sample data trackable.
+!data/**/
+!data/**/README.md
+!data/**/manifest.json
+!data/**/*.sha256
+!data/**/schema*.json
+!data/**/schema*.yaml
+!data/**/schema*.yml
+!data/**/synthetic/**
+!data/**/sample/**
+!data/**/samples/**
+
+# Local-only artifact payloads
+artifacts/baselines/**/payload/**
+artifacts/golden/**/payload/**
+artifacts/golden/**/inputs/**
+artifacts/golden/**/expected/**
+artifacts/golden/**/legacy_comparisons/**
+
+# Keep artifact metadata and publication assets trackable.
+!artifacts/**/
+!artifacts/**/README.md
+!artifacts/**/manifest.json
+!artifacts/**/*.sha256
+!artifacts/paper/**
+
+# Python/build/cache
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,44 +42,36 @@ __pycache__/
 .coverage
 htmlcov/
 *.egg-info/
+build/
+dist/
 
-# Virtual environments
+# Virtual environments and local secrets
 .venv/
 venv/
 env/
 .env
 .env.*
+!.env.example
 
-# Jupyter
-.ipynb_checkpoints/
+# Local databases and logs
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.pid
 
-# IDE/editor
-.vscode/
+# Editor/local agent settings
+.vscode/settings.json
+.claude/settings.local.json
 .idea/
 *.swp
 *.swo
+.ipynb_checkpoints/
 
-# OS files
+# OS and geospatial sidecars
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Project data and generated artifacts
-cache/
-data/raw/
-data/interim/
-data/processed/
-outputs/
-
-# Golden metadata is tracked; payload is local-only unless explicitly reviewed.
-artifacts/golden/*/inputs/**
-artifacts/golden/*/expected/**
-artifacts/golden/*/legacy_comparisons/**
-
-# Historical processed baselines are private/local-only; track metadata only.
-artifacts/baselines/fifth-ring-windows-v1/payload/**
-
-# Geospatial sidecar/index files
 *.gpkg-shm
 *.gpkg-wal
 *.qix
@@ -55,10 +81,5 @@ artifacts/baselines/fifth-ring-windows-v1/payload/**
 *.sbx
 *.shx
 
-# Logs
-*.log
-*.pid
-
-# Local SQLite scratch files
-*.sqlite
-*.sqlite3
+# Local caches
+cache/
