@@ -1,9 +1,0 @@
-.............................................                            [100%]
-=============================== warnings summary ===============================
-tests/test_order_region_pipeline.py::test_full_pipeline_smoke_with_tiny_fixture
-tests/test_order_region_pipeline.py::test_full_pipeline_smoke_with_tiny_fixture
-  /home/dy/jupyter/workspace/RoadNetCenteredPartition/src/lib/order_dataset.py:423: DeprecationWarning: The 'unary_union' attribute is deprecated, use the 'union_all()' method instead.
-    geometry = group.geometry.unary_union
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-45 passed, 2 warnings in 1.09s

@@ -1,110 +1,113 @@
 # RoadNet-Centered Partition Pipeline
 
-The supported Beijing road-network pipeline is:
+RoadNet-Centered Partition builds road-network-aware spatial clusters and the
+downstream demand, supply, and trip-time-estimation datasets used by the study.
 
 ```text
 partition → demand → supply → tte
 ```
 
-Linux is the current Fifth Ring canonical platform. The historical Windows
-baseline is a private/local-only archive, not Golden and not a release asset.
+Linux is the current Fifth Ring canonical platform. Private Beijing orders,
+POI data, road extracts, Golden payloads, and the historical Windows payload are
+not distributed through Git.
 
-## Install and test
+## Install
 
-Use the existing `dydl` Conda environment; do not use the system Python.
+Acceptance uses the existing `dydl` Conda environment:
 
 ```bash
 conda run -n dydl pip install -e . --no-deps
 conda run -n dydl python -m pytest
 ```
 
-## Full pipeline
+See [installation](docs/installation.md) for environment creation.
+
+## Quick run
+
+The test suite is the public synthetic-data example. It creates temporary tiny
+fixtures and does not require private data:
+
+```bash
+conda run -n dydl python -m pytest
+```
+
+Run the complete private-data pipeline after preparing inputs:
 
 ```bash
 conda run -n dydl roadnet-partition run \
   --config configs/pipelines/full.yaml
 ```
 
-Ordinary runs write only beneath `outputs/runs/<run_id>/`. Stages are isolated
-by default. Lifecycle controls include `--resume`, `--overwrite`,
-`--from-stage`, `--to-stage` and `--isolate-stages`/`--no-isolate-stages`.
+Ordinary runs write only to `outputs/runs/<run_id>/`. Individual stages are
+available as `roadnet-partition partition|demand|supply|tte`; use `--help` for
+their lifecycle and configuration options.
 
-```bash
-conda run -n dydl roadnet-partition run \
-  --config configs/pipelines/full.yaml \
-  --run-dir outputs/runs/<run_id> \
-  --from-stage supply --resume
-
-conda run -n dydl roadnet-partition run \
-  --config configs/pipelines/full.yaml \
-  --run-dir outputs/runs/<run_id> \
-  --from-stage demand --overwrite
-```
-
-## Single-stage commands
-
-```bash
-roadnet-partition partition
-roadnet-partition demand
-roadnet-partition supply
-roadnet-partition tte
-```
-
-Each command also accepts lifecycle/config options shown by its `--help`. It
-writes an owned run directory, never the published scope directly.
-
-## Validate, publish and export
-
-Validation is read-only except for optional reports owned by the run:
+## Validate, publish, and export
 
 ```bash
 conda run -n dydl roadnet-partition validate \
   --run outputs/runs/<run_id> \
   --golden artifacts/golden/beijing-fifth-ring-v1
-```
 
-Publish never reruns algorithms. It transactionally swaps a complete product
-into `data/processed/<scope>/` after validation and policy checks:
-
-```bash
 conda run -n dydl roadnet-partition publish \
   --run outputs/runs/<run_id> \
-  --scope fifth_ring \
-  --overwrite \
+  --scope fifth_ring --overwrite \
   --baseline-decision configs/policies/fifth_ring_linux_canonical_v1.yaml \
   --dry-run
-```
 
-Reproduction export applies a separate privacy allowlist:
-
-```bash
 conda run -n dydl roadnet-partition export-reproduction \
   --run outputs/runs/<run_id> \
   --output outputs/releases/reproduction/<version> \
-  --profile minimal \
-  --dry-run
+  --profile minimal --dry-run
 ```
 
-## Data rules
+Publishing never reruns algorithms. Reproduction export uses a privacy
+allowlist and does not grant redistribution rights for upstream data.
 
-- ordinary runs write `outputs/runs/`;
-- `validate` is read-only for algorithms and published data;
-- `publish` transactionally writes `data/processed/<scope>/`;
-- release export includes only privacy-allowlisted assets;
-- Golden is regression-only;
-- Linux is the current canonical;
-- the Windows baseline is a private/local-only archive;
-- equal-distance nearest-neighbor candidates are not guaranteed to resolve
-  identically across platforms;
-- deterministic assignment v2 is not implemented.
+## Prepare your own data
 
-## Configuration and development
+Input schemas, column mappings, CRS requirements, product contracts, provenance,
+and privacy rules are documented in [data.md](docs/data.md). Do not commit order
+rows, driver identifiers, precise trip coordinates, or private derived matrices.
 
-Authoritative runtime configuration is split across `configs/datasets/`,
-`configs/zoning/` and `configs/pipelines/`; paths resolve relative to the file
-that declares them. The unified pre-refactor configuration is archived under
-`configs/legacy/` for audit only and has no active reader.
+## Publication figures
 
-New code must import `roadnet_partition`, use `dydl`, honor run
-ownership/contracts, and never write stable processed data except through the
-publish transaction. `scripts/analysis/` is analysis-only.
+Tracked figures and their manifest live under `artifacts/paper/`:
+
+```bash
+conda run -n dydl python scripts/figures/best_partition_maps.py
+conda run -n dydl python scripts/figures/partition_order_panels.py
+conda run -n dydl python scripts/figures/raw_order_trip_time_distribution.py
+sha256sum -c artifacts/paper/checksums.sha256
+```
+
+See [publication-figures.md](docs/publication-figures.md) for inputs and style.
+
+## Repository layout
+
+```text
+artifacts/                  long-lived manifest-managed assets
+  golden/                   regression metadata; payload local-only
+  baselines/                historical metadata; payload local-only
+  paper/                    tracked publication figures and checksums
+configs/                    dataset, stage, zoning, and policy configuration
+data/                       local private/canonical data; payload ignored
+docs/                       public documentation and condensed history
+outputs/                    generated runs, validation, reports, releases; ignored
+scripts/                    analysis and publication-figure entrypoints
+src/roadnet_partition/      importable package and CLI
+tests/                      synthetic/unit/integration tests
+```
+
+## Documentation
+
+- [Pipeline](docs/pipeline.md)
+- [Reproducibility](docs/reproducibility.md)
+- [Development](docs/development.md)
+- [Refactor history](docs/history/refactor-v1.md)
+
+## License and citation
+
+Code is released under the [MIT License](LICENSE). Cite the project using
+[`CITATION.cff`](CITATION.cff). Data licenses are separate and must be obtained
+from the corresponding data providers.
