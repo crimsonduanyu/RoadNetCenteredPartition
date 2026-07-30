@@ -47,14 +47,6 @@ def project_path(path_value: str | Path | None) -> Path | None:
     return PROJECT_ROOT / path
 
 
-def load_project_config(config_path: str | Path | None = None) -> dict[str, Any]:
-    import yaml
-
-    path = project_path(config_path) if config_path else PROJECT_ROOT / "config.yaml"
-    with Path(path).open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
-
-
 def sort_cluster_ids(cluster_ids: Iterable[Any]) -> list[str]:
     def key(value: Any) -> tuple[int, int | str]:
         text = str(value)
@@ -224,13 +216,11 @@ def compute_distance_matrix(graph_filt, graph_raw, reps: dict[str, int], cluster
     return pd.DataFrame(matrix, index=cluster_ids, columns=cluster_ids)
 
 
-def build_or_load(config: dict[str, Any] | str | Path | None = None) -> pd.DataFrame:
+def build_or_load(config: dict[str, Any]) -> pd.DataFrame:
     """Build (and cache) or load the cluster network-distance matrix.
 
     Returns a DataFrame indexed by cluster id (str) with the same columns.
     """
-    if not isinstance(config, dict):
-        config = load_project_config(config)
     stage_config = config["stage4_tte"]
     dist_cfg = stage_config.get("distance", {})
 

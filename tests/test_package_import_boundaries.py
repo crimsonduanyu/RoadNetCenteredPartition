@@ -135,7 +135,6 @@ def test_tte_package_boundaries_are_one_way_and_nonserialized() -> None:
         "tte": PACKAGE_ROOT / "downstream" / "tte.py",
         "contracts": PACKAGE_ROOT / "downstream" / "tte_contracts.py",
         "distance": PACKAGE_ROOT / "graphs" / "distance.py",
-        "bridge": PROJECT_ROOT / "src" / "lib" / "tte_dataset.py",
     }
     trees = {
         name: ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

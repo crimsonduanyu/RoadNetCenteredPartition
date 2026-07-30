@@ -23,7 +23,7 @@ Outputs (under ``data/processed/<scope>/tte/``):
 - ``TTE_imputed.parquet`` - same matrix after transitive imputation.
 
 The computation is pure (functions may do I/O but there are no module-level side
-effects); the thin ``src/stages/stage4_tte.py`` script points it at ``config.yaml``.
+effects); the public CLI supplies a resolved split configuration.
 """
 from __future__ import annotations
 
@@ -38,7 +38,6 @@ import pandas as pd
 
 from roadnet_partition.graphs import distance as network_distance
 from roadnet_partition.graphs.distance import (
-    load_project_config,
     project_path,
     sort_cluster_ids,
 )
@@ -522,12 +521,10 @@ def resolve_output_dir(config: dict[str, Any]) -> Path:
     return Path(project_path(f"data/processed/{active_scope_name(config)}/tte"))
 
 
-def run_from_config(config: dict[str, Any] | str | Path | None = None) -> dict[str, Any]:
+def run_from_config(config: dict[str, Any]) -> dict[str, Any]:
     """Build and write ``TTE_raw.parquet`` / ``TTE_imputed.parquet`` from config."""
-    if not isinstance(config, dict):
-        config = load_project_config(config)
     if "stage4_tte" not in config:
-        raise ValueError("config.yaml must contain a stage4_tte section.")
+        raise ValueError("configuration must contain a stage4_tte section.")
 
     stage_config = config["stage4_tte"]
     inputs = stage_config["inputs"]
@@ -705,19 +702,3 @@ def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
             "inferred_cells": int(summary["num_inferred_cells"]),
         },
     )
-
-
-def main(argv: list[str] | None = None) -> dict[str, Any]:
-    import sys
-
-    argv = argv if argv is not None else sys.argv[1:]
-    config_arg = argv[0] if argv else None
-    summary = run_from_config(config_arg)
-    print("Stage 4 (TTE) summary:")
-    for key, value in summary.items():
-        print(f"  {key}: {value}")
-    return summary
-
-
-if __name__ == "__main__":
-    main()

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import builtins
-import importlib.util
 import ast
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -16,7 +14,6 @@ from roadnet_partition.pipeline.results import RunContext, StageStatus
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LEGACY_PATH = PROJECT_ROOT / "src/lib/supply.py"
 FORMAL_FILES = {
     "supply_inservice_od.csv.gz",
     "supply_available_floor.csv.gz",
@@ -24,43 +21,6 @@ FORMAL_FILES = {
     "run_summary.json",
     "config_used.json",
 }
-LEGACY_PUBLIC_NAMES = {
-    "CARPOOL_MERGE_GAP_S", "DEMAND_DIR", "DEMAND_TABLE", "DRIVER_BLOCKS",
-    "FLEET_COLUMNS", "IN_SERVICE_COLUMNS", "LOGGER", "MAX_GAP_MINUTES",
-    "MERGE_WITH_DEMAND", "ORDERS_PATH", "ORDER_USE_COLUMNS", "OUTPUT_DIR",
-    "SLOT_DURATION_MIN", "TAU_IDLE_MINUTES", "TRIP_SEGMENT_COLUMNS",
-    "attach_global_fleet_to_all_clusters", "build_cluster_universe",
-    "build_exclusive_trip_segments", "build_global_cluster_index",
-    "build_global_slot_index", "build_trip_segments", "complete_slot_cluster_grid",
-    "compute_available_by_cluster", "compute_fleet_lower_bound",
-    "compute_in_service_od", "compute_supply_variables", "configure_file_logging",
-    "driver_block_id", "extract_idle_windows", "filter_valid_orders", "generate_slots",
-    "load_orders", "merge_supply_with_demand", "process_orders_frame",
-    "reconstruct_driver_chains", "resolve_carpool_trip_groups", "run_chunked_pipeline",
-    "run_pipeline", "save_csv_gz", "serialize_list_columns", "write_json",
-}
-
-
-def load_legacy_supply():
-    spec = importlib.util.spec_from_file_location("legacy_supply_for_equivalence", LEGACY_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_legacy_supply_bridge_exports_original_names() -> None:
-    legacy = load_legacy_supply()
-    assert set(legacy.__all__) == LEGACY_PUBLIC_NAMES
-    for name in LEGACY_PUBLIC_NAMES:
-        assert getattr(legacy, name) is getattr(supply, name)
-    for name in [
-        "_expand_interval_slots", "_slot_positions", "_cluster_positions",
-        "_inservice_array_to_frame", "_dense_cluster_array_to_frame", "_fleet_arrays_to_frame",
-    ]:
-        assert getattr(legacy, name) is getattr(supply, name)
-
-
 def test_supply_import_boundaries_are_one_way() -> None:
     package_root = PROJECT_ROOT / "src/roadnet_partition"
     supply_tree = ast.parse((package_root / "downstream/supply.py").read_text(encoding="utf-8"))
@@ -111,26 +71,15 @@ def assert_table_outputs_equal(left: Path, right: Path) -> None:
         )
 
 
-def test_legacy_and_new_tiny_supply_outputs_are_exact(tmp_path: Path) -> None:
-    legacy = load_legacy_supply()
+def test_tiny_supply_outputs_are_formal_and_complete(tmp_path: Path) -> None:
     orders_path = tmp_path / "orders.csv.gz"
     write_orders(orders_path)
-    legacy_dir = tmp_path / "legacy"
-    new_dir = tmp_path / "new"
+    output = tmp_path / "supply"
+    summary = supply.run_pipeline(orders_path=orders_path, output_dir=output, slot_duration_min=10, n_blocks=10)
 
-    legacy_summary = legacy.run_pipeline(orders_path=orders_path, output_dir=legacy_dir, slot_duration_min=10, n_blocks=10)
-    new_summary = supply.run_pipeline(orders_path=orders_path, output_dir=new_dir, slot_duration_min=10, n_blocks=10)
-
-    assert_table_outputs_equal(legacy_dir, new_dir)
-    assert legacy_summary == new_summary
-    assert set(path.name for path in legacy_dir.iterdir()) - {"run.log"} == FORMAL_FILES
-    assert set(path.name for path in new_dir.iterdir()) - {"run.log"} == FORMAL_FILES
-    legacy_config = json.loads((legacy_dir / "config_used.json").read_text())
-    new_config = json.loads((new_dir / "config_used.json").read_text())
-    legacy_config.pop("output_dir")
-    new_config.pop("output_dir")
-    assert legacy_config == new_config
-    assert not any((new_dir / name).exists() for name in [
+    assert summary["orders_loaded"] == 7
+    assert set(path.name for path in output.iterdir()) - {"run.log"} == FORMAL_FILES
+    assert not any((output / name).exists() for name in [
         "trip_segments.csv.gz", "driver_chains.csv.gz", "idle_windows.csv.gz",
         "run_summary.partial.json", "_SUCCESS",
     ])

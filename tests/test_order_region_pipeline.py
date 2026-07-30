@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
-import sys
 import sqlite3
 import gzip
 
@@ -10,20 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = PROJECT_ROOT / "src" / "lib" / "order_dataset.py"
-SRC_ROOT = PROJECT_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
+from roadnet_partition.downstream import demand
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("order_region_pipeline", MODULE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    return demand
 
 
 def test_service_type_overlap_components() -> None:
@@ -343,7 +332,7 @@ def test_full_pipeline_smoke_with_tiny_fixture(tmp_path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
 
-    module.main([str(config_path)])
+    module.run_from_config(config)
 
     od = pd.read_csv(output_root / "cluster_od_15min.csv")
     assert int(od["carpool_count"].sum()) == 2

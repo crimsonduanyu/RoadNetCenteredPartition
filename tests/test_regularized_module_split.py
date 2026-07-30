@@ -36,11 +36,6 @@ EXPECTED_DEFINITIONS = {
         "load_config", "require_keys", "validate_config", "load_graph",
         "load_demand", "load_partition",
         "write_run_config", "append_rows", "run_from_config", "run_partition",
-        "run_baseline_partition", "_run_baseline_partition",
-        "legacy_baseline_main", "load_unified_config",
-        "build_regularized_config", "verify_output_root",
-        "canonical_setting_stem", "verify_against_frozen",
-        "legacy_stage1_main",
     },
 }
 

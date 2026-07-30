@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-import gzip
 import json
 from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import pandas.testing as pdt
-from scipy import sparse
 from shapely.geometry import LineString
 import yaml
 
-from lib import order_dataset as legacy
 from roadnet_partition.config import ResolvedStageConfig
 from roadnet_partition.downstream.demand import run_demand
 from roadnet_partition.downstream.demand_contracts import (
@@ -82,53 +78,21 @@ def build_fixture(tmp_path: Path, output_root: Path) -> tuple[dict, Path]:
     return config, config_path
 
 
-def test_new_and_legacy_demand_entrypoints_are_semantically_identical(tmp_path: Path) -> None:
-    legacy_root = tmp_path / "legacy"
-    config, config_path = build_fixture(tmp_path, legacy_root)
-    legacy.main([str(config_path)])
+def test_tiny_demand_outputs_and_contracts(tmp_path: Path) -> None:
+    config, config_path = build_fixture(tmp_path, tmp_path / "unused")
     context = RunContext("tiny", tmp_path / "run", tmp_path).for_stage("demand")
     resolved = ResolvedStageConfig(config_path, config, "tiny")
     result = run_demand(resolved, context)
     new_root = context.stage_dir
     assert new_root is not None
 
-    expected_files = {path.name for path in legacy_root.iterdir()}
-    assert {path.name for path in new_root.iterdir()} == expected_files
-    assert "orders_region_staging.sqlite" not in expected_files
-    for name in [
-        "cluster_index.csv", "cluster_od_15min.csv", "cluster_poi_features.csv",
-        "cluster_poi_category_mapping.csv", "cluster_graph_road_edges.csv",
-        "cluster_graph_poi_edges.csv", "cluster_graph_distance_edges.csv",
-    ]:
-        pdt.assert_frame_equal(pd.read_csv(new_root / name), pd.read_csv(legacy_root / name))
-    with gzip.open(new_root / "orders_region_assigned.csv.gz", "rt", encoding="utf-8") as handle:
-        new_assigned = pd.read_csv(handle)
-    with gzip.open(legacy_root / "orders_region_assigned.csv.gz", "rt", encoding="utf-8") as handle:
-        old_assigned = pd.read_csv(handle)
-    pdt.assert_frame_equal(new_assigned, old_assigned)
+    assert "orders_region_staging.sqlite" not in {path.name for path in new_root.iterdir()}
+    new_assigned = pd.read_csv(new_root / "orders_region_assigned.csv.gz")
     assert new_assigned["order_id"].tolist() == ["o1", "o2", "o3"]
     assert new_assigned["service_type"].tolist() == ["carpool", "carpool", "exclusive"]
 
-    with np.load(new_root / "od_tensor_15min.npz") as new_tensor, np.load(legacy_root / "od_tensor_15min.npz") as old_tensor:
-        assert new_tensor.files == old_tensor.files
-        for name in new_tensor.files:
-            assert np.array_equal(new_tensor[name], old_tensor[name])
-    for graph_name in ["road", "poi", "distance"]:
-        for suffix in ["raw", "normalized"]:
-            new_matrix = sparse.load_npz(new_root / f"cluster_graph_{graph_name}_adjacency_{suffix}.npz")
-            old_matrix = sparse.load_npz(legacy_root / f"cluster_graph_{graph_name}_adjacency_{suffix}.npz")
-            assert (new_matrix != old_matrix).nnz == 0
-
     new_metadata = json.loads((new_root / "metadata.json").read_text())
-    old_metadata = json.loads((legacy_root / "metadata.json").read_text())
-    for metadata in [new_metadata, old_metadata]:
-        metadata.pop("output_root")
-        metadata["outputs"] = {key: Path(value.replace("\\", "/")).name for key, value in metadata["outputs"].items()}
-        for graph in metadata["graph_summaries"]:
-            for key in ["edge_path", "raw_adjacency_path", "normalized_adjacency_path"]:
-                graph[key] = Path(graph[key].replace("\\", "/")).name
-        metadata["config"]["outputs"]["root"] = "<output>"
-    assert new_metadata == old_metadata
+    assert new_metadata["num_clusters"] == 3
     cluster_ids = validate_cluster_index(pd.read_csv(new_root / "cluster_index.csv", dtype={"cluster_id": str}), ["2", "10", "zone"])
     od_contract = validate_od_and_tensor(new_root / "cluster_od_15min.csv", new_root / "od_tensor_15min.npz", cluster_ids)
     assert od_contract["sums"] == {"exclusive": 1, "carpool": 2, "total": 3}

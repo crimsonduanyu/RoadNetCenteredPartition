@@ -7,7 +7,6 @@ from typing import Any
 import gzip
 import json
 import sqlite3
-import sys
 
 from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
@@ -26,13 +25,6 @@ from roadnet_partition.pipeline.results import RunContext, StageResult, StageSta
 EXCLUSIVE = "exclusive"
 CARPOOL = "carpool"
 SERVICE_TYPES = [EXCLUSIVE, CARPOOL]
-
-def load_project_config(config_path: str | Path | None = None) -> dict[str, Any]:
-    import yaml
-
-    path = project_path(config_path) if config_path else PROJECT_ROOT / "config.yaml"
-    with Path(path).open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
 
 def active_scope_name(config: dict[str, Any]) -> str:
     study_area = config["study_area"]
@@ -607,7 +599,7 @@ def json_safe(value: Any) -> Any:
 
 def run_from_config(config: dict[str, Any]) -> None:
     if "order_pipeline" not in config:
-        raise ValueError("config.yaml must contain an order_pipeline section.")
+        raise ValueError("configuration must contain an order_pipeline section.")
 
     output_dir = resolve_output_root(config)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -709,11 +701,6 @@ def run_from_config(config: dict[str, Any]) -> None:
 
     print(f"Saved order-region pipeline outputs to {output_dir}")
     print(f"Saved metadata to {metadata_path}")
-
-
-def main(argv: list[str] | None = None) -> None:
-    argv = argv or sys.argv[1:]
-    run_from_config(load_project_config(argv[0] if argv else None))
 
 
 def run_demand(config: ResolvedStageConfig, context: RunContext) -> StageResult:

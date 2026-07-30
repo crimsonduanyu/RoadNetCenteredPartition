@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import ast
-import hashlib
-import importlib.util
-import json
 from pathlib import Path
 
 import numpy as np
@@ -15,11 +11,6 @@ from roadnet_partition.downstream.tte_contracts import validate_tte_outputs
 from roadnet_partition.pipeline.results import RunContext, StageStatus
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LEGACY_PATH = PROJECT_ROOT / "src/lib/tte_dataset.py"
-NEW_PATH = PROJECT_ROOT / "src/roadnet_partition/downstream/tte.py"
-AST_BASELINE_PATH = PROJECT_ROOT / "docs/refactor/tte-mechanical-ast-v1.json"
-COMPARISON_PATH = PROJECT_ROOT / "scripts/analysis/compare_tte_outputs.py"
 FORMAL_FILES = {
     "cluster_network_distance.parquet",
     "cluster_representative_nodes.csv",
@@ -29,24 +20,6 @@ FORMAL_FILES = {
     "TTE_hops.parquet",
     "TTE_imputed.parquet",
 }
-LEGACY_PUBLIC_NAMES = {
-    "DEPARTURE_COL", "FINISH_COL", "ORIGIN_COL", "DESTINATION_COL", "DEFAULT_CONFIG",
-    "SpatialPruner", "active_scope_name", "load_project_config", "project_path",
-    "sort_cluster_ids", "parse_columns", "get_transitive_data", "calculate_transitive_time",
-    "vectorize_transitive_impute", "validate_estimates", "run_imputation_pipeline",
-    "compute_keep_clusters", "build_od_columns", "build_tte_raw", "resolve_output_dir",
-    "run_from_config", "main",
-}
-
-
-def load_legacy_tte():
-    spec = importlib.util.spec_from_file_location("legacy_tte_for_equivalence", LEGACY_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
-
-
 def write_tiny_inputs(root: Path) -> tuple[Path, Path, list[str]]:
     clusters = ["2", "10", "A", "B", "isolated"]
     positions = {"2": 0.0, "10": 5.0, "A": 10.0, "B": 15.0}
@@ -88,14 +61,14 @@ def write_tiny_inputs(root: Path) -> tuple[Path, Path, list[str]]:
         "centroid_lon": np.arange(len(clusters), dtype=float),
         "centroid_lat": np.arange(len(clusters), dtype=float),
     }).to_csv(cluster_index_path, index=False)
-    for output in [root / "legacy", root / "new"]:
-        output.mkdir()
-        matrix.to_parquet(output / "cluster_network_distance.parquet")
-        pd.DataFrame({
-            "cluster_id": clusters,
-            "rep_osmid": [102, 110, 201, 202, 999],
-            "dist_to_centroid_m": [1.0, 2.0, 3.0, 4.0, 5.0],
-        }).to_csv(output / "cluster_representative_nodes.csv", index=False)
+    output = root / "new"
+    output.mkdir()
+    matrix.to_parquet(output / "cluster_network_distance.parquet")
+    pd.DataFrame({
+        "cluster_id": clusters,
+        "rep_osmid": [102, 110, 201, 202, 999],
+        "dist_to_centroid_m": [1.0, 2.0, 3.0, 4.0, 5.0],
+    }).to_csv(output / "cluster_representative_nodes.csv", index=False)
     return orders_path, cluster_index_path, clusters
 
 
@@ -136,67 +109,27 @@ def tiny_config(orders_path: Path, cluster_index_path: Path, output_dir: Path) -
     }
 
 
-def test_mechanical_tte_definitions_match_legacy_ast() -> None:
-    new_tree = ast.parse(NEW_PATH.read_text(encoding="utf-8"))
-    new = {node.name: node for node in new_tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
-    baseline = json.loads(AST_BASELINE_PATH.read_text(encoding="utf-8"))["definitions"]
-    for name, expected in baseline.items():
-        node = new[name]
-        if name == "run_from_config":
-            node.body = [item for item in node.body if not isinstance(item, (ast.Import, ast.ImportFrom))]
-        actual = hashlib.sha256(ast.unparse(node).encode()).hexdigest()
-        assert actual == expected
-
-
-def test_legacy_tte_bridge_exports_authoritative_objects() -> None:
-    legacy = load_legacy_tte()
-    assert set(legacy.__all__) == LEGACY_PUBLIC_NAMES
-    for name in LEGACY_PUBLIC_NAMES:
-        assert getattr(legacy, name) is getattr(tte, name)
-    assert legacy._imputation_config is tte._imputation_config
-    assert legacy._nan_ratio is tte._nan_ratio
-
-
-def test_legacy_and_new_tiny_tte_outputs_are_exact(tmp_path: Path) -> None:
-    legacy = load_legacy_tte()
+def test_tiny_tte_outputs_and_contract(tmp_path: Path) -> None:
     orders_path, cluster_index_path, clusters = write_tiny_inputs(tmp_path)
-    legacy_dir = tmp_path / "legacy"
     new_dir = tmp_path / "new"
 
-    legacy_summary = legacy.run_from_config(tiny_config(orders_path, cluster_index_path, legacy_dir))
     new_summary = tte.run_from_config(tiny_config(orders_path, cluster_index_path, new_dir))
 
-    for summary in (legacy_summary, new_summary):
-        summary.pop("output_dir")
-        summary["count_path"] = Path(summary["count_path"]).name
-    assert legacy_summary == new_summary
-    assert {path.name for path in legacy_dir.iterdir()} == FORMAL_FILES
+    assert new_summary["num_clusters"] == 5
     assert {path.name for path in new_dir.iterdir()} == FORMAL_FILES
-    for filename in FORMAL_FILES - {"cluster_representative_nodes.csv"}:
-        pd.testing.assert_frame_equal(
-            pd.read_parquet(legacy_dir / filename),
-            pd.read_parquet(new_dir / filename),
-            check_exact=True,
-        )
-    pd.testing.assert_frame_equal(
-        pd.read_csv(legacy_dir / "cluster_representative_nodes.csv"),
-        pd.read_csv(new_dir / "cluster_representative_nodes.csv"),
-        check_exact=True,
-    )
 
     expected_time = pd.date_range("2020-01-01 00:00:00", periods=6, freq="10min")
-    for output in [legacy_dir, new_dir]:
-        result = validate_tte_outputs(
-            output,
-            expected_cluster_ids=clusters,
-            expected_time_index=expected_time,
-            raw_range=(3, 80),
-            max_hops=3,
-            batch_size=1,
-        )
-        assert result["observed_cells"] > 0
-        assert result["inferred_cells"] > 0
-        assert result["missing_cells"] > 0
+    result = validate_tte_outputs(
+        new_dir,
+        expected_cluster_ids=clusters,
+        expected_time_index=expected_time,
+        raw_range=(3, 80),
+        max_hops=3,
+        batch_size=1,
+    )
+    assert result["observed_cells"] > 0
+    assert result["inferred_cells"] > 0
+    assert result["missing_cells"] > 0
 
     raw = pd.read_parquet(new_dir / "TTE_raw.parquet")
     count = pd.read_parquet(new_dir / "TTE_count.parquet")
@@ -211,19 +144,6 @@ def test_legacy_and_new_tiny_tte_outputs_are_exact(tmp_path: Path) -> None:
     assert hops["2->A"].max() >= 1
     assert hops["2->B"].max() >= 2
     assert imputed["2->isolated"].isna().all()
-
-    comparison_spec = importlib.util.spec_from_file_location("tte_comparison", COMPARISON_PATH)
-    comparison = importlib.util.module_from_spec(comparison_spec)
-    assert comparison_spec.loader is not None
-    comparison_spec.loader.exec_module(comparison)
-    compared = comparison.compare_matrix(
-        legacy_dir / "TTE_imputed.parquet",
-        new_dir / "TTE_imputed.parquet",
-        batch_size=1,
-    )
-    assert compared["mismatch_count"] == 0
-    assert compared["mask_mismatch_count"] == 0
-
 
 def test_run_tte_reuses_explicit_precomputed_distance_fallbacks(tmp_path: Path) -> None:
     orders_path, cluster_index_path, _ = write_tiny_inputs(tmp_path)

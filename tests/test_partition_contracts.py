@@ -67,22 +67,6 @@ def test_cluster_index_must_include_isolated_nodes_explicitly() -> None:
         validate_cluster_index([0, 1], [0, 1, 2])
 
 
-def test_run_partition_forces_explicit_output_root(tmp_path: Path, monkeypatch) -> None:
-    calls = []
-    monkeypatch.setattr(partition, "validate_config", lambda config: calls.append(("validate", config)))
-    monkeypatch.setattr(partition, "run_from_config", lambda config, path: calls.append(("run", config, path)))
-    output_root = tmp_path / "partition"
-    result = partition.run_partition(
-        {"outputs": {"root": "must-not-be-used"}},
-        output_root,
-        tmp_path / "fixture.yaml",
-    )
-    assert result.status is StageStatus.COMPLETE
-    assert result.outputs["root"] == output_root.resolve()
-    assert calls[0][1]["outputs"]["root"] == str(output_root.resolve())
-    assert calls[1][1]["outputs"]["root"] == str(output_root.resolve())
-
-
 def test_run_partition_new_stage_api_writes_only_formal_files_outside_project(tmp_path: Path) -> None:
     inputs = tmp_path / "inputs"
     inputs.mkdir()

@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import gzip
-import sys
 
 import numpy as np
 import pandas as pd
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = PROJECT_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-from lib import tte_dataset as mod  # noqa: E402
+from roadnet_partition.downstream import tte as mod
 
 
 # Three roughly colinear clusters: B sits between A and C, so B is a valid

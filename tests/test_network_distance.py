@@ -4,21 +4,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from lib import network_distance as legacy
 from roadnet_partition.graphs import distance as nd
-
-
-PUBLIC_NAMES = {
-    "project_path", "load_project_config", "sort_cluster_ids", "collapse_min_undirected",
-    "load_osm_graph_undirected_min", "build_filtered_subgraph", "cluster_osm_nodes",
-    "project_node_coords", "pick_representatives", "compute_distance_matrix", "build_or_load",
-}
-
-
-def test_legacy_network_distance_exports_are_compatibility_aliases() -> None:
-    assert set(legacy.__all__) == PUBLIC_NAMES
-    for name in PUBLIC_NAMES:
-        assert getattr(legacy, name) is getattr(nd, name)
 
 
 # --------------------------------------------------------------------------

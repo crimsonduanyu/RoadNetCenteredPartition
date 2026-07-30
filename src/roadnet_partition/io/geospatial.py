@@ -7,7 +7,6 @@ from roadnet_partition.io import environment as _environment  # noqa: F401
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import yaml
 from shapely.geometry import Point, Polygon, box
 from shapely.ops import linemerge, polygonize, unary_union
 
@@ -45,11 +44,6 @@ OSM_NORMALIZE_FIELDS = [
     "foot",
     "bicycle",
 ]
-
-
-def load_config() -> dict[str, Any]:
-    with (PROJECT_ROOT / "config.yaml").open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
 
 
 def get_active_scope_name(config: dict[str, Any]) -> str:
