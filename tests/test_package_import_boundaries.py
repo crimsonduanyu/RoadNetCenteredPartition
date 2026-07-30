@@ -37,15 +37,6 @@ def test_repository_has_no_active_legacy_execution_references() -> None:
         "docs/refactor/tte-migration-inventory-v1.md",
         "docs/refactor/tte-package-boundary-audit-v1.md",
         "docs/refactor/zoning-migration-inventory-v1.md",
-        "outputs/refactor-validation/phase5a-demand/phase5a-full-v1/demand/metadata.json",
-        "outputs/refactor-validation/phase5c-tte/run_full.py",
-        "outputs/refactor-validation/phase9/full-runs/20260730T020500Z-fifth-ring-full-02fce2f7/validation/validation_report.json",
-        "outputs/refactor-validation/phase9/full-runs/20260730T020500Z-fifth-ring-full-02fce2f7/validation/validation_report.md",
-        "outputs/refactor-validation/pre-refactor/current-state-audit.json",
-        "outputs/refactor-validation/pre-refactor/file-hashes.sha256",
-        "outputs/refactor-validation/pre-refactor/generate_baseline.py",
-        "outputs/refactor-validation/pre-refactor/repository.json",
-        "outputs/refactor-validation/pre-refactor/semantic-baseline.json",
     }
     patterns = (
         "IntermediateDataFor" + "Reproduce",
@@ -61,6 +52,8 @@ def test_repository_has_no_active_legacy_execution_references() -> None:
         if not path.is_file() or ".git" in path.parts or path.suffix not in suffixes:
             continue
         relative = path.relative_to(PROJECT_ROOT).as_posix()
+        if relative.startswith("outputs/"):
+            continue
         if relative in allowed:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")

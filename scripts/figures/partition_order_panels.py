@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 if __name__ == "__main__":
-    output = PROJECT_ROOT / "reports/paper/figures/partition_and_mean_hourly_orders"
+    output = PROJECT_ROOT / "artifacts/paper/figures/partition_and_mean_hourly_orders"
     render_partition_order_figure(
         PROJECT_ROOT / "data/processed/fifth_ring/partition/canonical_partition.gpkg",
         PROJECT_ROOT / "data/interim/fifth_ring/road_edges_classified.gpkg",

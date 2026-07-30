@@ -30,7 +30,7 @@ has_next definition (per the task brief)
                            crude proxy (we cannot observe the true end state in
                            a finite window); group1 is the primary analysis.
 
-This script writes only diagnostic artifacts under artifacts/archive/ and does not
+This script writes only reproducible diagnostics under outputs/reports/ and does not
 modify any existing source or pipeline file.
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ import matplotlib.pyplot as plt
 # Paths (relative to repo root; run from repo root)
 # --------------------------------------------------------------------------
 ORDERS_PATH = "data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz"
-IMG_DIR = "artifacts/archive/supply-gap-diagnostics-v1"
+IMG_DIR = "outputs/reports/supply-gap-diagnostics-v1"
 REPORT_JSON = os.path.join(IMG_DIR, "gap_distribution_report.json")
 IMG_LINEAR = os.path.join(IMG_DIR, "gap_dist_by_hasnext.png")
 IMG_LOG = os.path.join(IMG_DIR, "gap_dist_by_hasnext_log.png")

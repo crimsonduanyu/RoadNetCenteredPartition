@@ -29,10 +29,11 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT = PROJECT_ROOT / "data" / "raw" / "beijing_orders_2017-06_2017-08.csv"
-DEFAULT_REPORT = PROJECT_ROOT / "reports" / "raw_order_trip_time_distribution_report.md"
-DEFAULT_TABLE = PROJECT_ROOT / "reports" / "tables" / "raw_order_trip_time_distribution_summary.csv"
-DEFAULT_PDF = PROJECT_ROOT / "reports" / "figures" / "raw_order_trip_time_distribution.pdf"
-DEFAULT_PNG = PROJECT_ROOT / "reports" / "figures" / "raw_order_trip_time_distribution.png"
+DEFAULT_OUTPUT = PROJECT_ROOT / "outputs" / "reports" / "raw-order-trip-time-distribution"
+DEFAULT_REPORT = DEFAULT_OUTPUT / "report.md"
+DEFAULT_TABLE = DEFAULT_OUTPUT / "summary.csv"
+DEFAULT_PDF = DEFAULT_OUTPUT / "figure.pdf"
+DEFAULT_PNG = DEFAULT_OUTPUT / "figure.png"
 
 USECOLS = ["departure_time", "finish_time"]
 TIME_FMT = "%Y-%m-%d %H:%M:%S"

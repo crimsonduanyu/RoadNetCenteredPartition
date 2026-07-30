@@ -14,7 +14,7 @@ def main() -> None:
         PROJECT_ROOT / "data/interim/fifth_ring/road_edges_classified.gpkg",
         PROJECT_ROOT / "data/raw/beijing_fifth_ring_boundary.gpkg",
         PROJECT_ROOT / "data/interim/fifth_ring/frozen_inputs/segment_relation_graph_road_poi_order.gpickle",
-        PROJECT_ROOT / "reports/paper/figures",
+        PROJECT_ROOT / "artifacts/paper/figures",
     )
 
 

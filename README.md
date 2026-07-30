@@ -80,7 +80,7 @@ Reproduction export applies a separate privacy allowlist:
 ```bash
 conda run -n dydl roadnet-partition export-reproduction \
   --run outputs/runs/<run_id> \
-  --output releases/reproduction/<version> \
+  --output outputs/releases/reproduction/<version> \
   --profile minimal \
   --dry-run
 ```

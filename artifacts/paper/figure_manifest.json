@@ -53,7 +53,7 @@
   ],
   "figures": [
     {
-      "path": "reports/paper/figures/partition_and_mean_hourly_orders.png",
+      "path": "artifacts/paper/figures/partition_and_mean_hourly_orders.png",
       "size": 3484541,
       "sha256": "4178ee4354a3d3833135e8aefa19f6fba3b4f45bad7a77a515fc35240b4167a2",
       "pixels": [3740, 1800],
@@ -63,7 +63,7 @@
       "status": "corrected target figure"
     },
     {
-      "path": "reports/paper/figures/partition_and_mean_hourly_orders.pdf",
+      "path": "artifacts/paper/figures/partition_and_mean_hourly_orders.pdf",
       "size": 6857838,
       "sha256": "b6915da6928955fec7cd274b480b024d625c2beac38c0825b0559f1b76492acf",
       "page_points": [897.245, 432.133],
@@ -72,7 +72,7 @@
       "status": "corrected target figure"
     },
     {
-      "path": "reports/paper/figures/best_partition_map.png",
+      "path": "artifacts/paper/figures/best_partition_map.png",
       "size": 355547,
       "sha256": "b70a6b4dd513980fae8d08ce59b931ac31a729daaf3c178242c01d71e84c7cff",
       "pixels": [1800, 1800],
@@ -80,7 +80,7 @@
       "historical_output": "best_partition_map.png"
     },
     {
-      "path": "reports/paper/figures/best_partition_map.pdf",
+      "path": "artifacts/paper/figures/best_partition_map.pdf",
       "size": 3345238,
       "sha256": "b5ecf1757b67653260a8e7b935699efe9db7a10e48e8869babc8b8dfc20e6fec",
       "page_points": [432, 432],
@@ -88,7 +88,7 @@
       "historical_output": "best_partition_map.pdf"
     },
     {
-      "path": "reports/paper/figures/best_partition_map_blue.png",
+      "path": "artifacts/paper/figures/best_partition_map_blue.png",
       "size": 361314,
       "sha256": "1a7f33f11107edd6a1dfa673d4fe6b8bea86aaf917349d61838813881a26fc14",
       "pixels": [1800, 1800],
@@ -96,7 +96,7 @@
       "historical_output": "best_partition_map_blue.png"
     },
     {
-      "path": "reports/paper/figures/best_partition_map_blue.pdf",
+      "path": "artifacts/paper/figures/best_partition_map_blue.pdf",
       "size": 3393464,
       "sha256": "d5e45159b8dbf1f218480e0dd984c05f6bdd135b74fe93144359a30456d7e5ca",
       "page_points": [432, 432],
@@ -104,7 +104,7 @@
       "historical_output": "best_partition_map_blue.pdf"
     },
     {
-      "path": "reports/paper/figures/raw_order_trip_time_distribution.png",
+      "path": "artifacts/paper/figures/raw_order_trip_time_distribution.png",
       "size": 109468,
       "sha256": "582bc7a6de51ad8a25a5fc21bdbfbf8786b59c79cdee005cb3d91b49da6047ab",
       "pixels": [1800, 1200],
@@ -112,12 +112,34 @@
       "historical_output": "reports/figures/raw_order_trip_time_distribution.png"
     },
     {
-      "path": "reports/paper/figures/raw_order_trip_time_distribution.pdf",
+      "path": "artifacts/paper/figures/raw_order_trip_time_distribution.pdf",
       "size": 18488,
       "sha256": "f923ce5739a3ac6850fb0e3382ece103bdf2cb28a3650492a458b6cd4804738a",
       "page_points": [432, 288],
       "embedded_raster_images": 0,
       "historical_output": "reports/figures/raw_order_trip_time_distribution.pdf"
+    },
+    {
+      "path": "artifacts/paper/figures/tte_trip_time_distribution.png",
+      "size": 103974,
+      "sha256": "bf2fc5f48cfedf488eff899049465bd909ddbaa3945f121e0de440fb36a3431b",
+      "pixels": [1800, 1200],
+      "dpi": 300,
+      "source": "data/processed/fifth_ring/tte/TTE_raw.parquet",
+      "observed_cells": 19742327,
+      "range_minutes": [3.0, 80.0],
+      "status": "retained historical TTE visualization; original producer unavailable"
+    },
+    {
+      "path": "artifacts/paper/figures/tte_trip_time_distribution.pdf",
+      "size": 21987,
+      "sha256": "f5d44d33cd076bb57866366aa35f52da7448cf4db3f97e7cd92901cdc3bc102b",
+      "page_points": [432, 288],
+      "embedded_raster_images": 0,
+      "source": "data/processed/fifth_ring/tte/TTE_raw.parquet",
+      "observed_cells": 19742327,
+      "range_minutes": [3.0, 80.0],
+      "status": "retained historical TTE visualization; original producer unavailable"
     }
   ],
   "verification": {
