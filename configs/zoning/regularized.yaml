@@ -52,7 +52,9 @@ stage1_partition:
       grid:
         merge_split_enabled: [false]
   outputs:
-    run_root: ../../regularized_zoning_experiments/runs/v2_fifth_ring_road_poi_order_lc1_lr1_k100
     # Compatibility alias for the explicit read-only contract above; stage
     # execution still writes only to its owned run directory.
     canonical_partition: ../../artifacts/golden/beijing-fifth-ring-v1/expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg
+
+standalone:
+  output_dir: ../../outputs/runs

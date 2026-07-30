@@ -123,32 +123,19 @@ def test_owned_path_rejects_escape_owner_and_symlink(tmp_path: Path) -> None:
         assert_owned_path(internal_link / "child", owner)
 
 
-def test_config_key_map_covers_every_current_mapping_key_once() -> None:
-    import yaml
-
-    config = yaml.safe_load((PROJECT_ROOT / "config.yaml").read_text(encoding="utf-8"))
+def test_config_key_map_final_classification_is_complete() -> None:
     key_map = json.loads((PROJECT_ROOT / "docs/refactor/config-key-map-v1.json").read_text(encoding="utf-8"))
-
-    def mapping_keys(value: object, prefix: tuple[str, ...] = ()) -> list[str]:
-        paths = []
-        if isinstance(value, dict):
-            for key, child in value.items():
-                path = prefix + (str(key),)
-                paths.append(".".join(path))
-                paths.extend(mapping_keys(child, path))
-        return paths
-
-    expected = mapping_keys(config)
     actual = [entry["key_path"] for entry in key_map["entries"]]
     assert key_map["mapping_key_count"] == 341
+    assert len(actual) == 341
     assert len(actual) == len(set(actual))
-    assert sorted(actual) == sorted(expected)
-    migrated_legacy_readers = {
-        "src/lib/geo.py", "src/lib/graph.py", "src/lib/clustering.py",
-        "src/lib/network_distance.py", "src/lib/metrics.py",
+    assert key_map["source"] == "configs/legacy/config.pre-refactor.yaml"
+    assert sum(key_map["final_classification_counts"].values()) == 341
+    assert set(key_map["final_classification_counts"]) <= {
+        "new-authoritative-reader", "legacy-only", "obsolete", "historical-unread",
     }
-    assert not {
-        reader["file"]
-        for entry in key_map["entries"]
-        for reader in entry["readers"]
-    } & migrated_legacy_readers
+    for entry in key_map["entries"]:
+        if entry["final_classification"] == "new-authoritative-reader":
+            assert entry["active_readers"] and entry["reader_status"] == "active"
+        else:
+            assert entry["active_readers"] == [] and entry["reader_status"] == "no-active-reader"

@@ -10,5 +10,6 @@ canonical expected contract are explicitly versioned under
 same-run upstream outputs through fixed runtime bindings; their configured
 `data/processed/` paths are standalone fallbacks only.
 
-The root `config.yaml` remains unchanged for legacy wrappers during the
-compatibility period.
+The pre-refactor unified configuration is preserved byte-for-byte at
+`configs/legacy/config.pre-refactor.yaml` for historical audit only. It has no
+active runtime reader.
