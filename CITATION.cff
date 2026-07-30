@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using this metadata."
+title: "RoadNet-Centered Partition Pipeline"
+type: software
+version: 0.1.0
+date-released: 2026-07-30
+repository-code: "https://github.com/crimsonduanyu/RoadNetCenteredPartition"
+license: MIT
+authors:
+  - name: "RoadNet-Centered Partition contributors"

@@ -8,6 +8,12 @@ version = "0.1.0"
 description = "Road-network-centered spatial partitioning and downstream dataset tools"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {file = "LICENSE"}
+authors = [{name = "RoadNet-Centered Partition contributors"}]
+
+[project.urls]
+Repository = "https://github.com/crimsonduanyu/RoadNetCenteredPartition"
+Documentation = "https://github.com/crimsonduanyu/RoadNetCenteredPartition/tree/main/docs"
 
 [project.scripts]
 roadnet-partition = "roadnet_partition.cli:main"
