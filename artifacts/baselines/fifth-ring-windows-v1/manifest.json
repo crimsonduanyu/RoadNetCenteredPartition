@@ -1,0 +1,473 @@
+{
+  "archive_id": "fifth-ring-windows-v1",
+  "created_at": "2026-07-30T04:20:23.901632+00:00",
+  "file_count": 91,
+  "files": [
+    {
+      "relative_path": "order_pipeline/cluster_graph_distance_adjacency_normalized.npz",
+      "sha256": "9c5ce5beb3fa00f8f043afb5016722e6a1936a520a3ad49c6dadbd7eb0684fae",
+      "size": 9015
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_distance_adjacency_raw.npz",
+      "sha256": "550b45e1871f27922a293d0eb8f1e69257b5e2db24ba30dffc80ebc82607aa53",
+      "size": 8041
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_distance_edges.csv",
+      "sha256": "7b31652f994e4620d74aed8703ff4fe56f5148a75e6ecc977a94ddf371876023",
+      "size": 29424
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_poi_adjacency_normalized.npz",
+      "sha256": "13046775ad082011d05db8414d2aea7a0a39b2fff1c3c9e86b5b1ed625440725",
+      "size": 10739
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_poi_adjacency_raw.npz",
+      "sha256": "15ebec9fabff8f34553b2cd023056189239bca8d88924e9ec79edbf1ae6cb562",
+      "size": 9539
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_poi_edges.csv",
+      "sha256": "a1611bf5d502d07e0540ba119b2e497fea2f7f2f57054355b18ffd75fa85b835",
+      "size": 36257
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_road_adjacency_normalized.npz",
+      "sha256": "e0dd3e7ebe795d66903066217fa2a9384664ece9992f83f2d3cadf3c55e58ebc",
+      "size": 5258
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_road_adjacency_raw.npz",
+      "sha256": "ae091109ebc24b168a9110ae51cf38622ff2d5a23bd78a8fe60c64ec8626ee47",
+      "size": 2998
+    },
+    {
+      "relative_path": "order_pipeline/cluster_graph_road_edges.csv",
+      "sha256": "bd21d3df6ecb9e644364c5e1309690875c9176f4f8382c14dff4e55faf74bcfd",
+      "size": 5419
+    },
+    {
+      "relative_path": "order_pipeline/cluster_index.csv",
+      "sha256": "5b7bf80aca473aec87e42394d9a0a66581d00a044ecae4f8224eb2fbc7301826",
+      "size": 10351
+    },
+    {
+      "relative_path": "order_pipeline/cluster_od_10min.csv",
+      "sha256": "ca7a77be7b5b3d2a7f6f6696deab27ecf786ae4cd56593ad35765093f5ebf539",
+      "size": 654955297
+    },
+    {
+      "relative_path": "order_pipeline/cluster_od_15min.csv",
+      "sha256": "1e39a619d065a4652f482c699cb3163c4b44a74566ca868611ef53d9bbb9fdf7",
+      "size": 540821137
+    },
+    {
+      "relative_path": "order_pipeline/cluster_poi_category_mapping.csv",
+      "sha256": "96f73e937d25875d16efec02404c8e332cf86515c366b5e5016075d16a4fb770",
+      "size": 633
+    },
+    {
+      "relative_path": "order_pipeline/cluster_poi_features.csv",
+      "sha256": "b0920cf6daa6410bba8bc5d8287b67aa64cec2ab841bafe8fcc4c02b122e0002",
+      "size": 8133
+    },
+    {
+      "relative_path": "order_pipeline/metadata.json",
+      "sha256": "ae92fdd72fead47d4cfda571c5c8d1cd623874e2ce0aed7165dea93f1e0aff7c",
+      "size": 4352
+    },
+    {
+      "relative_path": "order_pipeline/od_tensor_10min.npz",
+      "sha256": "ac8410fcdf14b1b7efaa43812e2e66d5b5794a112db4e34d0a2891d12ec44db4",
+      "size": 68802438
+    },
+    {
+      "relative_path": "order_pipeline/od_tensor_15min.npz",
+      "sha256": "3b700bd7f7bf472ac54781646a49d1c096419b32167f5725c24119b5d5d6846b",
+      "size": 55851827
+    },
+    {
+      "relative_path": "order_pipeline/orders_region_assigned.csv.gz",
+      "sha256": "f6dfbbf09dc0fb8cc8d14c00e929e54484303ef997599b5266420048eaea6969",
+      "size": 2694592686
+    },
+    {
+      "relative_path": "order_pipeline/orders_region_assigned_sample_200k.parquet",
+      "sha256": "22c414b1ac8de4182b339ff773f461d78e455e370e5dc99733340b9faa6334fe",
+      "size": 15761546
+    },
+    {
+      "relative_path": "poi_category_mapping.csv",
+      "sha256": "96f73e937d25875d16efec02404c8e332cf86515c366b5e5016075d16a4fb770",
+      "size": 633
+    },
+    {
+      "relative_path": "segment_clusters.csv",
+      "sha256": "32ea805c0ac67bb1ced4552152351f1cb2f270498bc40f220b652e562d97982d",
+      "size": 8037562
+    },
+    {
+      "relative_path": "segment_clusters.gpkg",
+      "sha256": "02ea745f51aee8672d54d1ecf4476b148d89dc8be3c0f6466defd0af5f908b38",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_only_demand_network_voronoi.csv",
+      "sha256": "78b60638f40c2f50f16f69cfbac7a117a3d7a9cc6424da401cce4a018622ef93",
+      "size": 8044159
+    },
+    {
+      "relative_path": "segment_clusters_road_only_demand_network_voronoi.gpkg",
+      "sha256": "487782742c9a5fefa236cd2ad847fc4dcbd4853e0ac775ec9dfae15575bad89f",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_only_demand_region_growing.csv",
+      "sha256": "c5d5592029ae45890003119e6ddc9b333137eea69a9f17ab52eac9c9ca75206a",
+      "size": 8043318
+    },
+    {
+      "relative_path": "segment_clusters_road_only_demand_region_growing.gpkg",
+      "sha256": "66cd157e9a815030453bc5b849d52766fab6dd070241f221da09ee0b74ff0e6e",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_only_leiden.csv",
+      "sha256": "20511b5a8e2fdfddec30a02ee7e694809188da2029791887ed2805cd84c1e207",
+      "size": 8029936
+    },
+    {
+      "relative_path": "segment_clusters_road_only_leiden.gpkg",
+      "sha256": "71d7608b8c169fd81ae4f2d8debd182f3ba29a292aad7c02416c6d9fad002075",
+      "size": 16633856
+    },
+    {
+      "relative_path": "segment_clusters_road_only_louvain.csv",
+      "sha256": "ce9467fb42c6b6ae8f34d4d481ede2e608d8ab4d1a6bc777ff54471aa200cd40",
+      "size": 8042390
+    },
+    {
+      "relative_path": "segment_clusters_road_only_louvain.gpkg",
+      "sha256": "9657671b5f68e8ae1445a54b34b7905603e878a4f18eb56c37ae80fd102456f1",
+      "size": 16642048
+    },
+    {
+      "relative_path": "segment_clusters_road_only_metis.csv",
+      "sha256": "01644f2038c9a55f5922da3bf2765fa7611612ea123a72a0c9d06d5c8676e214",
+      "size": 8045504
+    },
+    {
+      "relative_path": "segment_clusters_road_only_metis.gpkg",
+      "sha256": "67073c551863e9b8baad92ab299fda83d804220789e576513c78b543812f1119",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_only_skater.csv",
+      "sha256": "50defbc5043e7f9ea661694b0c34cc46b8573ae33798a9bc24cf030f279f1f5d",
+      "size": 7975386
+    },
+    {
+      "relative_path": "segment_clusters_road_only_skater.gpkg",
+      "sha256": "ec72653761629aa73e4da2d453e8ffd5541d12e0928ab044e06b300d4a8503ab",
+      "size": 16572416
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_demand_network_voronoi.csv",
+      "sha256": "f26f9b85440787e88d40910f6806f89743cd5fdeb8870ac660fd9abb13140c9e",
+      "size": 8044381
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_demand_network_voronoi.gpkg",
+      "sha256": "bdd28a4984761fa78f608f811b7ed000e799222e600fa4614a2d883884604e3c",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_demand_region_growing.csv",
+      "sha256": "13e0cb35d1a5d43f7851e1030dba437f67cbab9665c637b6b210d4ca487f2ea4",
+      "size": 8044915
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_demand_region_growing.gpkg",
+      "sha256": "dcdda9cf3685ee4a1fd63db84a2d8244bc495825e39ac21388b385dfb9e56aef",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_leiden.csv",
+      "sha256": "97f01768f545ef0a31c15fdf2fcfb2cdadcbdfd66ce3ed9409e59b248ce74938",
+      "size": 8026352
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_leiden.gpkg",
+      "sha256": "9dbae7597041055c5af789c9cb0f6651456ad7ab61fb7b3ca5b6aeee1675aea1",
+      "size": 16629760
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_louvain.csv",
+      "sha256": "08d6fa6714bb01246225b5075d00ce7429bd9316bb96db4b9b5e54b1e7c16794",
+      "size": 8046489
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_louvain.gpkg",
+      "sha256": "b7485c3ff77a759cf0ce7ffcb1c2d0f4a8c9fd22a0eaa563798e032e1b881803",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_metis.csv",
+      "sha256": "bfa494a0e379298f39bd7315bbc2a3eb8cff1ec21ea77d58a6677306625b2d8a",
+      "size": 8045495
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_metis.gpkg",
+      "sha256": "fe387f7312a97c52bb8657cc574e5905deb6590577c787c761a212fd38a96571",
+      "size": 16633856
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_demand_network_voronoi.csv",
+      "sha256": "1556e8a72ee168946d84a364bca0d46d2b2d6bb32c3a006057336e2f5cd01338",
+      "size": 8044618
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_demand_network_voronoi.gpkg",
+      "sha256": "1d2ab3b45bb432db009176b3ab7e961e5574f6624e94621213aa4e7409e2a76c",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_demand_region_growing.csv",
+      "sha256": "ee7c4a669c14d60d742872e033ebb0942f399a8fd1f5a867ac9f44b0538ed8a5",
+      "size": 8042489
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_demand_region_growing.gpkg",
+      "sha256": "b14283b7699284ee9260698018fa4259c1797f21ea4181536b328ce376cc8f62",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_leiden.csv",
+      "sha256": "250e734b5a8f84ebed0fe217b61f1344f70cd56fbb2745adee7556489c30991f",
+      "size": 8025412
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_leiden.gpkg",
+      "sha256": "a8b84987feab7baf94a8e38fce994dd7a3700fa3f619c2d7de0daeebc9d0a974",
+      "size": 16633856
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_leiden_res0p6.csv",
+      "sha256": "3e5e2ac7525eb21bb1c92dda8b5d67908747e941d4985f9d442c159cf048d1d7",
+      "size": 8022968
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_leiden_res0p6.gpkg",
+      "sha256": "5fcecde66edbb6f4c64bfa37c1200d0e0db1126586a18f8eb94d970635e8eb7c",
+      "size": 16633856
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_louvain.csv",
+      "sha256": "32ea805c0ac67bb1ced4552152351f1cb2f270498bc40f220b652e562d97982d",
+      "size": 8037562
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_louvain.gpkg",
+      "sha256": "44b5529190a29cec46df52ba61fb053ca58a7d74c367bc59a8e0a6e86d1c1f05",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_louvain_res0p522.csv",
+      "sha256": "8df78c735fb070046f03fe0f81d33911779cc5e6371cfb82a2b514d26fefb921",
+      "size": 8031726
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_louvain_res0p522.gpkg",
+      "sha256": "988af2494c9ccbe4e6ceee431b86e016cef68722c000ab59a86829f51fef9449",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_metis.csv",
+      "sha256": "c5b54d8e4e1bd2819ee489c68c7982ba1da98192fd727a6816d66b4b9f0fb7e4",
+      "size": 8045524
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_metis.gpkg",
+      "sha256": "e70b797233fc656199526ac38c66bdebf68d2fd8fc08aaac647ef3ef9e11de86",
+      "size": 16637952
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_skater.csv",
+      "sha256": "f4794ce96540b4994707cc880d2722670c33d198a5d9d48cfc29201d61080378",
+      "size": 7975374
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_order_skater.gpkg",
+      "sha256": "689dbbe25c257ca4d3c7bddadd9331439681c3e283f9411b8dbc43de64fc5bc0",
+      "size": 16576512
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_skater.csv",
+      "sha256": "dc735430268bd027eadc9921aab3dc7cfa8372b225530eb27b08193197f3ddce",
+      "size": 7975258
+    },
+    {
+      "relative_path": "segment_clusters_road_poi_skater.gpkg",
+      "sha256": "1830d43d0ed8e6657ce349b082f43b1d6bd74ada1fb442827118306a5dcd638d",
+      "size": 16572416
+    },
+    {
+      "relative_path": "segment_nodes.gpkg",
+      "sha256": "e07b4b94eba564061f4c4b1e9d4bba6d8026634be594946ab7b4f8cf0793a0af",
+      "size": 16502784
+    },
+    {
+      "relative_path": "segment_order_features.csv",
+      "sha256": "a404a092140b311c2fc348fc5704df606965bfa4e430ee9b42c1fa5ea6983166",
+      "size": 2231513
+    },
+    {
+      "relative_path": "segment_order_od_hourly.csv",
+      "sha256": "a6f11dbd94427d1b0675aff3adaa7a46b9bab8830334594bd168e4ed013572dc",
+      "size": 124617305
+    },
+    {
+      "relative_path": "segment_order_od_pairs.csv",
+      "sha256": "a650c2d3cc111c1e08a2f6c89d81bce25fc155a1e0b56b0115c05d220163f64a",
+      "size": 72282169
+    },
+    {
+      "relative_path": "segment_poi_features.csv",
+      "sha256": "e7be0d7c8b6d9268d473fba4dce9bed1df53b917650258c8b63077e035d1c690",
+      "size": 6727164
+    },
+    {
+      "relative_path": "segment_relation_edges.csv",
+      "sha256": "fcf491d3548ceb0bcf6515eb9aeb08646649372c9f0ce493d850cfc436747b13",
+      "size": 36554022
+    },
+    {
+      "relative_path": "segment_relation_edges_road_only.csv",
+      "sha256": "fcf491d3548ceb0bcf6515eb9aeb08646649372c9f0ce493d850cfc436747b13",
+      "size": 36554022
+    },
+    {
+      "relative_path": "segment_relation_edges_road_poi.csv",
+      "sha256": "f8f303eac9ceafc0e21af47db1137de9e7e39262b7750576f90e93fc4d248cc7",
+      "size": 42753350
+    },
+    {
+      "relative_path": "segment_relation_edges_road_poi_order.csv",
+      "sha256": "f3018ef9d899490250978d5010eb27cbae5935f386842e4ca769c261878528c9",
+      "size": 44858759
+    },
+    {
+      "relative_path": "supply/config_used.json",
+      "sha256": "3c3f3df406bba3ec2dea0b884647810f7e3296e259dfd4d5f0bf2e109b8e9dea",
+      "size": 466
+    },
+    {
+      "relative_path": "supply/driver_chains.csv.gz",
+      "sha256": "df8e8180120d915e55117910c3dee31193dfa93ad00e8223c86276ccb9fe257e",
+      "size": 381638748
+    },
+    {
+      "relative_path": "supply/idle_windows.csv.gz",
+      "sha256": "75377208c3ad387199cf51512b84d44b98622775db3d9632b7a3174b0f0fc0d5",
+      "size": 399312091
+    },
+    {
+      "relative_path": "supply/run.log",
+      "sha256": "76459c827b294f3080912eeb4ee17e5e5014f16c294724b08f06dfa69528776e",
+      "size": 3126
+    },
+    {
+      "relative_path": "supply/run_summary.json",
+      "sha256": "f545e6792ce418ed36a079f167b3697390ea0420406b539a8a28a7a5698bb965",
+      "size": 1463
+    },
+    {
+      "relative_path": "supply/run_summary.partial.json",
+      "sha256": "653ab7e974b7bce41dfe70376a205cb01292a6ba1e3f21b59dd24dc2ab716194",
+      "size": 35254
+    },
+    {
+      "relative_path": "supply/supply_available_by_cluster.csv.gz",
+      "sha256": "ee953311bdf8a02896d0d5708fe75172d651126fdab8e094ddb226c866548708",
+      "size": 3205282
+    },
+    {
+      "relative_path": "supply/supply_available_floor.csv.gz",
+      "sha256": "62257c410356dc16b080285b5077066fad21a42e7df10d1661e9042632de1c3a",
+      "size": 4622315
+    },
+    {
+      "relative_path": "supply/supply_fleet_lower_bound.csv.gz",
+      "sha256": "b377a86b0f2551d7b83c23304f5050b89eb97cccd0686a2f1ba07633a74c67e1",
+      "size": 5342490
+    },
+    {
+      "relative_path": "supply/supply_in_service_od.csv.gz",
+      "sha256": "99ab867caf69a1b00382197bf8f9000e20b6c542e6842202445e23f12472a44c",
+      "size": 91462894
+    },
+    {
+      "relative_path": "supply/supply_inservice_od.csv.gz",
+      "sha256": "969b4b715b38c7b08ac320a0945f0c1048298ec0d31f77bdc4d16e5c713531ec",
+      "size": 132329874
+    },
+    {
+      "relative_path": "supply/trip_segments.csv.gz",
+      "sha256": "8e70e653f7a52397cec2f0e44b010861cb3d856408687e111e216bd632f480d6",
+      "size": 895110356
+    },
+    {
+      "relative_path": "supply_run.log",
+      "sha256": "b30afddbcb7cea1596bbfcea111fd74812c26842feb019e224636dbc431e2fbb",
+      "size": 1050
+    },
+    {
+      "relative_path": "tte/TTE_count.parquet",
+      "sha256": "7e48c378773ea735f3cce2c82df38ddaf8679b7537d8ad7675db5899b069d638",
+      "size": 25168591
+    },
+    {
+      "relative_path": "tte/TTE_hops.parquet",
+      "sha256": "21358909bf0edd4b911fd98960bd6e8301edb1e29a196d1f5fbc1ebaf99bb325",
+      "size": 27467136
+    },
+    {
+      "relative_path": "tte/TTE_imputed.parquet",
+      "sha256": "045dd9dbf14800f4f6bf6c2b92b3c0e26ee65a1179e8d9a6e28ecb83a5a283e7",
+      "size": 549557309
+    },
+    {
+      "relative_path": "tte/TTE_raw.parquet",
+      "sha256": "ea4a4bf868194abeef83a8b56961ac21790a78b1cc011e4bee84ec0c93269f85",
+      "size": 85814602
+    },
+    {
+      "relative_path": "tte/TTE_support.parquet",
+      "sha256": "a8fa61c5b435f895f0b2aa2364514f6749d1e88449538433643ccab64d642f56",
+      "size": 55498610
+    },
+    {
+      "relative_path": "tte/cluster_network_distance.parquet",
+      "sha256": "69fe2a603efd637bc8c1207fd1cfab417aefa699231d25b04fd73c8e8ac6953a",
+      "size": 143290
+    },
+    {
+      "relative_path": "tte/cluster_representative_nodes.csv",
+      "sha256": "1d550ba86a50dacf27ab41111ea9650bee6ad5d83fdc6fa91ceed89d15b9d6e1",
+      "size": 3350
+    }
+  ],
+  "inventory_sha256": "0815dc61d0e8ac950229372a4b0f7fae76adae8c410a1535328c112c8fad9540",
+  "materialization": "hardlink",
+  "privacy": "private",
+  "reproduction_release": false,
+  "schema_version": 1,
+  "scope": "fifth_ring",
+  "source": "data/processed/fifth_ring",
+  "source_platform": "windows",
+  "status": "archived",
+  "total_size": 7588535926,
+  "tracking": "local-only"
+}

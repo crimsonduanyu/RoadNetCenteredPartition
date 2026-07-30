@@ -1,0 +1,40 @@
+schema_version: 1
+
+decision_id: fifth-ring-linux-canonical-v1
+scope: fifth_ring
+decision: adopt_linux_as_canonical
+status: approved
+approved_at: 2026-07-30
+approval_source: project_owner_instruction
+
+source_run:
+  run_id: 20260730T020500Z-fifth-ring-full-02fce2f7
+  pipeline_config_fingerprint: 02fce2f7318c690806ed93672a7e26d06bcfa116b8e0a709ac0cc213f551c97d
+  stage_config_fingerprints:
+    partition: cb8863a453dedf8fb008cfd7a6c55628438cd761ac0a115ceb1c15390abd217a
+    demand: 0298a307cf9d2a33423af2592713d91863133e4b937172ed4ad6f68ec7f00421
+    supply: e5ff3c5e1e426e33a180968f1845930d1878406127091fccfc815e58bb2eab6f
+    tte: 8eb1b32fd6d274b557efedae1d6e6ea0ad5dce2165abde9767a6faf32d4aadb3
+  demand_assigned_orders_sha256: fb5b14e869e07cf11a8661650555b7a6f114566ef3d66167fbdd22ed26e4bb06
+  validation_report_sha256: 437e1b508f3d25b4fdc986b453fd21550adadb8ad4bf766b1a2413d71e3705d2
+
+previous_canonical:
+  platform: windows
+  archive_id: fifth-ring-windows-v1
+  processed_inventory_sha256: 0815dc61d0e8ac950229372a4b0f7fae76adae8c410a1535328c112c8fad9540
+  status: archived
+
+reason:
+  category: equal_nearest_segment_cross_platform_tie
+  affected_orders: 251455
+  affected_order_ratio: 0.546609
+  diagnostic_records: 252032
+  exact_equal_ratio: 0.96578
+  tolerance_equal_ratio: 1.0
+  clearly_non_equal_candidates: 0
+  maximum_distance_difference_m: 5.684341886080802e-14
+
+consequences:
+  publish_linux_pipeline: allowed
+  claim_historical_rowwise_reproduction: false
+  deterministic_assignment_v2: deferred

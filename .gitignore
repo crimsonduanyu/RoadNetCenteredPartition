@@ -48,6 +48,9 @@ artifacts/golden/*/inputs/**
 artifacts/golden/*/expected/**
 artifacts/golden/*/legacy_comparisons/**
 
+# Historical processed baselines are private/local-only; track metadata only.
+artifacts/baselines/fifth-ring-windows-v1/payload/**
+
 # Geospatial sidecar/index files
 *.gpkg-shm
 *.gpkg-wal
