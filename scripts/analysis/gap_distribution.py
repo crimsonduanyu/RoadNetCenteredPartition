@@ -7,7 +7,7 @@ tau_idle_backed, tau_offline_hard) directly from the *raw* gap distribution.
 
 IMPORTANT (why this script does NOT reuse the pipeline)
 ------------------------------------------------------
-The production chain (`src/lib/supply.py: reconstruct_driver_chains`) buckets
+The production chain (`roadnet_partition.downstream.supply.reconstruct_driver_chains`) buckets
 orders by departure day and forces a chain break at every midnight, which
 *erases* cross-day gaps and pollutes the right tail of the gap distribution.
 This script therefore re-derives gaps from scratch:

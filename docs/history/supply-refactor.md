@@ -1,7 +1,8 @@
 # Historical Supply refactor evidence
 
-The retained `step_*` and memory-probe scripts document earlier corrections and
-resource investigations. They are historical evidence, not formal APIs.
+The former `step_*` and memory-probe scripts documented earlier corrections and
+resource investigations. Phase 10 deleted those one-off executables after
+their conclusions were mapped to maintained tests below.
 
 Phase 5B maps their conclusions to maintained tests as follows:
 
@@ -21,6 +22,5 @@ Phase 5B maps their conclusions to maintained tests as follows:
 - historical memory probes: retained as resource evidence only; no memory
   threshold is promoted into the Supply business contract.
 
-The historical scripts are not deleted or edited in Phase 5B. Several still
-reference old filenames or a former `EXECUTION_MODE` constant and therefore
-must not be treated as current smoke tests without a separate archival cleanup.
+No historical Supply scratch runner remains executable. Git history and the
+ignored analysis reports retain the original evidence when needed.
