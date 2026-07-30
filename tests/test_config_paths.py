@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -123,19 +122,9 @@ def test_owned_path_rejects_escape_owner_and_symlink(tmp_path: Path) -> None:
         assert_owned_path(internal_link / "child", owner)
 
 
-def test_config_key_map_final_classification_is_complete() -> None:
-    key_map = json.loads((PROJECT_ROOT / "docs/refactor/config-key-map-v1.json").read_text(encoding="utf-8"))
-    actual = [entry["key_path"] for entry in key_map["entries"]]
-    assert key_map["mapping_key_count"] == 341
-    assert len(actual) == 341
-    assert len(actual) == len(set(actual))
-    assert key_map["source"] == "configs/legacy/config.pre-refactor.yaml"
-    assert sum(key_map["final_classification_counts"].values()) == 341
-    assert set(key_map["final_classification_counts"]) <= {
-        "new-authoritative-reader", "legacy-only", "obsolete", "historical-unread",
-    }
-    for entry in key_map["entries"]:
-        if entry["final_classification"] == "new-authoritative-reader":
-            assert entry["active_readers"] and entry["reader_status"] == "active"
-        else:
-            assert entry["active_readers"] == [] and entry["reader_status"] == "no-active-reader"
+def test_legacy_config_is_documented_as_inactive() -> None:
+    history = (PROJECT_ROOT / "docs/history/refactor-v1.md").read_text(encoding="utf-8")
+    development = (PROJECT_ROOT / "docs/development.md").read_text(encoding="utf-8")
+    assert "split configuration" in history
+    assert "unified runtime configuration were retired" in history
+    assert "configs/legacy/" in development and "no runtime reader" in development

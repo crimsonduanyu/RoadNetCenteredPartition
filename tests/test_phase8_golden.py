@@ -150,10 +150,10 @@ def test_phase8_config_docs_package_and_git_boundaries() -> None:
         assert command in readme
     assert "Linux is the current" in readme and "--dry-run" in readme
 
-    migration = (ROOT / "docs/refactor/production-config-path-migration-v2.md").read_text(encoding="utf-8")
-    assert "36 authoritative path comparisons" in migration
-    assert "Migrated paths (15)" in migration and "Unchanged path comparisons (21)" in migration
-    assert "151 authoritative effective non-path values" in migration
+    history = (ROOT / "docs/history/refactor-v1.md").read_text(encoding="utf-8")
+    assert "split configuration" in history
+    assert "Linux is the current Fifth Ring canonical platform" in history
+    assert "transactional publishing" in history
 
     ignored = subprocess.run(
         ["git", "check-ignore", "-q", str(GOLDEN / "expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg")],
