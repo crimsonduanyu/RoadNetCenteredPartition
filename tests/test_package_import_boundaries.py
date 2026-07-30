@@ -4,12 +4,66 @@ import ast
 import importlib
 from pathlib import Path
 import pkgutil
+import re
 import subprocess
 import sys
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = PROJECT_ROOT / "src/roadnet_partition"
+
+
+def test_repository_has_no_active_legacy_execution_references() -> None:
+    allowed = {
+        "artifacts/golden/beijing-fifth-ring-v1/README.md",
+        "artifacts/golden/beijing-fifth-ring-v1/manifest.json",
+        "artifacts/baselines/fifth-ring-windows-v1/payload/order_pipeline/metadata.json",
+        "configs/legacy/config.pre-refactor.yaml",
+        "data/interim/fifth_ring/frozen_inputs/provenance.json",
+        "docs/history/pre-refactor-pipeline.md",
+        "docs/refactor/config-key-map-v1.json",
+        "docs/refactor/demand-migration-inventory-v1.md",
+        "docs/refactor/phase10-removal-inventory-v1.md",
+        "docs/refactor/phase9-final-acceptance-v1.md",
+        "docs/refactor/pre-refactor-v1/current-state-audit.json",
+        "docs/refactor/pre-refactor-v1/file-hashes.sha256",
+        "docs/refactor/pre-refactor-v1/generate_baseline.py",
+        "docs/refactor/pre-refactor-v1/repository.json",
+        "docs/refactor/pre-refactor-v1/semantic-baseline.json",
+        "docs/refactor/production-config-split-v1.md",
+        "docs/refactor/public-module-migration-inventory-v1.md",
+        "docs/refactor/supply-migration-inventory-v1.md",
+        "docs/refactor/tte-migration-inventory-v1.md",
+        "docs/refactor/tte-package-boundary-audit-v1.md",
+        "docs/refactor/zoning-migration-inventory-v1.md",
+        "outputs/refactor-validation/phase5a-demand/phase5a-full-v1/demand/metadata.json",
+        "outputs/refactor-validation/phase5c-tte/run_full.py",
+        "outputs/refactor-validation/pre-refactor/current-state-audit.json",
+        "outputs/refactor-validation/pre-refactor/file-hashes.sha256",
+        "outputs/refactor-validation/pre-refactor/generate_baseline.py",
+        "outputs/refactor-validation/pre-refactor/repository.json",
+        "outputs/refactor-validation/pre-refactor/semantic-baseline.json",
+    }
+    patterns = (
+        "IntermediateDataFor" + "Reproduce",
+        "src/run_" + "pipeline.py",
+        "src/" + "stages",
+        "sys.path." + "insert",
+        "sys.path." + "append",
+    )
+    legacy_import = re.compile(r"(?:from|import)\s+(?:li" + r"b|sr" + r"c)(?:\.|\s|$)")
+    suffixes = {".py", ".md", ".json", ".yaml", ".yml", ".txt", ".sh", ".toml", ".sha256"}
+    violations = []
+    for path in PROJECT_ROOT.rglob("*"):
+        if not path.is_file() or ".git" in path.parts or path.suffix not in suffixes:
+            continue
+        relative = path.relative_to(PROJECT_ROOT).as_posix()
+        if relative in allowed:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if any(pattern in text for pattern in patterns) or legacy_import.search(text):
+            violations.append(relative)
+    assert not violations, "\n".join(violations)
 
 
 def test_new_package_has_no_legacy_imports_or_path_injection() -> None:

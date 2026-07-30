@@ -36,12 +36,6 @@ data/raw/
 data/interim/
 data/processed/
 outputs/
-regularized_zoning_experiments/runs/
-
-# Frozen reproducibility snapshot (large binary artifacts; keep local, do not commit).
-# Only the README is tracked so the folder's purpose is documented in git.
-IntermediateDataForReproduce/*
-!IntermediateDataForReproduce/README.md
 
 # Golden metadata is tracked; payload is local-only unless explicitly reviewed.
 artifacts/golden/*/inputs/**
@@ -63,3 +57,8 @@ artifacts/baselines/fifth-ring-windows-v1/payload/**
 
 # Logs
 *.log
+*.pid
+
+# Local SQLite scratch files
+*.sqlite
+*.sqlite3
