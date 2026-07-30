@@ -6,7 +6,9 @@ from pathlib import Path
 import shutil
 
 import pytest
+import yaml
 
+from roadnet_partition.cli import build_parser
 from roadnet_partition.io.manifests import MANIFEST_FILENAME, SUCCESS_MARKER, atomic_write_json, load_manifest, validate_manifest
 from roadnet_partition.pipeline import publishing, validation
 from roadnet_partition.pipeline.publishing import PublishError, build_publish_inventory, publish_scope
@@ -30,6 +32,28 @@ def semantic_report(report: dict) -> dict:
     value = deepcopy(report)
     value.pop("validated_at", None)
     return value
+
+
+def baseline_decision(run_dir: Path, path: Path) -> Path:
+    manifest = load_manifest(run_dir)
+    report_path = run_dir / "validation/validation_report.json"
+    validate_run(run_dir)
+    value = {
+        "schema_version": 1,
+        "decision_id": "test-linux-canonical-v1",
+        "scope": manifest["scope"],
+        "decision": "adopt_linux_as_canonical",
+        "status": "approved",
+        "source_run": {
+            "run_id": manifest["run_id"],
+            "pipeline_config_fingerprint": manifest["pipeline"]["config_fingerprint"],
+            "demand_assigned_orders_sha256": manifest["stages"]["demand"]["outputs"]["orders_region_assigned"]["sha256"],
+            "validation_report_sha256": publishing.file_record(report_path)["sha256"],
+        },
+        "previous_canonical": {"archive_id": "test-windows-v1"},
+    }
+    path.write_text(yaml.safe_dump(value), encoding="utf-8")
+    return path
 
 
 def test_validate_complete_run_writes_idempotent_reports_and_optional_golden(tmp_path: Path) -> None:
@@ -112,6 +136,46 @@ def test_publish_dry_run_and_complete_scope_allowlist(tmp_path: Path) -> None:
     assert source["source_run_id"] == load_manifest(run_dir)["run_id"]
     assert len(source["published_files"]) == len(inventory)
     assert len(load_manifest(run_dir)["publish_history"]) == 1
+
+
+def test_publish_baseline_decision_is_run_bound_and_recorded(tmp_path: Path) -> None:
+    project, run_dir = complete_run(tmp_path)
+    decision = baseline_decision(run_dir, tmp_path / "decision.yaml")
+    assert publish_scope(run_dir, scope="tiny", baseline_decision=decision, dry_run=True)["baseline_decision"]
+    publish_scope(run_dir, scope="tiny", baseline_decision=decision)
+    source = json.loads((project / "data/processed/tiny/source_manifest.json").read_text(encoding="utf-8"))
+    assert source["baseline_decision"]["decision_id"] == "test-linux-canonical-v1"
+    assert source["baseline_decision"]["previous_canonical_archive_id"] == "test-windows-v1"
+
+    value = yaml.safe_load(decision.read_text(encoding="utf-8"))
+    for field, replacement in (
+        ("status", "pending"),
+        ("scope", "other"),
+    ):
+        damaged = deepcopy(value)
+        damaged[field] = replacement
+        decision.write_text(yaml.safe_dump(damaged), encoding="utf-8")
+        with pytest.raises(PublishError):
+            publish_scope(run_dir, scope="tiny", baseline_decision=decision, dry_run=True)
+    for field in (
+        "run_id", "pipeline_config_fingerprint", "demand_assigned_orders_sha256",
+        "validation_report_sha256",
+    ):
+        damaged = deepcopy(value)
+        damaged["source_run"][field] = "0" * 64
+        decision.write_text(yaml.safe_dump(damaged), encoding="utf-8")
+        with pytest.raises(PublishError, match="does not match"):
+            publish_scope(run_dir, scope="tiny", baseline_decision=decision, dry_run=True)
+
+
+def test_fifth_ring_publish_has_no_force_or_decision_bypass(tmp_path: Path) -> None:
+    _, run_dir = complete_run(tmp_path)
+    manifest = load_manifest(run_dir)
+    manifest["scope"] = "fifth_ring"
+    atomic_write_json(run_dir / MANIFEST_FILENAME, manifest, validator=validate_manifest)
+    with pytest.raises(PublishError, match="baseline-decision"):
+        publish_scope(run_dir, scope="fifth_ring", dry_run=True)
+    assert "--force" not in build_parser().format_help()
 
 
 def test_publish_overwrite_and_rollback_after_old_and_new_switch(tmp_path: Path) -> None:

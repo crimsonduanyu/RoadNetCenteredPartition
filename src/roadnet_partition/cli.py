@@ -75,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     publish_parser.add_argument("--overwrite", action="store_true")
     publish_parser.add_argument("--allow-dirty", action="store_true")
     publish_parser.add_argument("--dry-run", action="store_true")
+    publish_parser.add_argument("--baseline-decision", type=Path)
     export_parser = subparsers.add_parser("export-reproduction", help="Export a fixed-profile reproduction package.")
     export_parser.add_argument("--run", type=Path, required=True)
     export_parser.add_argument("--output", type=Path, required=True)
@@ -117,6 +118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = publish_scope(
                 parsed.run, scope=parsed.scope, overwrite=parsed.overwrite,
                 allow_dirty=parsed.allow_dirty, dry_run=parsed.dry_run,
+                baseline_decision=parsed.baseline_decision,
             )
             if parsed.allow_dirty and (
                 result["git"]["source"].get("dirty") is True

@@ -6,6 +6,8 @@ import shutil
 from typing import Any, Callable, Mapping
 import uuid
 
+import yaml
+
 from roadnet_partition.io.manifests import (
     MANIFEST_FILENAME,
     atomic_write_json,
@@ -108,8 +110,9 @@ def _source_manifest(
     validation: Mapping[str, Any],
     git: Mapping[str, Any],
     transaction: Mapping[str, Any],
+    baseline_decision: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    return {
+    value = {
         "schema_version": 1,
         "scope": manifest["scope"],
         "published_at": utc_now(),
@@ -132,6 +135,54 @@ def _source_manifest(
             "validated_at": validation["validated_at"],
         },
         "publish_transaction": transaction,
+    }
+    if baseline_decision is not None:
+        value["baseline_decision"] = dict(baseline_decision)
+    return value
+
+
+def _baseline_decision(
+    path: str | Path | None,
+    *,
+    run_dir: Path,
+    manifest: Mapping[str, Any],
+    scope: str,
+) -> dict[str, Any] | None:
+    if path is None:
+        if scope == "fifth_ring":
+            raise PublishError("fifth_ring publish requires --baseline-decision")
+        return None
+    source = Path(path).expanduser().resolve()
+    if source.is_symlink() or not source.is_file():
+        raise PublishError("baseline decision must be a regular file")
+    value = yaml.safe_load(source.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema_version") != 1:
+        raise PublishError("invalid baseline decision schema")
+    source_run = value.get("source_run")
+    previous = value.get("previous_canonical")
+    if value.get("status") != "approved" or value.get("decision") != "adopt_linux_as_canonical":
+        raise PublishError("baseline decision is not approved")
+    if value.get("scope") != scope or not isinstance(source_run, dict) or not isinstance(previous, dict):
+        raise PublishError("baseline decision scope/source is invalid")
+    report_path = run_dir / "validation" / "validation_report.json"
+    if not report_path.is_file():
+        raise PublishError("baseline decision requires an existing validation report")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    expected = {
+        "run_id": manifest["run_id"],
+        "pipeline_config_fingerprint": manifest["pipeline"]["config_fingerprint"],
+        "demand_assigned_orders_sha256": manifest["stages"]["demand"]["outputs"]["orders_region_assigned"]["sha256"],
+        "validation_report_sha256": file_record(report_path)["sha256"],
+    }
+    if any(source_run.get(key) != expected_value for key, expected_value in expected.items()):
+        raise PublishError("baseline decision does not match this run")
+    if report.get("run_id") != manifest["run_id"] or report.get("overall_status") != "passed":
+        raise PublishError("baseline decision validation report is not a passing report for this run")
+    return {
+        "decision_id": value.get("decision_id"),
+        "path": source.as_posix(),
+        "sha256": file_record(source)["sha256"],
+        "previous_canonical_archive_id": previous.get("archive_id"),
     }
 
 
@@ -189,13 +240,17 @@ def publish_scope(
     overwrite: bool = False,
     allow_dirty: bool = False,
     dry_run: bool = False,
+    baseline_decision: str | Path | None = None,
     _step_hook: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     run_dir = Path(run).expanduser().resolve()
-    validation = validate_run(run_dir, write_report=True)
+    manifest = load_manifest(run_dir)
+    decision = _baseline_decision(
+        baseline_decision, run_dir=run_dir, manifest=manifest, scope=scope,
+    )
+    validation = validate_run(run_dir, write_report=False)
     if validation["overall_status"] != "passed":
         raise PublishError("current run validation failed")
-    manifest = load_manifest(run_dir)
     if manifest.get("run_kind") != "pipeline" or manifest["pipeline"].get("all_required_stages_complete") is not True:
         raise PublishError("publish requires a complete pipeline run")
     if scope != manifest.get("scope"):
@@ -228,6 +283,7 @@ def publish_scope(
         "free_space": _disk_free(target.parent),
         "transaction": transaction,
         "git": git,
+        "baseline_decision": decision,
     }
     if result["free_space"] < total_size:
         raise PublishError("insufficient disk space for publish staging")
@@ -237,7 +293,7 @@ def publish_scope(
 
     staging.mkdir(parents=True)
     _copy_inventory(staging, inventory)
-    source_manifest = _source_manifest(run_dir, manifest, inventory, validation, git, transaction)
+    source_manifest = _source_manifest(run_dir, manifest, inventory, validation, git, transaction, decision)
     atomic_write_json(staging / "source_manifest.json", source_manifest)
 
     def validate_and_hook(path: Path) -> bool:
@@ -260,6 +316,7 @@ def publish_scope(
         "overwrite": overwrite,
         "source_manifest_sha256": file_record(target / "source_manifest.json")["sha256"],
         "git": git,
+        "baseline_decision": decision,
     })
     atomic_write_json(run_dir / MANIFEST_FILENAME, manifest, validator=validate_manifest)
     return result
