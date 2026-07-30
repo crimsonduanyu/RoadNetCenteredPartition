@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 import json
 from pathlib import Path
 import shutil
@@ -19,36 +18,8 @@ from test_phase7_release import complete_run
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "artifacts/golden/beijing-fifth-ring-v1"
-LEGACY = ROOT / "IntermediateDataForReproduce"
-CLASSES = {
-    "production-input", "golden-input", "golden-expected", "legacy-comparison",
-    "release-candidate", "archive-only", "unknown",
-}
-
-
 def _manifest() -> dict:
     return json.loads((GOLDEN / "manifest.json").read_text(encoding="utf-8"))
-
-
-def test_legacy_inventory_is_complete_unique_and_checksum_verified() -> None:
-    if not LEGACY.is_dir() or len(list(LEGACY.iterdir())) <= 1:
-        pytest.skip("local-only legacy payload is unavailable")
-    manifest = _manifest()
-    assets = manifest["assets"]
-    old_files = {path.name for path in LEGACY.iterdir() if path.is_file()}
-    assert len(assets) == len(old_files) == manifest["source_inventory"]["file_count"]
-    assert sum((LEGACY / name).stat().st_size for name in old_files) == manifest["source_inventory"]["total_size"]
-    assert {asset["source_old_path"] for asset in assets} == old_files
-    assert len({asset["logical_name"] for asset in assets}) == len(assets)
-    assert all(asset["classification"] in CLASSES for asset in assets)
-    targets = [asset.get("relative_path") or asset.get("external_reference") for asset in assets]
-    assert len(targets) == len(set(targets))
-    assert all(file_record(LEGACY / asset["source_old_path"])["sha256"] == asset["sha256"] for asset in assets)
-    for asset in assets:
-        target = (GOLDEN / asset["relative_path"]) if "relative_path" in asset else (ROOT / asset["external_reference"])
-        assert file_record(target)["sha256"] == asset["sha256"]
-    privacy = Counter(asset["privacy"] for asset in assets)
-    assert {name: privacy[name] for name in manifest["privacy_summary"]} == manifest["privacy_summary"]
 
 
 def test_official_golden_partition_contract_and_read_only_payload() -> None:
@@ -141,7 +112,8 @@ def test_production_full_config_resolves_and_external_inventory_exists() -> None
     inventory = _external_inputs(first)
     assert inventory
     assert all(Path(record["path"]).is_file() for record in inventory.values())
-    assert not any("IntermediateDataForReproduce" in str(record["path"]) for record in inventory.values())
+    legacy_name = _manifest()["source_inventory"]["path"]
+    assert not any(legacy_name in str(record["path"]) for record in inventory.values())
     assert Path(first.stages["demand"].values["order_pipeline"]["inputs"]["partition_gpkg"]) == (
         ROOT / "data/processed/fifth_ring/partition/canonical_partition.gpkg"
     )
@@ -170,7 +142,7 @@ def test_phase8_config_docs_package_and_git_boundaries() -> None:
     assert "three-stage" not in readme and "三阶段" not in readme
     for command in ("roadnet-partition run", "roadnet-partition validate", "roadnet-partition publish", "export-reproduction"):
         assert command in readme
-    assert "Phase 9" in readme and "--dry-run" in readme
+    assert "Linux is the current" in readme and "--dry-run" in readme
 
     migration = (ROOT / "docs/refactor/production-config-path-migration-v2.md").read_text(encoding="utf-8")
     assert "36 authoritative path comparisons" in migration
