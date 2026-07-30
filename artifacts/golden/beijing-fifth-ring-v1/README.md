@@ -13,8 +13,11 @@ were not recorded remain unknown; none have been inferred.
 Large geospatial payloads are local-only and ignored by Git. On this migration
 host they are read-only hard links to the legacy files. Production inputs that
 already have byte-identical files under `data/` are external references in the
-manifest rather than duplicated here. These assets contain derived location,
-POI, or order information and are not approved for public distribution.
+manifest rather than duplicated here. Five inputs formerly stored in the
+processed scope now live under `data/interim/fifth_ring/frozen_inputs/`; their
+content hashes did not change during the Linux canonical publish. These assets
+contain derived location, POI, or order information and are not approved for
+public distribution.
 
 Verify local payload checksums with:
 

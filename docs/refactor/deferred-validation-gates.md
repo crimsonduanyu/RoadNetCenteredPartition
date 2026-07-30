@@ -16,7 +16,7 @@ real third-party runtime gate is therefore passed. See
 `tests/test_phase9_clustering_runtime.py` and
 `docs/refactor/phase9-preflight-v1.md`.
 
-## Demand historical cross-platform spatial assignment
+## Demand historical cross-platform spatial assignment: resolved_by_canonical_policy
 
 The historical formal Demand products under
 `data/processed/<scope>/order_pipeline/` were generated on Windows. The Phase
@@ -33,17 +33,19 @@ relative tolerance. It found no case where either candidate was clearly closer
 under the current Linux geometry stack. Exact historical Python, GeoPandas,
 Shapely, GEOS, pyproj and PROJ versions were not recorded.
 
-The Phase 9 decision record retains these options:
+The Phase 9 decision record retained these options:
 
 - reproduce the Demand run in the historical environment;
 - retain explicitly platform-specific historical and Linux baselines;
 - after the structural refactor, separately design and version a deterministic
   spatial assignment v2.
 
-This gate prevents publishing the Linux Demand rerun as a replacement for the
-historical formal products and prevents claims of row-level historical
-reproduction. It does not block Supply/TTE mechanical migration, provided both
-old and new implementations in each comparison read the same frozen Demand
-input. It must not be resolved during structural migration by changing the
-nearest-neighbour tie-break, spatial predicate, floating tolerance, or
-GeoPandas/GEOS dependency versions.
+On 2026-07-30 the project owner approved the Linux full-pipeline run as the new
+canonical baseline. The gate is therefore `resolved_by_canonical_policy` for
+the exact run and hashes recorded in
+`configs/policies/fifth_ring_linux_canonical_v1.yaml`.
+
+Historical Windows row-wise reproduction remains unachieved, and deterministic
+cross-platform assignment remains unimplemented. This is a formal baseline
+selection, not a nearest-neighbour tie-break repair. Any future run still needs
+its own matching canonical decision or the then-current canonical contract.

@@ -11,13 +11,13 @@ the root compatibility configuration.
 | Resolved field | Legacy target | Phase 8 target | Reason |
 |---|---|---|---|
 | `partition.inputs.graph` | mixed snapshot graph | `data/interim/fifth_ring/frozen_inputs/segment_relation_graph_road_poi_order.gpickle` | production input with provenance |
-| `partition.inputs.relation_edges` | mixed snapshot CSV | `data/processed/fifth_ring/segment_relation_edges_road_poi_order.csv` | equal normal-data copy |
+| `partition.inputs.relation_edges` | mixed snapshot CSV | `data/interim/fifth_ring/frozen_inputs/segment_relation_edges_road_poi_order.csv` | equal normal-data copy |
 | `partition.inputs.classified_edges` | mixed snapshot GPKG | `data/interim/fifth_ring/road_edges_classified.gpkg` | equal normal-data copy |
 | `partition.inputs.boundary` | mixed snapshot GPKG | `data/raw/beijing_fifth_ring_boundary.gpkg` | equal normal-data copy |
-| `partition.inputs.segment_nodes` | mixed snapshot GPKG | `data/processed/fifth_ring/segment_nodes.gpkg` | equal normal-data copy |
-| `partition.inputs.poi_features` | mixed snapshot CSV | `data/processed/fifth_ring/segment_poi_features.csv` | equal normal-data copy |
-| `partition.inputs.order_features` | mixed snapshot CSV | `data/processed/fifth_ring/segment_order_features.csv` | equal normal-data copy |
-| `partition.inputs.hourly_od` | mixed snapshot CSV | `data/processed/fifth_ring/segment_order_od_hourly.csv` | equal normal-data copy |
+| `partition.inputs.segment_nodes` | mixed snapshot GPKG | `data/interim/fifth_ring/frozen_inputs/segment_nodes.gpkg` | equal normal-data copy |
+| `partition.inputs.poi_features` | mixed snapshot CSV | `data/interim/fifth_ring/frozen_inputs/segment_poi_features.csv` | equal normal-data copy |
+| `partition.inputs.order_features` | mixed snapshot CSV | `data/interim/fifth_ring/frozen_inputs/segment_order_features.csv` | equal normal-data copy |
+| `partition.inputs.hourly_od` | mixed snapshot CSV | `data/interim/fifth_ring/frozen_inputs/segment_order_od_hourly.csv` | equal normal-data copy |
 | `partition.inputs.baseline_clusters.louvain` | mixed snapshot GPKG | Golden v1 `legacy_comparisons/louvain/` | historical comparison, not canonical expected |
 | `partition.inputs.baseline_clusters.leiden` | mixed snapshot GPKG | Golden v1 `inputs/` | active fixed initialization |
 | `partition.inputs.baseline_clusters.demand_region_growing` | mixed snapshot GPKG | Golden v1 `legacy_comparisons/demand_region_growing/` | historical comparison, not canonical expected |

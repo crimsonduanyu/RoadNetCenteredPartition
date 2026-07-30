@@ -20,8 +20,8 @@ conda run -n dydl pip install -e . --no-deps
 conda run -n dydl python -m pytest
 ```
 
-Do not install the deferred clustering dependency or change Demand spatial
-assignment as part of ordinary operation.
+Linux is the currently supported and formally validated canonical platform.
+Do not change Demand spatial assignment as part of ordinary operation.
 
 ## Full pipeline
 
@@ -104,18 +104,30 @@ new version directory for a new expected result.
 Publishing constructs and atomically swaps one complete
 `data/processed/<scope>/` product. It never reruns algorithms.
 
-Before Phase 9, use dry-run only for real data:
+Phase 9.1 transactionally published the current `data/processed/fifth_ring/`
+from the approved Linux canonical run. A Fifth Ring replacement requires a
+run-bound baseline decision:
 
 ```bash
 conda run -n dydl roadnet-partition publish \
   --run outputs/runs/<run_id> \
   --scope fifth_ring \
+  --overwrite \
+  --baseline-decision configs/policies/fifth_ring_linux_canonical_v1.yaml \
   --dry-run
 ```
 
-Real publish remains gated on a complete validated run and a clean Git tree.
-The Demand Windows/Linux spatial-assignment gate is unresolved, so a real
-Fifth Ring publish is not yet recommended.
+Real publish remains gated on a complete validated run, a clean Git tree, and
+an approved decision matching the exact run and hashes. The historical Windows
+canonical is preserved privately under
+`artifacts/baselines/fifth-ring-windows-v1/payload/`; it is not Golden and is
+not eligible for reproduction export.
+
+Demand nearest-segment assignment can depend on underlying candidate order for
+overlapping, equal-distance segments. This release accepts the validated Linux
+result as canonical; it does not claim row-wise equality with historical
+Windows Demand or with every platform. A deterministic assignment v2 would be
+a separate algorithm and data-product version.
 
 ## Reproduction export
 
@@ -162,7 +174,8 @@ only audited asset paths.
 
 `src/run_pipeline.py`, `src/stages/`, and root `config.yaml` remain intact for
 comparison until final migration. They may still reference the read-only
-legacy mixed asset directory. Do not delete that directory before Phase 9.
+legacy mixed asset directory. Phase 10 has not started; do not delete these
+entrypoints, bridges, configurations, or historical directories.
 
 The preprocessing and historical clustering scripts under `src/00_*` through
 `src/05_*` remain legacy asset builders, not the recommended production entry.
