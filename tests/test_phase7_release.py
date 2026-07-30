@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
@@ -257,11 +258,11 @@ def test_publish_contract_accepts_only_hash_equal_relocated_partition_input(tmp_
     shutil.copy2(original, relocated)
     values = deepcopy(config.values)
     values["inputs"]["segment_nodes"] = (tmp_path / "removed" / original.name).as_posix()
-    repaired = publishing._contract_config("partition", publishing.replace(config, values=values), manifest)
+    repaired = publishing._contract_config("partition", replace(config, values=values), manifest)
     assert Path(repaired.values["inputs"]["segment_nodes"]) == relocated
     relocated.write_bytes(b"damaged")
     with pytest.raises(PublishError, match="differs"):
-        publishing._contract_config("partition", publishing.replace(config, values=values), manifest)
+        publishing._contract_config("partition", replace(config, values=values), manifest)
 
 
 def test_publish_dirty_gate_and_run_kind_requirements(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

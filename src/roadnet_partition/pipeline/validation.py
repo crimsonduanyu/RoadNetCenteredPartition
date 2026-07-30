@@ -27,6 +27,7 @@ from roadnet_partition.pipeline.stages import (
     STAGE_ORDER,
     canonical_partition_output_key,
     formal_stage_outputs,
+    prepare_stage_contract_config,
     validate_stage_contract,
 )
 from roadnet_partition.zoning.contracts import compare_partitions, partition_groups, validate_partition
@@ -368,7 +369,11 @@ def validate_run(
                 )
                 if not decision.reusable:
                     raise ValueError("; ".join(decision.reasons))
-                contract = validate_stage_contract(stage, config, outputs)
+                contract = validate_stage_contract(
+                    stage,
+                    prepare_stage_contract_config(stage, config, record.get("input_records", {})),
+                    outputs,
+                )
                 if contract.get("status") != "passed":
                     raise ValueError("stage contract did not pass")
                 stage_results[stage] = {"status": "passed", "config_fingerprint": config.fingerprint}

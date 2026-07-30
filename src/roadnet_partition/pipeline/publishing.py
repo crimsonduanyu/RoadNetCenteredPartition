@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
@@ -21,7 +19,12 @@ from roadnet_partition.io.manifests import (
 )
 from roadnet_partition.io.paths import transactional_scope_swap
 from roadnet_partition.pipeline.results import RunContext
-from roadnet_partition.pipeline.stages import STAGE_ORDER, canonical_partition_output_key, validate_stage_contract
+from roadnet_partition.pipeline.stages import (
+    STAGE_ORDER,
+    canonical_partition_output_key,
+    prepare_stage_contract_config,
+    validate_stage_contract,
+)
 from roadnet_partition.pipeline.validation import _load_stage_config, validate_run
 
 
@@ -204,19 +207,10 @@ def _stage_output_paths(staging: Path, inventory: list[dict[str, Any]], stage: s
 
 
 def _contract_config(stage: str, config, manifest: Mapping[str, Any]):
-    if stage != "partition":
-        return config
-    original = Path(config.values["inputs"]["segment_nodes"])
-    if original.is_file():
-        return config
-    candidate = config.project_root / "data/interim" / config.scope / "frozen_inputs" / original.name
-    expected = manifest["stages"]["partition"]["input_records"]["segment_nodes"]
-    actual = file_record(candidate)
-    if actual["size"] != expected["size"] or actual["sha256"] != expected["sha256"]:
-        raise PublishError("relocated Partition segment_nodes differs from source run input")
-    values = deepcopy(config.values)
-    values["inputs"]["segment_nodes"] = candidate.as_posix()
-    return replace(config, values=values)
+    try:
+        return prepare_stage_contract_config(stage, config, manifest["stages"][stage]["input_records"])
+    except (KeyError, OSError, ValueError) as error:
+        raise PublishError(str(error)) from error
 
 
 def _validate_staging(staging: Path, run_dir: Path, inventory: list[dict[str, Any]]) -> bool:
