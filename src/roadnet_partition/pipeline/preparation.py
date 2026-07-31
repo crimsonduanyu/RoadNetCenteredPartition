@@ -202,8 +202,10 @@ def _build_poi_features(config: dict[str, Any], paths: dict[str, Path], ordinary
     reverse = {column: value for value, column in mapping.items()}
     features["dominant_poi_type"] = features[columns].idxmax(axis=1).map(reverse)
     features.loc[features["poi_total"] == 0, "dominant_poi_type"] = None
-    features.drop(columns="length").to_csv(paths["poi_features"], index=False)
+    features = features.drop(columns="length")
+    features.to_csv(paths["poi_features"], index=False)
     pd.DataFrame([{"category_col": column, "poi_type": value} for value, column in mapping.items()]).to_csv(paths["poi_category_mapping"], index=False)
+    return features
 
 
 def _add_counts(target: Counter[str], values: pd.Series) -> None:
@@ -269,6 +271,7 @@ def _build_order_features(config: dict[str, Any], paths: dict[str, Path], ordina
         [{"slot_start": slot, "origin_seg_id": a, "destination_seg_id": b, "order_count": count} for (slot, a, b), count in sorted(hourly.items())],
         columns=["slot_start", "origin_seg_id", "destination_seg_id", "order_count"],
     ).to_csv(paths["hourly_od"], index=False)
+    return features
 
 
 def _cosine(left: np.ndarray, right: np.ndarray) -> float:
@@ -276,7 +279,7 @@ def _cosine(left: np.ndarray, right: np.ndarray) -> float:
     return 0.0 if denominator == 0 else float(np.dot(left, right) / denominator)
 
 
-def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordinary: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame) -> nx.Graph:
+def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordinary: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame, poi_features: pd.DataFrame | None = None, order_features: pd.DataFrame | None = None) -> nx.Graph:
     ordinary = ordinary.copy()
     ordinary["bearing"] = ordinary.geometry.map(compute_bearing)
     records = ordinary.drop(columns="geometry").to_dict("records")
@@ -312,7 +315,8 @@ def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordina
                 if connector.get("highway") is not None:
                     edge["connector_highways"].add(connector["highway"])
 
-    poi = pd.read_csv(paths["poi_features"]).set_index("seg_id").reindex(ordinary["seg_id"]).fillna(0)
+    poi_source = poi_features if poi_features is not None else pd.read_csv(paths["poi_features"])
+    poi = poi_source.set_index("seg_id").reindex(ordinary["seg_id"]).fillna(0)
     poi_columns = [column for column in poi if column.startswith("poi_cat_")]
     poi_counts = poi[poi_columns].to_numpy(dtype=float)
     totals = poi_counts.sum(axis=1)
@@ -321,7 +325,8 @@ def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordina
     entropy = poi["poi_entropy"].to_numpy(dtype=float)
     density_scale = max(float(density.max() - density.min()), 1.0)
     poi_index = {seg_id: index for index, seg_id in enumerate(ordinary["seg_id"])}
-    order = pd.read_csv(paths["order_features"]).set_index("seg_id").reindex(ordinary["seg_id"]).fillna(0)
+    order_source = order_features if order_features is not None else pd.read_csv(paths["order_features"])
+    order = order_source.set_index("seg_id").reindex(ordinary["seg_id"]).fillna(0)
     vector_columns = ["pickup_count", "dropoff_count", "order_total", "pickup_dropoff_imbalance", "morning_peak_pickups", "evening_peak_pickups", "night_pickups", "weekday_pickups", "weekend_pickups", "weekday_weekend_diff"]
     order_vectors = np.sign(order[vector_columns].to_numpy(dtype=float)) * np.log1p(np.abs(order[vector_columns].to_numpy(dtype=float)))
     order_totals = order["order_total"].to_numpy(dtype=float)
@@ -377,9 +382,9 @@ def run(config_path: Path, project_root: Path, output_dir: Path) -> dict[str, Pa
     edges = _preprocess_roads(config, paths)
     ordinary = edges.loc[edges["segment_role"] == "ordinary"].copy()
     connectors = edges.loc[edges["segment_role"] == "connector"].copy()
-    _build_poi_features(config, paths, ordinary)
-    _build_order_features(config, paths, ordinary)
-    graph = _build_relation_graph(config, paths, ordinary, connectors)
+    poi_features = _build_poi_features(config, paths, ordinary)
+    order_features = _build_order_features(config, paths, ordinary)
+    graph = _build_relation_graph(config, paths, ordinary, connectors, poi_features, order_features)
     baseline = run_leiden(graph, {"clustering": config["baseline"]})
     clusters = ordinary.copy()
     clusters["cluster_id"] = clusters["seg_id"].map(baseline)
