@@ -538,11 +538,18 @@ def compute_supply_variables(
 
 
 def serialize_list_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    """Convert list-valued columns to JSON strings for CSV persistence."""
+    """Convert list-valued columns to JSON strings for CSV persistence.
+
+    Scalar output tables (no ``order_ids``/``segment_ids`` columns) are returned
+    unchanged without a full-frame ``.copy()``; only frames that actually carry a
+    list column are copied and JSON-encoded. The persisted CSV is identical either
+    way (the copy was a pure RSS overhead for the scalar tables)."""
+    list_columns = [column for column in ("order_ids", "segment_ids") if column in frame.columns]
+    if not list_columns:
+        return frame
     output = frame.copy()
-    for column in ["order_ids", "segment_ids"]:
-        if column in output.columns:
-            output[column] = output[column].map(json.dumps)
+    for column in list_columns:
+        output[column] = output[column].map(json.dumps)
     return output
 
 
