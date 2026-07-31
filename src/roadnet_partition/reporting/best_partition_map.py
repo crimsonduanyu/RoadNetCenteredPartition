@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.transforms import blended_transform_factory
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -100,7 +101,7 @@ def muted_palette(size: int = 220) -> list[str]:
     colors = []
     lightness = (0.48, 0.62, 0.40, 0.70)
     for index in range(size):
-        red, green, blue = colorsys.hls_to_rgb((index * 0.61803398875) % 1.0, lightness[index % 4], 0.52)
+        red, green, blue = colorsys.hls_to_rgb((index * 0.61803398875) % 1.0, lightness[index % 4], 0.36)
         colors.append(_hex((round(red * 255), round(green * 255), round(blue * 255))))
     return colors
 
@@ -241,6 +242,53 @@ def render_partition_maps(
         plot_partition_pdf(clusters, connectors, boundary, graph, output_dir / f"{stem}.pdf", palette, halo)
 
 
+def _scale_length_data(crs: Any, target_meters: float = 5000.0) -> float:
+    """Scale-bar length in data units for a real-world ``target_meters``."""
+    if crs is not None:
+        try:
+            if crs.is_geographic:
+                return target_meters / 111_320.0
+        except Exception:
+            return target_meters
+    return target_meters
+
+
+def _panel_label(ax: Any, text: str) -> None:
+    ax.text(
+        0.02, 0.97, text, transform=ax.transAxes,
+        fontsize=11, fontweight="bold", va="top", ha="left",
+        zorder=8, clip_on=False,
+    )
+
+
+def _north_arrow(ax: Any, loc: tuple[float, float] = (0.93, 0.90), length: float = 0.05) -> None:
+    x, y = loc
+    ax.annotate(
+        "", xy=(x, y), xytext=(x, y - length), xycoords=ax.transAxes,
+        arrowprops=dict(arrowstyle="-|>,head_width=0.35,head_length=0.7", color="black", lw=1.3),
+        zorder=8, clip_on=False,
+    )
+    ax.text(
+        x, y + 0.012, "N", transform=ax.transAxes,
+        ha="center", va="bottom", fontsize=9, fontweight="bold", zorder=8, clip_on=False,
+    )
+
+
+def _scale_bar(ax: Any, length: float, label: str = "5 km", loc: tuple[float, float] = (0.05, 0.055)) -> None:
+    trans = blended_transform_factory(ax.transData, ax.transAxes)
+    xlim = ax.get_xlim()
+    x0 = float(xlim[0]) + loc[0] * (float(xlim[1]) - float(xlim[0]))
+    y0 = loc[1]
+    tick = 0.010
+    ax.plot([x0, x0 + length], [y0, y0], transform=trans, color="black", linewidth=2.4, zorder=8, clip_on=False)
+    ax.plot([x0, x0], [y0 - tick, y0 + tick], transform=trans, color="black", linewidth=1.5, zorder=8, clip_on=False)
+    ax.plot([x0 + length, x0 + length], [y0 - tick, y0 + tick], transform=trans, color="black", linewidth=1.5, zorder=8, clip_on=False)
+    ax.text(
+        x0 + length / 2, y0 + tick + 0.006, label, transform=trans,
+        ha="center", va="bottom", fontsize=8, zorder=8, clip_on=False,
+    )
+
+
 def render_partition_order_figure(
     partition_path: Path,
     classified_edges_path: Path,
@@ -265,6 +313,7 @@ def render_partition_order_figure(
     minx, miny, maxx, maxy = map(float, boundary.total_bounds)
     center_x, center_y = (minx + maxx) / 2, (miny + maxy) / 2
     view_span = max(maxx - minx, maxy - miny) / 0.95
+    scale_length = _scale_length_data(clusters.crs)
     norm = Normalize(vmin=float(mean_orders.min()), vmax=float(mean_orders.max()))
     cmap = LinearSegmentedColormap.from_list(
         "mean_orders_gray_blue",
@@ -295,11 +344,14 @@ def render_partition_order_figure(
         lines(axes[0], group.geometry, categorical[cluster_id], 0.42, 1.0, 3)
         lines(axes[1], group.geometry, cmap(norm(float(mean_orders.loc[cluster_id]))), 0.52, 1.0, 3)
 
-    axes[0].set_title("(a) Road-network-centered zones", fontsize=12, pad=8)
-    axes[1].set_title("(b) Mean hourly origin orders within each zone", fontsize=12, pad=8)
-    colorbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=axes[1], fraction=0.045, pad=0.025)
-    colorbar.set_label("Mean orders per hour", fontsize=11)
-    fig.subplots_adjust(left=0.01, right=0.97, bottom=0.01, top=0.93, wspace=0.035)
+    colorbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=axes[1], fraction=0.04, pad=0.02)
+    colorbar.set_label("Mean orders per hour", fontsize=10)
+    colorbar.ax.tick_params(labelsize=8)
+    for ax, label in zip(axes, ("(a)", "(b)")):
+        _panel_label(ax, label)
+        _north_arrow(ax)
+    _scale_bar(axes[0], scale_length)
+    fig.subplots_adjust(left=0.01, right=0.965, bottom=0.015, top=0.985, wspace=0.04)
     png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(png_path, format="png", dpi=dpi, facecolor="white", bbox_inches="tight", pad_inches=0.03)
     fig.savefig(pdf_path, format="pdf", facecolor="white", bbox_inches="tight", pad_inches=0.03)
