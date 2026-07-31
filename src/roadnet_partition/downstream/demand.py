@@ -205,15 +205,22 @@ def build_od_tensors(
 
     slot_to_index = {label: index for index, label in enumerate(slot_labels)}
     cluster_to_index = {cluster_id: index for index, cluster_id in enumerate(cluster_ids)}
-    for row in od_frame.itertuples(index=False):
-        slot_index = slot_to_index.get(str(row.slot_start))
-        origin_index = cluster_to_index.get(str(row.origin_cluster_id))
-        destination_index = cluster_to_index.get(str(row.destination_cluster_id))
-        if slot_index is None or origin_index is None or destination_index is None:
-            continue
-        tensors["Y_exclusive"][slot_index, origin_index, destination_index] = int(row.exclusive_count)
-        tensors["Y_carpool"][slot_index, origin_index, destination_index] = int(row.carpool_count)
-        tensors["Y_total"][slot_index, origin_index, destination_index] = int(row.total_count)
+    # Vectorized fill: map each OD row's (slot, origin, destination) to tensor
+    # indices via the lookup dicts, drop unmapped keys (preserving the original
+    # silent-filter semantics), and assign. Each (slot, o, d) key is unique per
+    # the upstream SQL GROUP BY, so this last-writer-wins assignment is exactly
+    # equivalent to the former itertuples loop.
+    slot_idx = od_frame["slot_start"].astype(str).map(slot_to_index)
+    origin_idx = od_frame["origin_cluster_id"].astype(str).map(cluster_to_index)
+    dest_idx = od_frame["destination_cluster_id"].astype(str).map(cluster_to_index)
+    mapped = slot_idx.notna() & origin_idx.notna() & dest_idx.notna()
+    if bool(mapped.any()):
+        s = slot_idx[mapped].to_numpy().astype(np.intp)
+        o = origin_idx[mapped].to_numpy().astype(np.intp)
+        d = dest_idx[mapped].to_numpy().astype(np.intp)
+        tensors["Y_exclusive"][s, o, d] = od_frame.loc[mapped, "exclusive_count"].to_numpy().astype(np.int32)
+        tensors["Y_carpool"][s, o, d] = od_frame.loc[mapped, "carpool_count"].to_numpy().astype(np.int32)
+        tensors["Y_total"][s, o, d] = od_frame.loc[mapped, "total_count"].to_numpy().astype(np.int32)
     return tensors
 
 def load_partition(partition_path: Path, projected_crs: str):
