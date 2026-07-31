@@ -240,6 +240,7 @@ def vectorize_transitive_impute(
     pruner: SpatialPruner,
     slot_min: float,
     config: dict[str, Any] | None = None,
+    candidates_k: list[str] | None = None,
 ):
     """Best transitive estimate for one OD column from the current source matrices.
 
@@ -252,12 +253,19 @@ def vectorize_transitive_impute(
     Returns ``(estimate_min, support_min)``: the per-timestamp minimum estimate
     over candidates and the support of *that selected* path (aligned via argmin),
     or NaN where no candidate produced a value.
+
+    ``candidates_k`` (the corridor candidate list) depends only on
+    ``(o_id, d_id, distance matrix, detour_ratio)`` and is invariant across
+    imputation rounds; callers that precompute it (``run_imputation_pipeline``)
+    pass it here to avoid recomputing it every round. The candidate order and the
+    ``np.argmin`` first-min tie-break are unchanged either way.
     """
     if config is None:
         config = DEFAULT_CONFIG
     o_id, d_id = target_col.split("->")
     n = len(source_value)
-    candidates_k = pruner.get_candidates(o_id, d_id, detour_ratio=config["detour_ratio"])
+    if candidates_k is None:
+        candidates_k = pruner.get_candidates(o_id, d_id, detour_ratio=config["detour_ratio"])
     if not candidates_k:
         nan = np.full(n, np.nan)
         return nan, nan
@@ -360,6 +368,16 @@ def run_imputation_pipeline(
     slot_min = (index[1] - index[0]).total_seconds() / 60.0 if n > 1 else 1.0
     col_to_j = {c: j for j, c in enumerate(columns)}
 
+    # Precompute corridor candidates once: the set depends only on (o, d, distance
+    # matrix, detour_ratio) and is invariant across rounds, so recomputing it per
+    # still-NaN column per round was redundant. Order is identical to
+    # pruner.get_candidates (np.where ascending), preserving the argmin first-min.
+    detour_ratio = config["detour_ratio"]
+    candidate_cache = {}
+    for col in columns:
+        o_id, d_id = col.split("->")
+        candidate_cache[col] = pruner.get_candidates(o_id, d_id, detour_ratio=detour_ratio)
+
     value_cur = df_TTE.astype(np.float32).copy()
     observed_mask = df_TTE.notna().to_numpy()
 
@@ -386,7 +404,8 @@ def run_imputation_pipeline(
         filled = 0
         for target_col in tqdm(nan_cols, desc=f"hop {r}"):
             estimate_min, support_min = vectorize_transitive_impute(
-                target_col, source_value, support_src, pruner, slot_min, config
+                target_col, source_value, support_src, pruner, slot_min, config,
+                candidates_k=candidate_cache[target_col],
             )
             if np.all(np.isnan(estimate_min)):
                 continue
