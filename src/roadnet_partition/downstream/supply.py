@@ -743,11 +743,14 @@ def run_chunked_pipeline(
     T, N = len(slots), len(clusters)
     LOGGER.info("Global grid: T=%d slots x N=%d clusters.", T, N)
 
-    # Dense accumulators (probe-confirmed: in-service [T,N,N] int32 ~0.33GB, no sparse).
-    A = np.zeros((T, N, N), dtype=np.int64)       # in-service: slot x origin x dest
-    B = np.zeros((T, N), dtype=np.int64)          # available: slot x cluster
-    Fc = np.zeros((T, N), dtype=np.int64)         # fleet lower bound per cluster
-    Fg = np.zeros(T, dtype=np.int64)              # global fleet lower bound per slot
+    # Dense accumulators in int32. Counts are non-negative and << 2^31 (the
+    # per-block negative-wrap check below catches any int32 overflow the moment
+    # it happens), so int32 suffices and halves resident RSS vs int64. Output
+    # frames still cast to int64, so persisted CSV values are unchanged.
+    A = np.zeros((T, N, N), dtype=np.int32)       # in-service: slot x origin x dest
+    B = np.zeros((T, N), dtype=np.int32)          # available: slot x cluster
+    Fc = np.zeros((T, N), dtype=np.int32)          # fleet lower bound per cluster
+    Fg = np.zeros(T, dtype=np.int32)               # global fleet lower bound per slot
 
     all_drivers = set(orders["driver_id"].unique())
     seen_drivers: set = set()
@@ -780,17 +783,25 @@ def run_chunked_pipeline(
             i = _cluster_positions(in_service["origin_cluster_id"], clusters)
             j = _cluster_positions(in_service["destination_cluster_id"], clusters)
             A[t, i, j] += in_service["vehicles_in_service"].to_numpy()
+            if (A[t, i, j] < 0).any():
+                raise AssertionError("accumulator A overflowed int32 (in-service counts).")
         if not available.empty:
             t = _slot_positions(available["slot_start"], slots)
             c = _cluster_positions(available["cluster_id"], clusters)
             B[t, c] += available["available_vehicles"].to_numpy()
+            if (B[t, c] < 0).any():
+                raise AssertionError("accumulator B overflowed int32 (available counts).")
         if not fleet.empty:
             t = _slot_positions(fleet["slot_start"], slots)
             c = _cluster_positions(fleet["cluster_id"], clusters)
             Fc[t, c] += fleet["fleet_lower_bound_cluster"].to_numpy()
+            if (Fc[t, c] < 0).any():
+                raise AssertionError("accumulator Fc overflowed int32 (fleet per-cluster counts).")
             g = fleet[["slot_start", "global_fleet_lower_bound"]].drop_duplicates("slot_start")
             tg = _slot_positions(g["slot_start"], slots)
             Fg[tg] += g["global_fleet_lower_bound"].to_numpy()
+            if (Fg[tg] < 0).any():
+                raise AssertionError("accumulator Fg overflowed int32 (global fleet counts).")
 
         block_summaries.append({"block": b, "orders": int(len(block)), "drivers": int(len(block_drivers)),
                                 "in_service_rows": int(len(in_service))})
@@ -801,10 +812,9 @@ def run_chunked_pipeline(
     # Invariant 2: completeness (union of blocks == all drivers).
     if seen_drivers != all_drivers:
         raise AssertionError("invariant 2 violated: union of block drivers != all drivers.")
-    # No overflow: dense int64 accumulators must fit int32 output (counts << 2^31).
-    for name, arr in (("A", A), ("B", B), ("Fc", Fc), ("Fg", Fg)):
-        if arr.size and int(arr.max()) > np.iinfo(np.int32).max:
-            raise AssertionError(f"accumulator {name} exceeds int32 range.")
+    # int32 overflow is detected per-block above (a negative value after a += is
+    # a wrap); there is no post-loop range check because int32 storage cannot
+    # exceed int32.max by construction (a wrapped value is still <= int32.max).
 
     # Dense arrays -> output frames (same schema/keys as the other modes).
     in_service_df = _inservice_array_to_frame(A, slots, clusters)
