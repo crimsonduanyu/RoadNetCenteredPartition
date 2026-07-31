@@ -216,8 +216,56 @@ def compute_distance_matrix(graph_filt, graph_raw, reps: dict[str, int], cluster
     return pd.DataFrame(matrix, index=cluster_ids, columns=cluster_ids)
 
 
+def _load_validated_distance(matrix_path: Path, reps_path: Path) -> pd.DataFrame | None:
+    """Load the run-owned distance matrix + reps if they exist and pass a contract
+    (well-formedness) check; return the matrix, or None if absent/corrupt so the
+    caller recomputes. The run ownership / resume system invalidates the stage
+    (and thus these files) when inputs change, so a valid cache is safe to reuse."""
+    if not matrix_path.is_file():
+        return None
+    try:
+        matrix = pd.read_parquet(matrix_path)
+        matrix.index = matrix.index.astype(str)
+        matrix.columns = matrix.columns.astype(str)
+        if matrix.shape[0] != matrix.shape[1] or list(matrix.index) != list(matrix.columns):
+            return None
+        values = matrix.to_numpy(dtype=float)
+        # Distances are non-negative; INF is legitimate (unreachable cluster
+        # pairs -- compute_distance_matrix initializes with np.inf and only the
+        # raw-graph fallback fills cross-component pairs). NaN or negative
+        # values indicate a corrupt matrix.
+        if np.isnan(values).any() or (values < 0).any():
+            return None
+        if not np.allclose(np.diag(values), 0.0):
+            return None
+        if not np.allclose(values, values.T, equal_nan=True):
+            return None
+        # reps is validated when present (production writes matrix+reps together);
+        # a caller that pre-places only the matrix still gets it loaded.
+        if reps_path.is_file():
+            reps = pd.read_csv(reps_path, dtype={"cluster_id": str})
+            if set(reps["cluster_id"]) != set(matrix.index):
+                return None
+        return matrix
+    except Exception:
+        return None
+
+
 def build_or_load(config: dict[str, Any]) -> pd.DataFrame:
-    """Build (and cache) or load the cluster network-distance matrix.
+    """Auto load-or-compute the cluster network-distance matrix.
+
+    Behavior (TTE cache, auto):
+      - If a run-owned matrix + reps already exist and pass a contract check
+        (square, str index == columns, all-finite, symmetric, reps cluster ids
+        match), load them.
+      - Otherwise compute from the OSM graph + classified edges + partition
+        and save both.
+
+    The legacy ``distance.recompute`` flag is deprecated and ignored:
+    build_or_load always auto-loads a valid cache or computes+saves. The run
+    ownership / resume system invalidates the stage (and thus the cache) when
+    inputs change, so a valid cache is always safe to reuse; raw-only first runs
+    have no cache and compute+succeed.
 
     Returns a DataFrame indexed by cluster id (str) with the same columns.
     """
@@ -228,14 +276,17 @@ def build_or_load(config: dict[str, Any]) -> pd.DataFrame:
     output_dir.mkdir(parents=True, exist_ok=True)
     matrix_path = output_dir / str(dist_cfg.get("matrix_filename", "cluster_network_distance.parquet"))
     reps_path = output_dir / str(dist_cfg.get("representatives_filename", "cluster_representative_nodes.csv"))
-    recompute = bool(dist_cfg.get("recompute", False))
 
-    if matrix_path.exists() and not recompute:
-        print(f"Loading cached network-distance matrix from {matrix_path}.")
-        matrix = pd.read_parquet(matrix_path)
-        matrix.index = matrix.index.astype(str)
-        matrix.columns = matrix.columns.astype(str)
-        return matrix
+    if dist_cfg.get("recompute", False):
+        print(
+            "distance.recompute=true is deprecated; build_or_load now auto-loads a "
+            "valid run-owned cache or computes+saves. Ignoring the flag."
+        )
+
+    cached = _load_validated_distance(matrix_path, reps_path)
+    if cached is not None:
+        print(f"Loading cached network-distance matrix from {matrix_path} (passed contract check).")
+        return cached
 
     graphml_path = Path(project_path(dist_cfg["graphml_path"]))
     classified_edges_path = Path(project_path(dist_cfg["classified_edges_path"]))
