@@ -276,3 +276,24 @@ def test_fleet_lower_bound_in_service_counts_origin_only() -> None:
     by_cluster = dict(zip(fleet["cluster_id"], fleet["fleet_lower_bound_cluster"]))
     assert by_cluster.get(10) == 1
     assert 20 not in by_cluster  # destination cluster must not count the driver
+
+
+def test_build_trip_segments_sorted_precondition() -> None:
+    """build_trip_segments must return rows sorted by the key reconstruct_driver_chains
+    relies on (SUP-01 removed the redundant re-sort, making this precondition load-bearing)."""
+    module = load_module()
+    keys = ["driver_id", "trip_start", "trip_end", "segment_id"]
+    orders = pd.DataFrame(
+        [
+            make_order(5, 20, "2017-06-01 09:00:00", "2017-06-01 09:15:00", 7, 8, "exclusive"),
+            make_order(1, 10, "2017-06-01 08:00:00", "2017-06-01 08:20:00", 1, 2, "carpool"),
+            make_order(3, 10, "2017-06-01 08:30:00", "2017-06-01 08:45:00", 5, 6, "carpool"),
+            make_order(2, 10, "2017-06-01 08:00:00", "2017-06-01 08:10:00", 3, 4, "carpool"),
+            make_order(4, 20, "2017-06-01 09:00:00", "2017-06-01 09:30:00", 9, 10, "exclusive"),
+        ]
+    )
+    segments = module.build_trip_segments(orders)
+    assert not segments.empty
+    for prev, curr in zip(segments[keys].iloc[:-1].itertuples(index=False, name=None),
+                          segments[keys].iloc[1:].itertuples(index=False, name=None)):
+        assert prev <= curr, f"rows not sorted by {keys}: {prev} > {curr}"

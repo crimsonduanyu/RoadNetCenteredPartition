@@ -227,10 +227,15 @@ def reconstruct_driver_chains(
         )
         return trip_segments.assign(chain_id=pd.Series(dtype="object")), chains
 
-    segments = trip_segments.sort_values(
-        ["driver_id", "trip_start", "trip_end", "segment_id"],
-        kind="mergesort",
-    ).reset_index(drop=True)
+    # build_trip_segments already returns rows sorted by [driver_id, trip_start,
+    # trip_end, segment_id] with a clean RangeIndex (proven by
+    # test_build_trip_segments_sorted_precondition), so a re-sort here is
+    # redundant. Sort only as a defensive fallback if a caller passed unsorted
+    # input (detected via a cheap necessary-condition check on the leading key).
+    sort_keys = ["driver_id", "trip_start", "trip_end", "segment_id"]
+    if not trip_segments["driver_id"].is_monotonic_increasing:
+        trip_segments = trip_segments.sort_values(sort_keys, kind="mergesort")
+    segments = trip_segments.reset_index(drop=True)
     prev_end = segments.groupby("driver_id")["trip_end"].shift()
     gap_min = (segments["trip_start"] - prev_end).dt.total_seconds().div(60)
     new_chain = prev_end.isna() | (gap_min > max_gap_minutes)
