@@ -309,6 +309,9 @@ def stage_order_assignments(
     segment_to_cluster = dict(zip(partition["seg_id"].astype(str), partition["cluster_id"].astype(str)))
     segments = partition[["seg_id", "geometry"]].copy()
 
+    from roadnet_partition.pipeline.timing import get_active_timer
+    timer = get_active_timer()
+
     order_id_col = order_config["order_id_column"]
     driver_col = order_config["driver_id_column"]
     pickup_lon = order_config["pickup_lon_column"]
@@ -339,15 +342,20 @@ def stage_order_assignments(
     for file_index, dataset in enumerate(inputs["order_datasets"]):
         order_path = Path(project_path(dataset))
         print(f"Reading orders from {order_path}...")
-        for chunk_index, chunk in enumerate(
-            pd.read_csv(
-                order_path,
-                usecols=usecols,
-                chunksize=chunksize,
-                dtype={order_id_col: "string", driver_col: "string"},
-            ),
-            start=1,
-        ):
+        reader = pd.read_csv(
+            order_path,
+            usecols=usecols,
+            chunksize=chunksize,
+            dtype={order_id_col: "string", driver_col: "string"},
+        )
+        chunk_index = 0
+        while True:
+            with timer.phase("csv_parse"):
+                try:
+                    chunk = next(reader)
+                except StopIteration:
+                    break
+            chunk_index += 1
             stats["rows_read"] += int(len(chunk))
             chunk["source_row"] = chunk.index.astype("int64")
             departure = to_datetime_ns(chunk[departure_col])
@@ -430,7 +438,8 @@ def stage_order_assignments(
                     "dropoff_match_distance_m": dropoff_match.loc[both_valid, "distance_m"].astype(float).to_numpy(),
                 }
             )
-            stage.to_sql("staged_orders", connection, if_exists="append", index=False)
+            with timer.phase("sqlite_append"):
+                stage.to_sql("staged_orders", connection, if_exists="append", index=False)
             stats["staged_rows"] += int(len(stage))
 
             print(
@@ -608,6 +617,9 @@ def run_from_config(config: dict[str, Any]) -> None:
     if "order_pipeline" not in config:
         raise ValueError("configuration must contain an order_pipeline section.")
 
+    from roadnet_partition.pipeline.timing import reset as _reset_timer
+    timer = _reset_timer("demand")
+
     output_dir = resolve_output_root(config)
     output_dir.mkdir(parents=True, exist_ok=True)
     pipeline = config["order_pipeline"]
@@ -628,26 +640,29 @@ def run_from_config(config: dict[str, Any]) -> None:
     try:
         order_stats = stage_order_assignments(connection, config, partition)
         print("Inferring service types from driver time overlaps...")
-        service_counts = label_staged_service_types(connection)
+        with timer.phase("service_labeling"):
+            service_counts = label_staged_service_types(connection)
 
         assigned_path = output_dir / "orders_region_assigned.csv.gz"
         print(f"Exporting assigned orders to {assigned_path}...")
-        export_assigned_orders(connection, assigned_path)
+        with timer.phase("gzip_write"):
+            export_assigned_orders(connection, assigned_path)
 
         slot_suffix = f"{int(pipeline['time_slot_minutes'])}min"
-        od = build_cluster_od_from_staging(connection)
-        od_path = output_dir / f"cluster_od_{slot_suffix}.csv"
-        od.to_csv(od_path, index=False)
+        with timer.phase("od_aggregation"):
+            od = build_cluster_od_from_staging(connection)
+            od_path = output_dir / f"cluster_od_{slot_suffix}.csv"
+            od.to_csv(od_path, index=False)
 
-        staged_time_bounds = load_staged_slot_bounds(connection)
-        tensor_slot_labels = build_slot_labels_from_bounds(
-            staged_time_bounds["min_slot_start_ns"],
-            staged_time_bounds["max_slot_start_ns"],
-            int(pipeline["time_slot_minutes"]),
-        )
-        tensors = build_od_tensors(od, cluster_ids, tensor_slot_labels)
-        tensor_path = output_dir / f"od_tensor_{slot_suffix}.npz"
-        np.savez_compressed(tensor_path, **tensors)
+            staged_time_bounds = load_staged_slot_bounds(connection)
+            tensor_slot_labels = build_slot_labels_from_bounds(
+                staged_time_bounds["min_slot_start_ns"],
+                staged_time_bounds["max_slot_start_ns"],
+                int(pipeline["time_slot_minutes"]),
+            )
+            tensors = build_od_tensors(od, cluster_ids, tensor_slot_labels)
+            tensor_path = output_dir / f"od_tensor_{slot_suffix}.npz"
+            np.savez_compressed(tensor_path, **tensors)
         completed = True
     finally:
         connection.close()
@@ -706,6 +721,7 @@ def run_from_config(config: dict[str, Any]) -> None:
     with metadata_path.open("w", encoding="utf-8") as handle:
         json.dump(json_safe(metadata), handle, ensure_ascii=False, indent=2)
 
+    timer.report()
     print(f"Saved order-region pipeline outputs to {output_dir}")
     print(f"Saved metadata to {metadata_path}")
 

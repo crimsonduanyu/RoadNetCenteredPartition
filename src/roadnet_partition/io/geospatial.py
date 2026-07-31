@@ -316,18 +316,30 @@ def match_points_to_segments_with_distance(
     if not bool(valid.any()):
         return result
 
-    points = gpd.GeoDataFrame(
-        {"row_id": frame.index[valid]},
-        geometry=[Point(xy) for xy in zip(frame.loc[valid, lon_col], frame.loc[valid, lat_col])],
-        crs=source_crs,
-    ).to_crs(segments.crs)
-    joined = gpd.sjoin_nearest(
-        points,
-        segments[["seg_id", "geometry"]],
-        how="left",
-        max_distance=max_distance_m,
-        distance_col="distance_m",
-    )
+    from roadnet_partition.pipeline.timing import get_active_timer
+    timer = get_active_timer()
+
+    with timer.phase("point_construction"):
+        points = gpd.GeoDataFrame(
+            {"row_id": frame.index[valid]},
+            geometry=[Point(xy) for xy in zip(frame.loc[valid, lon_col], frame.loc[valid, lat_col])],
+            crs=source_crs,
+        ).to_crs(segments.crs)
+    seg_view = segments[["seg_id", "geometry"]]
+    if timer.enabled:
+        # Pre-build the STRtree so spatial-index build is timed separately from the
+        # sjoin_nearest query. Result-equivalent (sjoin_nearest builds/uses the
+        # index either way) and only runs when timing is enabled.
+        with timer.phase("spatial_index_build"):
+            _ = seg_view.sindex
+    with timer.phase("nearest_query"):
+        joined = gpd.sjoin_nearest(
+            points,
+            seg_view,
+            how="left",
+            max_distance=max_distance_m,
+            distance_col="distance_m",
+        )
     matched = joined.dropna(subset=["seg_id"]).drop_duplicates("row_id")
     if matched.empty:
         return result
