@@ -770,23 +770,27 @@ def run_chunked_pipeline(
         # Invariant 4: dedup in-service-union-idle WITHIN the block, then block-sum.
         fleet = compute_fleet_lower_bound(idle_driver_slots, trip_driver_slots)
 
-        # Accumulate via global index maps (invariant 3).
+        # Accumulate via global index maps (invariant 3). Indices are duplicate-
+        # free within each call (groupby().nunique() / drop_duplicates upstream),
+        # so the buffered += is equivalent to np.add.at and faster (no unbuffered
+        # scatter); cross-block accumulation is unchanged (each call is a correct
+        # increment onto the shared dense accumulator).
         if not in_service.empty:
             t = _slot_positions(in_service["slot_start"], slots)
             i = _cluster_positions(in_service["origin_cluster_id"], clusters)
             j = _cluster_positions(in_service["destination_cluster_id"], clusters)
-            np.add.at(A, (t, i, j), in_service["vehicles_in_service"].to_numpy())
+            A[t, i, j] += in_service["vehicles_in_service"].to_numpy()
         if not available.empty:
             t = _slot_positions(available["slot_start"], slots)
             c = _cluster_positions(available["cluster_id"], clusters)
-            np.add.at(B, (t, c), available["available_vehicles"].to_numpy())
+            B[t, c] += available["available_vehicles"].to_numpy()
         if not fleet.empty:
             t = _slot_positions(fleet["slot_start"], slots)
             c = _cluster_positions(fleet["cluster_id"], clusters)
-            np.add.at(Fc, (t, c), fleet["fleet_lower_bound_cluster"].to_numpy())
+            Fc[t, c] += fleet["fleet_lower_bound_cluster"].to_numpy()
             g = fleet[["slot_start", "global_fleet_lower_bound"]].drop_duplicates("slot_start")
             tg = _slot_positions(g["slot_start"], slots)
-            np.add.at(Fg, tg, g["global_fleet_lower_bound"].to_numpy())
+            Fg[tg] += g["global_fleet_lower_bound"].to_numpy()
 
         block_summaries.append({"block": b, "orders": int(len(block)), "drivers": int(len(block_drivers)),
                                 "in_service_rows": int(len(in_service))})

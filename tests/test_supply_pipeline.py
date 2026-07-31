@@ -297,3 +297,36 @@ def test_build_trip_segments_sorted_precondition() -> None:
     for prev, curr in zip(segments[keys].iloc[:-1].itertuples(index=False, name=None),
                           segments[keys].iloc[1:].itertuples(index=False, name=None)):
         assert prev <= curr, f"rows not sorted by {keys}: {prev} > {curr}"
+
+
+def test_supply_accumulator_indices_unique() -> None:
+    """SUP-03 replaces np.add.at with buffered +=, which is only correct when the
+    per-call (t,i,j)/(t,c) indices are duplicate-free. The upstream groupby().nunique()
+    / drop_duplicates guarantee this; the test proves it on overlapping multi-driver data."""
+    module = load_module()
+    slot = pd.Timestamp("2017-06-01 08:00:00")
+    # Two drivers, same OD and overlapping times -> forces aggregation to one row.
+    trip_segments = pd.DataFrame([
+        {"segment_id": "order_1", "driver_id": 10, "trip_start": slot, "trip_end": slot + pd.Timedelta(minutes=10),
+         "origin_cluster_id": 1, "destination_cluster_id": 2, "service_type": "exclusive"},
+        {"segment_id": "order_2", "driver_id": 11, "trip_start": slot, "trip_end": slot + pd.Timedelta(minutes=12),
+         "origin_cluster_id": 1, "destination_cluster_id": 2, "service_type": "exclusive"},
+        {"segment_id": "carpool_10_0", "driver_id": 10, "trip_start": slot + pd.Timedelta(minutes=20),
+         "trip_end": slot + pd.Timedelta(minutes=30), "origin_cluster_id": 2, "destination_cluster_id": 1,
+         "service_type": "carpool"},
+    ])
+    in_service, trip_slots = module.compute_in_service_od(trip_segments, slot_duration_min=10, return_driver_slots=True)
+    assert not in_service.empty
+    assert not in_service.duplicated(["slot_start", "origin_cluster_id", "destination_cluster_id"]).any()
+
+    idle_windows = pd.DataFrame([
+        {"chain_id": "10_0", "driver_id": 10, "idle_start": slot + pd.Timedelta(minutes=12),
+         "idle_end": slot + pd.Timedelta(minutes=20), "idle_cluster_id": 2, "idle_duration_s": 480.0},
+    ])
+    available, idle_slots = module.compute_available_by_cluster(idle_windows, slot_duration_min=10, return_driver_slots=True)
+    assert not available.empty
+    assert not available.duplicated(["slot_start", "cluster_id"]).any()
+
+    fleet = module.compute_fleet_lower_bound(idle_slots, trip_slots)
+    assert not fleet.empty
+    assert not fleet.duplicated(["slot_start", "cluster_id"]).any()
