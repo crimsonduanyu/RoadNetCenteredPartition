@@ -1,19 +1,12 @@
 # Installation
 
-Python 3.11 or newer is required. Repository acceptance is run in the existing
-`dydl` Conda environment:
+Python 3.11 and 64-bit Linux are the supported reference platform. Create a
+fresh `dydl` Conda environment:
 
 ```bash
-conda run -n dydl pip install -e . --no-deps
-conda run -n dydl roadnet-partition --help
+conda env create --prefix ./.conda/dydl -f environment.yml
+conda run --prefix ./.conda/dydl pip install -e . --no-deps
+conda run --prefix ./.conda/dydl roadnet-partition --help
 ```
 
-To create a standalone environment from the repository specification instead:
-
-```bash
-conda env create -f environment.yml
-conda run -n bj_road_partition pip install -e . --no-deps
-```
-
-The package does not download Beijing orders, POI data, road-network extracts,
-Golden payloads, or historical baselines.
+The package does not download private raw inputs or optional external Golden data.

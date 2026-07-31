@@ -3,10 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
-import subprocess
 
 import geopandas as gpd
-import pytest
 
 from roadnet_partition.io.manifests import file_record, load_manifest
 from roadnet_partition.pipeline.runner import _external_inputs, resolve_pipeline_config
@@ -17,28 +15,6 @@ from test_phase7_release import complete_run
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLDEN = ROOT / "artifacts/golden/beijing-fifth-ring-v1"
-def _manifest() -> dict:
-    return json.loads((GOLDEN / "manifest.json").read_text(encoding="utf-8"))
-
-
-def test_official_golden_partition_contract_and_read_only_payload() -> None:
-    manifest = _manifest()
-    contract = manifest["expected_contracts"]["partition"]
-    asset = next(item for item in manifest["assets"] if item["logical_name"] == contract["asset"])
-    path = GOLDEN / asset["relative_path"]
-    if not path.is_file():
-        pytest.skip("local-only Golden payload is unavailable")
-    before = file_record(path)
-    clusters = gpd.read_file(path)
-    summary = validate_partition(clusters, expected_crs=contract["crs"], expected_bounds=contract["bounds"])
-    assert summary["segment_count"] == contract["segment_count"] == 59096
-    assert summary["cluster_count"] == contract["cluster_count"] == 100
-    assert _grouping_hash(clusters) == contract["grouping_sha256"] == "11ac2e21b2f6f22498c250ee7eeaefe0f2c65ef5e5952e1c6722bac9154633c7"
-    assert path.stat().st_mode & 0o222 == 0
-    assert file_record(path) == before
-
-
 def _tiny_golden(run_dir: Path, destination: Path) -> Path:
     run_manifest = load_manifest(run_dir)
     outputs = run_manifest["stages"]["partition"]["outputs"]
@@ -113,22 +89,13 @@ def test_production_full_config_resolves_and_external_inventory_exists() -> None
     second = resolve_pipeline_config(ROOT / "configs/pipelines/full.yaml")
     assert first.fingerprint == second.fingerprint
     assert first.scope == "fifth_ring"
-    if not (ROOT / "data/interim/fifth_ring/frozen_inputs/segment_relation_graph_road_poi_order.gpickle").is_file():
-        pytest.skip("local-only production frozen input is unavailable")
     inventory = _external_inputs(first)
-    assert inventory
+    assert set(inventory) == {
+        "preparation.raw_edges", "preparation.boundary", "preparation.ring_segments",
+        "preparation.poi", "preparation.zoning_orders", "demand.orders.0",
+        "demand.poi", "tte.graphml",
+    }
     assert all(Path(record["path"]).is_file() for record in inventory.values())
-    legacy_name = _manifest()["source_inventory"]["path"]
-    assert not any(legacy_name in str(record["path"]) for record in inventory.values())
-    assert Path(first.stages["demand"].values["order_pipeline"]["inputs"]["partition_gpkg"]) == (
-        ROOT / "data/processed/fifth_ring/partition/canonical_partition.gpkg"
-    )
-
-
-def test_golden_version_is_immutable_by_policy() -> None:
-    readme = (GOLDEN / "README.md").read_text(encoding="utf-8")
-    assert "new version directory" in readme
-    assert "reproduction release" in readme
 
 
 def test_phase8_config_docs_package_and_git_boundaries() -> None:
@@ -138,30 +105,14 @@ def test_phase8_config_docs_package_and_git_boundaries() -> None:
         ROOT / "configs/pipelines/supply.yaml", ROOT / "configs/pipelines/tte.yaml",
         ROOT / "configs/pipelines/full.yaml",
     ]
-    legacy_name = _manifest()["source_inventory"]["path"]
-    assert all(legacy_name not in path.read_text(encoding="utf-8") for path in formal_configs)
-    assert all(
-        legacy_name not in path.read_text(encoding="utf-8")
-        for path in (ROOT / "src/roadnet_partition").rglob("*.py")
-    )
+    assert all("artifacts/" not in path.read_text(encoding="utf-8") for path in formal_configs)
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "three-stage" not in readme and "三阶段" not in readme
     for command in ("roadnet-partition run", "roadnet-partition validate", "roadnet-partition publish", "export-reproduction"):
         assert command in readme
-    assert "Linux is the current" in readme and "--dry-run" in readme
+    assert "data/raw/" in readme and "--resume" in readme
 
     history = (ROOT / "docs/history/refactor-v1.md").read_text(encoding="utf-8")
     assert "split configuration" in history
     assert "Linux is the current Fifth Ring canonical platform" in history
     assert "transactional publishing" in history
-
-    ignored = subprocess.run(
-        ["git", "check-ignore", "-q", str(GOLDEN / "expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg")],
-        cwd=ROOT, check=False,
-    )
-    assert ignored.returncode == 0
-    tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", str(GOLDEN / "expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg")],
-        cwd=ROOT, check=False, capture_output=True,
-    )
-    assert tracked.returncode != 0

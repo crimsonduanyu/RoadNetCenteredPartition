@@ -6,7 +6,7 @@ working directory.
 
 Normal production inputs live under `data/`. Partition initialization and its
 canonical expected contract are explicitly versioned under
-`artifacts/golden/beijing-fifth-ring-v1/`. Demand, Supply, and TTE receive
+an optional external Golden path. Demand, Supply, and TTE receive
 same-run upstream outputs through fixed runtime bindings; their configured
 `data/processed/` paths are standalone fallbacks only.
 

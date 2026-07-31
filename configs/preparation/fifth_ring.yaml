@@ -1,0 +1,65 @@
+schema_version: 1
+dataset_config: ../datasets/fifth_ring.yaml
+scope: fifth_ring
+
+inputs:
+  raw_edges: ../../data/raw/beijing_edges_raw.gpkg
+  boundary: ../../data/raw/beijing_fifth_ring_boundary.gpkg
+  ring_segments: ../../data/raw/beijing_fifth_ring_segments.gpkg
+  poi: ../../data/raw/beijing_poi_2017.csv
+  zoning_orders: ../../data/raw/beijing_order_201710.csv
+
+road_filter:
+  keep_highway: [motorway, trunk, primary, secondary, tertiary, unclassified, residential, living_street, service, motorway_link, trunk_link, primary_link, secondary_link, tertiary_link]
+  exclude_highway: [footway, pedestrian, path, cycleway, steps, bridleway, corridor, construction, proposed, track, road, busway]
+  exclude_access_values: ["no", private, agricultural, forestry, delivery, permit, customers, emergency, unknown, dismount, use_sidepath]
+  allow_access_values: ["yes", permissive, destination]
+  allow_designated_access_columns: [taxi, motorcar, motor_vehicle, psv]
+  exclude_service_values: [parking_aisle, driveway, drive-through, emergency_access]
+  connector_highway: [motorway_link, trunk_link, primary_link, secondary_link, tertiary_link]
+
+connector_rules:
+  max_connector_length_m: 120
+
+continuity:
+  same_name_bonus: 2.0
+  same_osm_id_bonus: 1.5
+  same_highway_bonus: 0.5
+  angle_threshold_deg: 35
+
+graph_weights:
+  direct_adjacency_weight: 1.0
+  connector_adjacency_weight: 0.8
+  continuity_weight: 2.0
+
+poi:
+  lon_column: "大地X"
+  lat_column: "大地Y"
+  category_column: "类型1"
+  buffer_m: 100
+
+orders:
+  start_time: "2017-10-16 00:00:00"
+  end_time: "2017-10-23 00:00:00"
+  chunksize: 200000
+  max_match_distance_m: 250
+  pickup_lon_column: starting_lng
+  pickup_lat_column: starting_lat
+  dropoff_lon_column: dest_lng
+  dropoff_lat_column: dest_lat
+  time_column: departure_time
+  morning_peak_hours: [7, 8, 9, 10]
+  evening_peak_hours: [17, 18, 19]
+  night_hours: [0, 1, 2, 3, 4, 5, 6, 22, 23]
+
+similarity:
+  poi_composition_weight: 0.7
+  poi_density_weight: 0.2
+  poi_entropy_weight: 0.1
+  poi_weight: 1.0
+  order_weight: 1.0
+
+baseline:
+  algorithm: leiden
+  resolution: 0.6
+  random_state: 42

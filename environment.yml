@@ -14,6 +14,7 @@ dependencies:
   - pyproj
   - networkx
   - pandas
+  - pyarrow
   - numpy
   - matplotlib
   - scikit-learn
@@ -26,6 +27,7 @@ dependencies:
   - pyogrio
   - rtree
   - fiona
+  - pytest
   - pip
   - pip:
       - python-louvain

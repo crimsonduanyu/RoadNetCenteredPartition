@@ -641,7 +641,7 @@ def run_tte(config: ResolvedStageConfig, context: RunContext) -> StageResult:
         "orders_path", "cluster_index_path", "network_distance_path",
         "representative_nodes_path",
     ):
-        if key in inputs:
+        if inputs.get(key) is not None:
             inputs[key] = str(resolve_path(inputs[key], base_dir=base_dir))
     distance = deepcopy(dict(stage.get("distance", {})))
     for key in ("graphml_path", "classified_edges_path", "partition_gpkg"):

@@ -65,6 +65,7 @@ _PIPELINE_SCHEMA = {
     "project_root": config_module._ANY,
     "scope": config_module._ANY,
     "run": {"root": config_module._ANY, "isolate_stages": config_module._ANY},
+    "preparation": {"config": config_module._ANY},
     "stages": {
         stage: {"config": config_module._ANY, "required": config_module._ANY}
         for stage in STAGE_ORDER
@@ -108,11 +109,18 @@ def resolve_pipeline_config(path: str | Path) -> ResolvedPipelineConfig:
             "source_fingerprint": resolved.fingerprint,
             "required": entry["required"],
         }
+    preparation = raw.get("preparation")
+    preparation_path = None
+    if preparation is not None:
+        preparation_path = resolve_path(preparation["config"], base_dir=source.parent)
+        if not preparation_path.is_file():
+            raise ConfigError(f"{source}: preparation.config does not exist: {preparation_path}")
     values = {
         "schema_version": 1,
         "project_root": project_root.as_posix(),
         "scope": scope,
         "run": {"root": run_root.as_posix(), "isolate_stages": isolation},
+        "preparation": None if preparation_path is None else {"config": preparation_path.as_posix()},
         "stage_order": list(STAGE_ORDER),
         "stages": stage_values,
     }
@@ -140,6 +148,19 @@ def _validate_stage_range(from_stage: str, to_stage: str) -> tuple[int, int]:
 
 
 def _external_inputs(config: ResolvedPipelineConfig) -> dict[str, Mapping[str, Any]]:
+    preparation = config.values.get("preparation")
+    if preparation:
+        from roadnet_partition.pipeline.preparation import input_records, load_config
+
+        records = input_records(load_config(Path(preparation["config"]), config.project_root))
+        demand = config.stages["demand"].values["order_pipeline"]["inputs"]
+        records.update({
+            **{f"demand.orders.{index}": file_record(path) for index, path in enumerate(demand["order_datasets"])},
+            "demand.poi": file_record(demand["poi_path"]),
+        })
+        distance = config.stages["tte"].values["stage4_tte"]["distance"]
+        records["tte.graphml"] = file_record(distance["graphml_path"])
+        return records
     records = {f"partition.{name}": record for name, record in collect_stage_inputs("partition", config.stages["partition"]).items()}
     demand = config.stages["demand"].values["order_pipeline"]["inputs"]
     records.update({
@@ -155,6 +176,44 @@ def _external_inputs(config: ResolvedPipelineConfig) -> dict[str, Mapping[str, A
         records["tte.distance.graphml_path"] = file_record(tte["distance"]["graphml_path"])
         records["tte.distance.classified_edges_path"] = file_record(tte["distance"]["classified_edges_path"])
     return records
+
+
+def _with_preparation_outputs(
+    config: ResolvedPipelineConfig,
+    outputs: Mapping[str, Path],
+) -> ResolvedPipelineConfig:
+    stages = dict(config.stages)
+    fields = {
+        "partition": {
+            "inputs.graph": outputs["graph"],
+            "inputs.relation_edges": outputs["relation_edges"],
+            "inputs.classified_edges": outputs["classified_edges"],
+            "inputs.segment_nodes": outputs["segment_nodes"],
+            "inputs.poi_features": outputs["poi_features"],
+            "inputs.order_features": outputs["order_features"],
+            "inputs.hourly_od": outputs["hourly_od"],
+            "inputs.baseline_clusters.leiden": outputs["baseline_leiden"],
+        },
+        "demand": {
+            "order_pipeline.inputs.road_relation_edges_csv": outputs["relation_edges"],
+        },
+        "tte": {
+            "stage4_tte.distance.classified_edges_path": outputs["classified_edges"],
+        },
+    }
+    for stage, replacements in fields.items():
+        base = stages[stage]
+        values = deepcopy(dict(base.values))
+        for field, value in replacements.items():
+            _set_field(values, field, str(value))
+        stages[stage] = ResolvedStageConfig(
+            base.source_path, values, config_fingerprint(values), base.stage,
+            base.scope, base.project_root, base.dataset_path,
+        )
+    return ResolvedPipelineConfig(
+        config.source_path, config.project_root, config.scope, config.run_root,
+        config.isolate_stages, stages, config.values, config.fingerprint,
+    )
 
 
 def _write_manifest(context: RunContext, manifest: dict[str, Any]) -> None:
@@ -557,12 +616,21 @@ def run_pipeline(
 
     active_stage: str | None = None
     try:
+        runtime_config = config
+        preparation = config.values.get("preparation")
+        if preparation:
+            from roadnet_partition.pipeline.preparation import run as run_preparation
+
+            prepared_outputs = run_preparation(
+                Path(preparation["config"]), config.project_root, destination / "preparation",
+            )
+            runtime_config = _with_preparation_outputs(config, prepared_outputs)
         for upstream in STAGE_ORDER[:start]:
-            upstream_config, upstream_inputs, _ = _prepare_stage(config, context, upstream)
+            upstream_config, upstream_inputs, _ = _prepare_stage(runtime_config, context, upstream)
             _validate_completed_stage(context, upstream, upstream_config, upstream_inputs)
         for stage in STAGE_ORDER[start:stop + 1]:
             active_stage = stage
-            resolved, inputs, bindings = _prepare_stage(config, context, stage)
+            resolved, inputs, bindings = _prepare_stage(runtime_config, context, stage)
             snapshot_path = assert_owned_path(destination / "resolved_configs" / f"{stage}.yaml", destination)
             atomic_write_yaml(snapshot_path, _stage_snapshot(
                 resolved, bindings,

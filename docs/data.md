@@ -1,8 +1,8 @@
 # Data and privacy
 
-Private data is not distributed with this repository. Local payloads belong
-under `data/raw/`, `data/interim/`, and `data/processed/`; these directories are
-ignored except for documentation or explicitly reviewed synthetic samples.
+Private data is not distributed with this repository. User-supplied sources
+belong under `data/raw/`; preparation and all later products are written only
+under the owned run in `outputs/runs/`.
 
 ## Input schemas
 
@@ -41,15 +41,7 @@ The TTE matrices use a datetime index and ordered `origin->destination` cluster
 columns. The default grid has ten-minute slots; observed trip times are positive
 durations in the configured 3–80 minute range.
 
-## Provenance assets
-
-- `artifacts/golden/beijing-fifth-ring-v1/`: regression metadata; private
-  payload is local-only.
-- `artifacts/baselines/fifth-ring-windows-v1/`: historical Windows baseline
-  metadata; its payload is private and local-only.
-- `configs/policies/fifth_ring_linux_canonical_v1.yaml`: Linux canonical
-  publication decision.
-
-Neither a manifest nor a successful reproduction export grants a public data
-license. Do not commit order rows, driver identifiers, precise trip coordinates,
-or derived private matrices.
+Optional Golden validation accepts an explicit external path. Neither a run
+manifest nor a successful reproduction export grants a public data license. Do
+not commit order rows, driver identifiers, precise trip coordinates, or derived
+private matrices.

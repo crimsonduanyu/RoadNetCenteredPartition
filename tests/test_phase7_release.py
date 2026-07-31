@@ -245,26 +245,6 @@ def test_publish_staging_and_post_switch_validation_failures_roll_back(
     assert (target / "old.txt").is_file()
 
 
-def test_publish_contract_accepts_only_hash_equal_relocated_partition_input(tmp_path: Path) -> None:
-    project, run_dir = complete_run(tmp_path)
-    manifest = load_manifest(run_dir)
-    context = publishing._context(run_dir, manifest)
-    config, _ = validation._load_stage_config(
-        run_dir / "resolved_configs/partition.yaml", "partition", context.project_root,
-    )
-    original = Path(config.values["inputs"]["segment_nodes"])
-    relocated = project / "data/interim/tiny/frozen_inputs" / original.name
-    relocated.parent.mkdir(parents=True)
-    shutil.copy2(original, relocated)
-    values = deepcopy(config.values)
-    values["inputs"]["segment_nodes"] = (tmp_path / "removed" / original.name).as_posix()
-    repaired = publishing._contract_config("partition", replace(config, values=values), manifest)
-    assert Path(repaired.values["inputs"]["segment_nodes"]) == relocated
-    relocated.write_bytes(b"damaged")
-    with pytest.raises(PublishError, match="differs"):
-        publishing._contract_config("partition", replace(config, values=values), manifest)
-
-
 def test_publish_dirty_gate_and_run_kind_requirements(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _, run_dir = complete_run(tmp_path)
     dirty = {"commit": "abc", "dirty": True, "changed_files": ["local.txt"], "diff_sha256": "d" * 64}

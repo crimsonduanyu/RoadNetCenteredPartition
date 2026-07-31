@@ -20,7 +20,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FORMAL = PROJECT_ROOT / "data/processed/fifth_ring/order_pipeline/orders_region_assigned.csv.gz"
 DEFAULT_LINUX = PROJECT_ROOT / "outputs/validation/phase5a-demand/phase5a-full-v1/demand/orders_region_assigned.csv.gz"
 DEFAULT_ORDERS = PROJECT_ROOT / "data/raw/beijing_orders_2017-06_2017-08.csv"
-DEFAULT_PARTITION = PROJECT_ROOT / "artifacts/golden/beijing-fifth-ring-v1/expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg"
 DEFAULT_OUTPUT = PROJECT_ROOT / "outputs/validation/phase5a-demand/phase5a-spatial-diagnostics-v1.json"
 
 ASSIGNED_COLUMNS = [
@@ -362,7 +361,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--formal", type=Path, default=DEFAULT_FORMAL)
     parser.add_argument("--linux", type=Path, default=DEFAULT_LINUX)
     parser.add_argument("--orders", type=Path, default=DEFAULT_ORDERS)
-    parser.add_argument("--partition", type=Path, default=DEFAULT_PARTITION)
+    parser.add_argument("--partition", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--source-crs", default="EPSG:4326")
     parser.add_argument("--chunk-size", type=int, default=500_000)

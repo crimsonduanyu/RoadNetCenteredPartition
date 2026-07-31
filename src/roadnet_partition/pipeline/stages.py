@@ -294,19 +294,7 @@ def prepare_stage_contract_config(
     config: ResolvedStageConfig,
     input_records: Mapping[str, Mapping[str, Any]],
 ) -> ResolvedStageConfig:
-    if stage != "partition":
-        return config
-    original = Path(config.values["inputs"]["segment_nodes"])
-    if original.is_file():
-        return config
-    candidate = config.project_root / "data/interim" / config.scope / "frozen_inputs" / original.name
-    expected = input_records["segment_nodes"]
-    actual = file_record(candidate)
-    if actual["size"] != expected["size"] or actual["sha256"] != expected["sha256"]:
-        raise ValueError("relocated Partition segment_nodes differs from source run input")
-    values = deepcopy(config.values)
-    values["inputs"]["segment_nodes"] = candidate.as_posix()
-    return replace(config, values=values)
+    return config
 
 
 def canonical_partition_output_key(outputs: Mapping[str, Any]) -> str:

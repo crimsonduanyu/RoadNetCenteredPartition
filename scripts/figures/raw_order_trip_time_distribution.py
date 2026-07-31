@@ -19,7 +19,7 @@ def main() -> None:
         type=Path,
         default=PROJECT_ROOT / "data/raw/beijing_orders_2017-06_2017-08.csv",
     )
-    parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "artifacts/paper/figures")
+    parser.add_argument("--output-dir", type=Path, default=PROJECT_ROOT / "outputs/figures")
     parser.add_argument("--chunksize", type=int, default=2_000_000)
     args = parser.parse_args()
 

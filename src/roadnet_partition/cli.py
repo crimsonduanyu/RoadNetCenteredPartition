@@ -50,8 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(
         dest="command",
-        metavar="{run,validate,publish,export-reproduction,partition,demand,supply,tte}",
+        metavar="{check-raw,run,validate,publish,export-reproduction,partition,demand,supply,tte}",
     )
+    check_parser = subparsers.add_parser("check-raw", help="Check required raw files and schemas without generating outputs.")
+    check_parser.add_argument("--config", type=Path, required=True, help="Full pipeline YAML configuration.")
     pipeline_parser = subparsers.add_parser("run", help="Run the fixed partition → demand → supply → tte pipeline.")
     pipeline_parser.add_argument("--config", type=Path, required=True, help="Full pipeline YAML configuration.")
     pipeline_parser.add_argument("--run-id")
@@ -106,6 +108,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
         return 0
     try:
+        if parsed.command == "check-raw":
+            from roadnet_partition.pipeline.preparation import check_raw
+            from roadnet_partition.pipeline.runner import resolve_pipeline_config
+
+            pipeline = resolve_pipeline_config(parsed.config)
+            preparation = pipeline.values.get("preparation")
+            if not preparation:
+                raise ConfigError(f"{parsed.config}: preparation.config is required for raw checks")
+            check_raw(Path(preparation["config"]), pipeline.project_root)
+            from roadnet_partition.pipeline.runner import _external_inputs
+            records = _external_inputs(pipeline)
+            for name, record in records.items():
+                print(f"{name}: {record['size']} bytes {record['sha256']}")
+            return 0
         if parsed.command == "validate":
             from roadnet_partition.pipeline.validation import validate_run
 

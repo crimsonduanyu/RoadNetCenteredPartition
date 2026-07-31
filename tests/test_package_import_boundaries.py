@@ -15,11 +15,7 @@ PACKAGE_ROOT = PROJECT_ROOT / "src/roadnet_partition"
 
 def test_repository_has_no_active_legacy_execution_references() -> None:
     allowed = {
-        "artifacts/golden/beijing-fifth-ring-v1/README.md",
-        "artifacts/golden/beijing-fifth-ring-v1/manifest.json",
-        "artifacts/baselines/fifth-ring-windows-v1/payload/order_pipeline/metadata.json",
         "configs/legacy/config.pre-refactor.yaml",
-        "data/interim/fifth_ring/frozen_inputs/provenance.json",
         "docs/history/refactor-v1.md",
     }
     patterns = (
@@ -33,10 +29,12 @@ def test_repository_has_no_active_legacy_execution_references() -> None:
     suffixes = {".py", ".md", ".json", ".yaml", ".yml", ".txt", ".sh", ".toml", ".sha256"}
     violations = []
     for path in PROJECT_ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts or path.suffix not in suffixes:
+        if not path.is_file() or path.suffix not in suffixes:
+            continue
+        if any(part in {".git", ".conda", ".venv", "venv", "env"} for part in path.parts):
             continue
         relative = path.relative_to(PROJECT_ROOT).as_posix()
-        if relative.startswith("outputs/"):
+        if relative.startswith(("outputs/", "data/")):
             continue
         if relative in allowed:
             continue

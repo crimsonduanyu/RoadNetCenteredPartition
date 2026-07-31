@@ -6,6 +6,9 @@ run:
   root: ../../outputs/runs
   isolate_stages: true
 
+preparation:
+  config: ../preparation/fifth_ring.yaml
+
 stages:
   # Fixed order and runtime bindings are owned by the runner; stage fallback
   # paths are used only by standalone commands.

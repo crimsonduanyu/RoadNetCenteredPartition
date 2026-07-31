@@ -3,26 +3,25 @@ dataset_config: ../datasets/fifth_ring.yaml
 scope: fifth_ring
 
 contract:
-  verify_canonical: true
-  expected_partition: ../../artifacts/golden/beijing-fifth-ring-v1/expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg
+  verify_canonical: false
+  expected_partition: null
 
 stage1_partition:
   graph_variant: road_poi_order
   regularized:
     initialization: leiden
     inputs:
-      graph: ../../data/interim/fifth_ring/frozen_inputs/segment_relation_graph_road_poi_order.gpickle
-      relation_edges: ../../data/interim/fifth_ring/frozen_inputs/segment_relation_edges_road_poi_order.csv
-      classified_edges: ../../data/interim/fifth_ring/road_edges_classified.gpkg
+      # Standalone placeholders. Full runs bind run-owned preparation outputs.
+      graph: ../../outputs/preparation/segment_relation_graph_road_poi_order.gpickle
+      relation_edges: ../../outputs/preparation/segment_relation_edges_road_poi_order.csv
+      classified_edges: ../../outputs/preparation/road_edges_classified.gpkg
       boundary: ../../data/raw/beijing_fifth_ring_boundary.gpkg
-      segment_nodes: ../../data/interim/fifth_ring/frozen_inputs/segment_nodes.gpkg
-      poi_features: ../../data/interim/fifth_ring/frozen_inputs/segment_poi_features.csv
-      order_features: ../../data/interim/fifth_ring/frozen_inputs/segment_order_features.csv
-      hourly_od: ../../data/interim/fifth_ring/frozen_inputs/segment_order_od_hourly.csv
+      segment_nodes: ../../outputs/preparation/segment_nodes.gpkg
+      poi_features: ../../outputs/preparation/segment_poi_features.csv
+      order_features: ../../outputs/preparation/segment_order_features.csv
+      hourly_od: ../../outputs/preparation/segment_order_od_hourly.csv
     baseline_clusters:
-      louvain: ../../artifacts/golden/beijing-fifth-ring-v1/legacy_comparisons/louvain/segment_clusters_road_poi_order_louvain_res0p522.gpkg
-      leiden: ../../artifacts/golden/beijing-fifth-ring-v1/inputs/segment_clusters_road_poi_order_leiden_res0p6.gpkg
-      demand_region_growing: ../../artifacts/golden/beijing-fifth-ring-v1/legacy_comparisons/demand_region_growing/segment_clusters_road_poi_order_demand_region_growing.gpkg
+      leiden: ../../outputs/preparation/segment_clusters_road_poi_order_leiden_res0p6.gpkg
     objective:
       target_clusters: 100
       capacity_loss: squared_hinge
@@ -52,9 +51,7 @@ stage1_partition:
       grid:
         merge_split_enabled: [false]
   outputs:
-    # Compatibility alias for the explicit read-only contract above; stage
-    # execution still writes only to its owned run directory.
-    canonical_partition: ../../artifacts/golden/beijing-fifth-ring-v1/expected/partition/segment_clusters_road_poi_order_regularized_leiden_lc1p0_lr1p0.gpkg
+    canonical_partition: null
 
 standalone:
   output_dir: ../../outputs/runs

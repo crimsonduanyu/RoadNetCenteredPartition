@@ -34,24 +34,26 @@ writes `outputs/runs`; canonical replacement is allowed only through publish.
 The priority historical commit was
 `d2139c63a01e5506f190c03da2db5cdc2e79d495`. Its PNG/PDF save logic was restored
 through current authoritative modules without restoring legacy business code.
-The corrected target is a horizontal two-panel partition/order figure. Figure
-inputs and outputs are checksum-recorded under `artifacts/paper/`.
+The corrected target is a horizontal two-panel partition/order figure. The
+recovered renderers remain available, while rendered figures are now generated
+on demand under `outputs/figures/`.
 
 The historical TTE distribution pair was introduced without a committed
 producer. Its summary matches the formal `TTE_raw.parquet` contract (19,742,327
 observed cells in the configured 3–80 minute range), so the figures are retained
 as historical assets and explicitly marked non-regenerable.
 
-## Artifact cleanup and Phase 12 layout
+## Artifact cleanup and raw-only release layout
 
 Obsolete probes, duplicate Fourth/Fifth Ring aliases and reproducible Phase 5
-payloads were removed after reader and hash audits. Phase 9 full-run evidence,
-canonical data, Golden, Windows baseline metadata, source manifests and paper
-inputs were retained.
+payloads were removed after reader and hash audits. The remaining long-lived
+artifact tree was backed up outside the repository before the raw-only release
+removed it from the public working tree.
 
-Long-lived assets now live under `artifacts/{golden,baselines,paper}`. Generated
-runs, validation, reports and releases live under `outputs/` and are ignored.
-The old top-level `reports/` and `releases/` boundaries were removed.
+Ordinary execution now starts from private inputs in `data/raw/`, creates its
+preparation data inside the owning run, and writes all runs, validation,
+figures, reports and releases under ignored `outputs/`. Golden comparison is an
+optional maintainer operation against an explicitly supplied external path.
 
 ## Known limits
 

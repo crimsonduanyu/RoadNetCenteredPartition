@@ -103,6 +103,8 @@ def test_run_tte_uses_owned_stage_directory_and_resolves_inputs(tmp_path: Path, 
                 "inputs": {
                     "orders_path": "../inputs/orders.csv.gz",
                     "cluster_index_path": "../inputs/cluster_index.csv",
+                    "network_distance_path": None,
+                    "representative_nodes_path": None,
                 },
                 "output_dir": "escape",
                 "distance": {
@@ -128,6 +130,7 @@ def test_run_tte_uses_owned_stage_directory_and_resolves_inputs(tmp_path: Path, 
     stage = calls[0]["stage4_tte"]
     assert stage["output_dir"] == str(context.stage_dir)
     assert stage["inputs"]["orders_path"] == str((tmp_path / "configs/../inputs/orders.csv.gz").resolve())
+    assert stage["inputs"]["network_distance_path"] is None
     assert stage["distance"]["partition_gpkg"] == str((tmp_path / "configs/../inputs/partition.gpkg").resolve())
     assert all(path.parent == context.stage_dir for path in result.outputs.values())
     assert result.contract == {}

@@ -44,4 +44,4 @@ paths:
   boundary: ../../data/raw/beijing_fifth_ring_boundary.gpkg
   ring_segments: ../../data/raw/beijing_fifth_ring_segments.gpkg
   classified_edges: ../../data/interim/fifth_ring/road_edges_classified.gpkg
-  segment_nodes: ../../data/interim/fifth_ring/frozen_inputs/segment_nodes.gpkg
+  segment_nodes: ../../outputs/preparation/segment_nodes.gpkg

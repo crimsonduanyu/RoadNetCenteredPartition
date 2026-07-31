@@ -8,8 +8,8 @@ stage4_tte:
     cluster_index_path: ../../data/processed/fifth_ring/order_pipeline/cluster_index.csv
     # Optional standalone fallbacks. A run still records/copies the distance
     # products into its owned TTE output allowlist.
-    network_distance_path: ../../data/processed/fifth_ring/tte/cluster_network_distance.parquet
-    representative_nodes_path: ../../data/processed/fifth_ring/tte/cluster_representative_nodes.csv
+    network_distance_path: null
+    representative_nodes_path: null
   # Public single-stage execution replaces this with its owned run directory.
   output_dir: ../../data/processed/fifth_ring/tte
   outputs:
@@ -19,11 +19,11 @@ stage4_tte:
   distance:
     matrix_filename: "cluster_network_distance.parquet"
     representatives_filename: "cluster_representative_nodes.csv"
-    recompute: false
+    recompute: true
     graphml_path: ../../data/raw/beijing_drive_within_fifth_ring.graphml
-    classified_edges_path: ../../data/interim/fifth_ring/road_edges_classified.gpkg
+    classified_edges_path: ../../outputs/preparation/road_edges_classified.gpkg
     # Standalone recompute fallback; full pipelines bind the same-run Partition output.
-    partition_gpkg: ../../data/processed/fifth_ring/partition/canonical_partition.gpkg
+    partition_gpkg: ../../outputs/preparation/partition.gpkg
   time:
     freq: "10min"
     start_time: "2017-06-01 00:00:00"

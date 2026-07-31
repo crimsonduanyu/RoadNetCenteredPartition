@@ -6,8 +6,8 @@ Core code lives under `src/roadnet_partition/`; command-line orchestration is in
 Before committing:
 
 ```bash
-conda run -n dydl pip install -e . --no-deps
-conda run -n dydl python -m pytest
+conda run --prefix ./.conda/dydl pip install -e . --no-deps
+conda run --prefix ./.conda/dydl python -m pytest
 git diff --check
 ```
 

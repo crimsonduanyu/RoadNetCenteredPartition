@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from roadnet_partition.pipeline.runner import resolve_pipeline_config
+from roadnet_partition.pipeline.runner import _external_inputs, resolve_pipeline_config
 from roadnet_partition.pipeline.stages import canonical_partition_output_key, formal_stage_outputs
 
 
@@ -74,15 +74,5 @@ def test_production_pipeline_config_resolves_stably_without_running() -> None:
     assert first.run_root == ROOT / "outputs/runs"
     partition_outputs = formal_stage_outputs("partition", first.stages["partition"], ROOT / "outputs/runs/read-only/partition")
     assert canonical_partition_output_key(partition_outputs).startswith("cluster_gpkg_")
-    demand_inputs = first.stages["demand"].values["order_pipeline"]["inputs"]
-    tte_inputs = first.stages["tte"].values["stage4_tte"]["inputs"]
-    checked_paths = [
-        *[Path(value) for key, value in first.stages["partition"].values["inputs"].items() if key != "baseline_clusters" and isinstance(value, str)],
-        *[Path(value) for value in first.stages["partition"].values["inputs"]["baseline_clusters"].values()],
-        Path(demand_inputs["road_relation_edges_csv"]),
-        *[Path(value) for value in demand_inputs["order_datasets"]],
-        Path(demand_inputs["poi_path"]),
-        Path(tte_inputs["network_distance_path"]),
-        Path(tte_inputs["representative_nodes_path"]),
-    ]
-    assert all(path.is_file() for path in checked_paths)
+    assert Path(first.values["preparation"]["config"]).is_file()
+    assert all(Path(record["path"]).is_file() for record in _external_inputs(first).values())

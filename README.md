@@ -1,113 +1,142 @@
 # RoadNet-Centered Partition Pipeline
 
-RoadNet-Centered Partition builds road-network-aware spatial clusters and the
-downstream demand, supply, and trip-time-estimation datasets used by the study.
+RoadNet-Centered Partition builds road-network-aware zones and the downstream
+demand, supply, and trip-time-estimation (TTE) datasets used by the study:
 
 ```text
-partition → demand → supply → tte
+raw data → preparation → Partition → Demand → Supply → TTE
 ```
 
-Linux is the current Fifth Ring canonical platform. Private Beijing orders,
-POI data, road extracts, Golden payloads, and the historical Windows payload are
-not distributed through Git.
+The supported reference platform is 64-bit Linux with Conda, Python 3.11, and
+at least 16 GiB RAM. A full Fifth Ring run takes about 1 hour 55 minutes, peaks
+near 12 GiB RSS, and writes roughly 4–5 GiB under `outputs/runs/`.
 
 ## Install
 
-Acceptance uses the existing `dydl` Conda environment:
+Create a new `dydl` environment and install this checkout. Do not reuse an
+environment when testing clean-room reproducibility.
 
 ```bash
-conda run -n dydl pip install -e . --no-deps
-conda run -n dydl python -m pytest
+conda env create --prefix ./.conda/dydl -f environment.yml
+conda run --prefix ./.conda/dydl pip install -e . --no-deps
 ```
 
-See [installation](docs/installation.md) for environment creation.
+## Raw data
 
-## Quick run
+Private Beijing data is not distributed with this repository. Obtain files
+from sources you are legally permitted to use and place them under `data/raw/`.
+The Fifth Ring configuration requires:
 
-The test suite is the public synthetic-data example. It creates temporary tiny
-fixtures and does not require private data:
+| File | Format and role |
+| --- | --- |
+| `beijing_edges_raw.gpkg` | GeoPackage, EPSG:4326 OSM-style road edges with `u`, `v`, `highway`, and geometry |
+| `beijing_fifth_ring_boundary.gpkg` | GeoPackage containing one Fifth Ring boundary polygon |
+| `beijing_fifth_ring_segments.gpkg` | GeoPackage containing Fifth Ring road linework |
+| `beijing_drive_within_fifth_ring.graphml` | OSMnx-compatible drive network used for TTE distance |
+| `beijing_poi_2017.csv` | CSV with `大地X`, `大地Y`, and `类型1` |
+| `beijing_order_201710.csv` | CSV used only to construct zoning demand features |
+| `beijing_orders_2017-06_2017-08.csv` | CSV used by Demand, Supply, and TTE |
+
+Order CSVs use EPSG:4326 coordinates and the columns `order_id`, `driver_id`,
+`service_type`, `starting_lng`, `starting_lat`, `dest_lng`, `dest_lat`,
+`departure_time`, and `finish_time`; timestamps use `YYYY-MM-DD HH:MM:SS`.
+See [docs/data.md](docs/data.md) for schemas, provenance, and privacy rules.
+
+Check file presence, hashes, CRS metadata, and preparation CSV columns without
+creating generated data:
 
 ```bash
-conda run -n dydl python -m pytest
+conda run --prefix ./.conda/dydl roadnet-partition check-raw --config configs/pipelines/full.yaml
 ```
 
-Run the complete private-data pipeline after preparing inputs:
+## Complete run
+
+This single command creates all preparation assets inside the run and then
+executes the four formal stages. It does not read `artifacts/`, frozen inputs,
+published canonical data, or older runs.
 
 ```bash
-conda run -n dydl roadnet-partition run \
-  --config configs/pipelines/full.yaml
+conda run --prefix ./.conda/dydl roadnet-partition run \
+  --config configs/pipelines/full.yaml \
+  --run-id raw-only-reproduction
 ```
 
-Ordinary runs write only to `outputs/runs/<run_id>/`. Individual stages are
-available as `roadnet-partition partition|demand|supply|tte`; use `--help` for
-their lifecycle and configuration options.
-
-## Validate, publish, and export
+Generated files are owned by `outputs/runs/raw-only-reproduction/`; no normal
+run writes `data/interim/` or `data/processed/`. After an interruption, resume
+the exact run with:
 
 ```bash
-conda run -n dydl roadnet-partition validate \
-  --run outputs/runs/<run_id> \
-  --golden artifacts/golden/beijing-fifth-ring-v1
+conda run --prefix ./.conda/dydl roadnet-partition run \
+  --config configs/pipelines/full.yaml \
+  --run-id raw-only-reproduction \
+  --resume
+```
 
-conda run -n dydl roadnet-partition publish \
-  --run outputs/runs/<run_id> \
-  --scope fifth_ring --overwrite \
-  --baseline-decision configs/policies/fifth_ring_linux_canonical_v1.yaml \
-  --dry-run
+Validate the completed run without a Golden payload:
 
-conda run -n dydl roadnet-partition export-reproduction \
-  --run outputs/runs/<run_id> \
-  --output outputs/releases/reproduction/<version> \
+```bash
+conda run --prefix ./.conda/dydl roadnet-partition validate \
+  --run outputs/runs/raw-only-reproduction
+```
+
+Maintainers may additionally pass `--golden /absolute/or/relative/external/path`.
+Golden validation is optional and no Golden data is stored in this repository.
+`roadnet-partition publish` is also a maintainer-only operation; publishing a
+canonical scope is not part of an ordinary user run.
+
+Maintainers can inspect a privacy-filtered export without writing it:
+
+```bash
+conda run --prefix ./.conda/dydl roadnet-partition export-reproduction \
+  --run outputs/runs/raw-only-reproduction \
+  --output outputs/releases/reproduction/raw-only \
   --profile minimal --dry-run
 ```
 
-Publishing never reruns algorithms. Reproduction export uses a privacy
-allowlist and does not grant redistribution rights for upstream data.
-
-## Prepare your own data
-
-Input schemas, column mappings, CRS requirements, product contracts, provenance,
-and privacy rules are documented in [data.md](docs/data.md). Do not commit order
-rows, driver identifiers, precise trip coordinates, or private derived matrices.
-
 ## Publication figures
 
-Tracked figures and their manifest live under `artifacts/paper/`:
+Generate PNG and PDF figures directly from the new run. Outputs default to
+`outputs/figures/` and remain reproducible/ignored runtime products.
 
 ```bash
-conda run -n dydl python scripts/figures/best_partition_maps.py
-conda run -n dydl python scripts/figures/partition_order_panels.py
-conda run -n dydl python scripts/figures/raw_order_trip_time_distribution.py
-sha256sum -c artifacts/paper/checksums.sha256
+conda run --prefix ./.conda/dydl python scripts/figures/best_partition_maps.py \
+  --run outputs/runs/raw-only-reproduction
+conda run --prefix ./.conda/dydl python scripts/figures/raw_order_trip_time_distribution.py
 ```
 
-See [publication-figures.md](docs/publication-figures.md) for inputs and style.
+The first command creates the partition maps and the two-panel partition/order
+figure; the second creates the raw trip-time distribution. See
+[docs/publication-figures.md](docs/publication-figures.md).
 
-## Repository layout
+## Common errors
+
+- `preparation input ... is missing`: place the named source file in
+  `data/raw/`; never substitute a derived or previously generated file.
+- `missing columns`: update your source-column mapping in the preparation or
+  Demand config; do not rename private source data in place without recording
+  provenance.
+- process killed or out of memory: use a machine with at least 16 GiB RAM and
+  close other memory-heavy jobs before resuming.
+- run directory already exists: use the same `--run-id --resume`, or choose a
+  new run ID; do not copy files between runs.
+- Golden path missing: omit `--golden` for normal validation.
+
+## Development and project layout
 
 ```text
-artifacts/                  long-lived manifest-managed assets
-  golden/                   regression metadata; payload local-only
-  baselines/                historical metadata; payload local-only
-  paper/                    tracked publication figures and checksums
-configs/                    dataset, stage, zoning, and policy configuration
-data/                       local private/canonical data; payload ignored
-docs/                       public documentation and condensed history
-outputs/                    generated runs, validation, reports, releases; ignored
-scripts/                    analysis and publication-figure entrypoints
-src/roadnet_partition/      importable package and CLI
+configs/                    raw preparation and four-stage configuration
+data/raw/                   local private raw inputs; Git ignored
+docs/                       public installation, data, and pipeline guidance
+outputs/runs/               generated run-owned products; Git ignored
+outputs/figures/            generated paper figures; Git ignored
+scripts/figures/            figure entrypoints
+src/roadnet_partition/      package and CLI
 tests/                      synthetic/unit/integration tests
 ```
 
-## Documentation
-
-- [Pipeline](docs/pipeline.md)
-- [Reproducibility](docs/reproducibility.md)
-- [Development](docs/development.md)
-- [Refactor history](docs/history/refactor-v1.md)
-
-## License and citation
+Run public tests with `conda run --prefix ./.conda/dydl python -m pytest`. Development details
+are in [docs/development.md](docs/development.md), and the full pipeline contract
+is in [docs/pipeline.md](docs/pipeline.md).
 
 Code is released under the [MIT License](LICENSE). Cite the project using
-[`CITATION.cff`](CITATION.cff). Data licenses are separate and must be obtained
-from the corresponding data providers.
+[`CITATION.cff`](CITATION.cff); upstream data licenses remain separate.
