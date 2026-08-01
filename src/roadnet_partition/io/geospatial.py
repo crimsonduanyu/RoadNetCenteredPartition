@@ -7,6 +7,7 @@ from roadnet_partition.io import environment as _environment  # noqa: F401
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely import points as shapely_points
 from shapely.geometry import Point, Polygon, box
 from shapely.ops import linemerge, polygonize, unary_union
 
@@ -308,9 +309,6 @@ def match_points_to_segments_with_distance(
     max_distance_m: float,
     tag: str | None = None,
 ) -> pd.DataFrame:
-    import geopandas as gpd
-    from shapely.geometry import Point
-
     from roadnet_partition.pipeline.timing import get_active_timer
     timer = get_active_timer()
     pfx = f"{tag}_" if tag else ""
@@ -324,7 +322,7 @@ def match_points_to_segments_with_distance(
     with timer.phase(f"{pfx}point_construction"):
         points = gpd.GeoDataFrame(
             {"row_id": frame.index[valid]},
-            geometry=[Point(xy) for xy in zip(frame.loc[valid, lon_col], frame.loc[valid, lat_col])],
+            geometry=shapely_points(frame.loc[valid, lon_col], frame.loc[valid, lat_col]),
             crs=source_crs,
         ).to_crs(segments.crs)
     seg_view = segments[["seg_id", "geometry"]]

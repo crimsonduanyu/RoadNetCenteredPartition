@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-01",
+  "batch": "Performance 2C-1",
+  "status": "passed",
+  "scope": {
+    "stage": "Demand",
+    "paths": ["pickup", "dropoff"],
+    "shared_helper_callers_audited": ["Demand", "Preparation orders", "POI"],
+    "targeted_callers": ["Demand pickup", "Demand dropoff"]
+  },
+  "implementation": {
+    "legacy": "[Point(xy) for xy in zip(x, y)]",
+    "vectorized": "shapely_points(x, y)",
+    "library": "Shapely",
+    "versions": {
+      "python": "3.11.15",
+      "geopandas": "1.1.4",
+      "shapely": "2.1.2",
+      "pandas": "3.0.5",
+      "numpy": "2.4.6"
+    }
+  },
+  "microbenchmark": {
+    "warmup_runs": 1,
+    "measured_runs": 5,
+    "production_calls_projection": 362,
+    "includes": ["GeoDataFrame construction", "CRS transformation"],
+    "rows": [
+      {"points": 10000, "legacy_median_s": 0.0516263, "legacy_p95_s": 0.0517324, "vectorized_median_s": 0.0075026, "vectorized_p95_s": 0.0078499, "legacy_peak_rss_mib": 135.6, "vectorized_peak_rss_mib": 135.5, "median_reduction_pct": 85.5, "projected_saving_min": 0.27},
+      {"points": 100000, "legacy_median_s": 0.5460240, "legacy_p95_s": 0.5772071, "vectorized_median_s": 0.1046089, "vectorized_p95_s": 0.1061587, "legacy_peak_rss_mib": 180.0, "vectorized_peak_rss_mib": 179.7, "median_reduction_pct": 80.8, "projected_saving_min": 2.66},
+      {"points": 250000, "legacy_median_s": 1.4018738, "legacy_p95_s": 1.4051212, "vectorized_median_s": 0.2902338, "vectorized_p95_s": 0.2948114, "legacy_peak_rss_mib": 254.9, "vectorized_peak_rss_mib": 254.5, "median_reduction_pct": 79.3, "projected_saving_min": 6.71},
+      {"points": 500000, "legacy_median_s": 2.7575737, "legacy_p95_s": 2.7788955, "vectorized_median_s": 0.5206755, "vectorized_p95_s": 0.5342274, "legacy_peak_rss_mib": 378.9, "vectorized_peak_rss_mib": 379.2, "median_reduction_pct": 81.1, "projected_saving_min": 13.50}
+    ],
+    "alternative_measured": "geopandas.points_from_xy was within the same range; shapely.points was selected by median timing."
+  },
+  "production": {
+    "baseline_run_id": "demand-prof-2b",
+    "vectorized_run_id": "demand-prof-2c1",
+    "demand_wall_s": {"baseline": 4190.941972, "vectorized": 3469.509796, "reduction": 721.432176, "reduction_min": 12.023870, "reduction_pct": 17.2},
+    "point_construction_s": {
+      "pickup": {"baseline": 524.921591, "vectorized": 118.327449},
+      "dropoff": {"baseline": 516.526842, "vectorized": 104.445362},
+      "total": {"baseline": 1041.448433, "vectorized": 222.772811, "reduction_min": 13.644594, "reduction_pct": 78.6}
+    },
+    "nearest_query_total_s": {"baseline": 1063.018019, "vectorized": 967.139764},
+    "total_order_spatial_matching_s": {"baseline": 2128.229119, "vectorized": 1213.060015},
+    "peak_rss_gib": {"baseline": 11.06, "vectorized": 10.933},
+    "cpu_utilization_pct": {"baseline": 99, "vectorized": 99},
+    "aggregate_counts": {
+      "rows_read": 90105866,
+      "staged_rows": 46002707,
+      "pickup_matched_rows": 53422582,
+      "dropoff_matched_rows": 52478350,
+      "both_matched_rows": 46002707,
+      "exclusive": 30651791,
+      "carpool": 15350916,
+      "cluster_od_rows": 19507610
+    },
+    "tensor": {"shape": [13248, 100, 100], "dtype": "int32", "values_equal": true},
+    "output_equivalence": {
+      "assigned_orders_decompressed_equal": true,
+      "assigned_order_rows": 46002707,
+      "cluster_od_equal": true,
+      "graph_assets_equal": true,
+      "poi_graph_equal": true,
+      "partition_row_order_seg_cluster_geometry_equal": true
+    }
+  },
+  "tests": {
+    "full_suite": "251 passed, 53 warnings",
+    "targeted_equivalence": "passed",
+    "git_diff_check": "passed",
+    "privacy_scan": "passed"
+  },
+  "scope_exclusions_verified": [
+    "STRtree cache",
+    "segment reorder",
+    "new seg_id tie-break",
+    "max_distance change",
+    "combined pickup/dropoff query",
+    "parallelism",
+    "SQLite change",
+    "output contract change"
+  ]
+}
