@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-01",
+  "phase": "Performance Batch 2B: full-scale Demand production profile (MEASURED)",
+  "status": "COMPLETE — full production Demand run executed successfully with ROADNET_DEMAND_TIMING=1",
+  "run": {
+    "run_id": "demand-prof-2b",
+    "config": "configs/pipelines/full.yaml, --to-stage demand, --isolate-stages (raw-only pipeline, fresh run, no resume, no canonical/artifacts)",
+    "repo_root": "official RoadNetCenteredPartition checkout (verified)",
+    "head": "bc2d040 RoadNet: add opt-in Demand production profiling",
+    "scale": {"rows_read": 90105866, "staged_rows": 46002707, "both_matched": 46002707, "exclusive": 30651791, "carpool": 15350916, "num_clusters": 100, "num_segments": 59096, "tensor_slots": 13248, "poi_valid_rows": 1389470, "poi_matched_rows": 665538, "chunks": 181}
+  },
+  "stage_level": {
+    "demand_wall_s": 4190.9, "demand_wall_min": 69.85,
+    "pipeline_wall_s": 5413, "pipeline_wall_min": 90.2,
+    "user_time_s": 5187.93, "sys_time_s": 229.75, "cpu_utilization_pct": 99, "single_core": true,
+    "peak_rss_gib": 11.06, "sqlite_peak_file_gib": 11.83,
+    "proc_io_read_bytes": 5631528960, "proc_io_write_bytes": 26637164544,
+    "swaps": 0, "major_page_faults": 0
+  },
+  "completeness": {
+    "sub_phase_sum_s": 4047.1, "sub_phase_sum_min": 67.45,
+    "unclassified_s": 143.8, "unclassified_pct_of_demand_wall": 3.43,
+    "target_le_3pct": "miss (3.43% > 3%)", "max_le_5pct": "MET (3.43% <= 5%)",
+    "unclassified_identified_as": "partition load (gpd.read_file 17.8 MB + to_crs) + build_cluster_index (per-cluster unary_union) + interpreter imports (geopandas/networkx/numpy) + metadata write + misc; no SQL/query time is hidden here",
+    "rule": "unclassified < 5% -> optimization conclusions are permitted"
+  },
+  "sub_phases_ranked_by_total_s": [
+    {"rank": 1, "phase": "export_csv_gzip", "calls": 461, "total_s": 762.2, "mean_s": 1.6533, "p50_s": 1.6573, "p95_s": 1.6941, "max_s": 1.7245, "category": "assigned-orders export", "note": "per-chunk datetime conversion + to_csv into gzip handle over 46M rows; the #1 single phase"},
+    {"rank": 2, "phase": "dropoff_nearest_query", "calls": 181, "total_s": 541.1, "mean_s": 2.9895, "p50_s": 3.0065, "p95_s": 3.0873, "max_s": 3.1403, "category": "spatial matching"},
+    {"rank": 3, "phase": "pickup_point_construction", "calls": 181, "total_s": 524.9, "mean_s": 2.9001, "p50_s": 2.9062, "p95_s": 3.0469, "max_s": 3.1513, "category": "spatial matching"},
+    {"rank": 4, "phase": "pickup_nearest_query", "calls": 181, "total_s": 521.9, "mean_s": 2.8835, "p50_s": 2.9011, "p95_s": 2.9896, "max_s": 3.0131, "category": "spatial matching"},
+    {"rank": 5, "phase": "dropoff_point_construction", "calls": 181, "total_s": 516.5, "mean_s": 2.8537, "p50_s": 2.8659, "p95_s": 2.9166, "max_s": 2.9587, "category": "spatial matching"},
+    {"rank": 6, "phase": "service_label_compute", "calls": 1, "total_s": 263.0, "category": "service labeling", "note": "ordered SELECT fetch + Python per-record loop over 46M rows"},
+    {"rank": 7, "phase": "service_labels_insert", "calls": 4601, "total_s": 225.2, "mean_s": 0.0489, "category": "service labeling", "note": "executemany inserts"},
+    {"rank": 8, "phase": "export_join_fetch", "calls": 462, "total_s": 162.7, "category": "assigned-orders export", "note": "SQL JOIN next() per chunk"},
+    {"rank": 9, "phase": "csv_parse", "calls": 182, "total_s": 132.8, "category": "CSV"},
+    {"rank": 10, "phase": "sqlite_append", "calls": 181, "total_s": 126.9, "category": "SQLite staging"},
+    {"rank": 11, "phase": "od_groupby_fetch", "calls": 1, "total_s": 73.6, "category": "cluster OD", "note": "SQL GROUP BY over 46M rows"},
+    {"rank": 12, "phase": "create_index_driver_time", "calls": 1, "total_s": 34.4, "category": "SQLite index build"},
+    {"rank": 13, "phase": "create_index_slot_od", "calls": 1, "total_s": 32.0, "category": "SQLite index build"},
+    {"rank": 14, "phase": "od_pivot", "calls": 1, "total_s": 20.2, "category": "cluster OD"},
+    {"rank": 15, "phase": "segment_mapping", "calls": 181, "total_s": 19.7, "category": "spatial matching"},
+    {"rank": 16, "phase": "other_writes", "calls": 1, "total_s": 18.1, "category": "graph assets"},
+    {"rank": 17, "phase": "npz_write", "calls": 1, "total_s": 17.2, "category": "cluster OD"},
+    {"rank": 18, "phase": "service_labels_create_index", "calls": 1, "total_s": 14.3, "category": "service labeling"},
+    {"rank": 19, "phase": "od_csv", "calls": 1, "total_s": 13.3, "category": "cluster OD"},
+    {"rank": 20, "phase": "point_construction", "calls": 1, "total_s": 8.1, "category": "POI graph (non-tagged)", "note": "POI matching in build_cluster_poi_graph"},
+    {"rank": 21, "phase": "tensor_alloc_fill", "calls": 1, "total_s": 7.5, "category": "cluster OD"},
+    {"rank": 22, "phase": "nearest_query", "calls": 1, "total_s": 6.4, "category": "POI graph (non-tagged)"},
+    {"rank": 23, "phase": "dropoff_spatial_index_build", "calls": 181, "total_s": 2.0, "category": "spatial matching", "note": "STRtree rebuilt per call (181 calls) but only 0.011s each"},
+    {"rank": 24, "phase": "pickup_spatial_index_build", "calls": 181, "total_s": 2.0, "category": "spatial matching"},
+    {"rank": 25, "phase": "service_labels_commit", "calls": 1, "total_s": 1.0, "category": "service labeling"},
+    {"rank": 26, "phase": "spatial_index_build", "calls": 1, "total_s": 0.0, "category": "POI graph"},
+    {"rank": 27, "phase": "service_labels_create_table", "calls": 1, "total_s": 0.0, "category": "service labeling"},
+    {"rank": 28, "phase": "ordered_select_execute", "calls": 1, "total_s": 0.0, "category": "service labeling", "note": "cursor execute is lazy; the work is in service_label_compute"},
+    {"rank": 29, "phase": "sqlite_commit", "calls": 1, "total_s": 0.0, "category": "SQLite staging"}
+  ],
+  "category_summary": [
+    {"category": "spatial matching", "total_min": 35.1, "pct_of_measured": 52.0, "breakdown": "point_construction 17.4 + nearest_query 17.7 + spatial_index_build 0.07 (STRtree) + segment_mapping 0.3"},
+    {"category": "assigned-orders export", "total_min": 15.4, "pct_of_measured": 22.8, "breakdown": "export_csv_gzip 12.7 + export_join_fetch 2.7"},
+    {"category": "service labeling", "total_min": 8.5, "pct_of_measured": 12.6, "breakdown": "service_label_compute 4.4 + service_labels_insert 3.8 + create_index 0.24 + commit 0.02"},
+    {"category": "csv_parse", "total_min": 2.2, "pct_of_measured": 3.3},
+    {"category": "SQLite staging append", "total_min": 2.1, "pct_of_measured": 3.1},
+    {"category": "cluster OD (groupby+pivot+csv+tensor+npz)", "total_min": 2.1, "pct_of_measured": 3.1},
+    {"category": "SQLite index build (driver_time+slot_od)", "total_min": 1.1, "pct_of_measured": 1.6},
+    {"category": "POI graph matching", "total_min": 0.24, "pct_of_measured": 0.4},
+    {"category": "graph assets (other_writes)", "total_min": 0.3, "pct_of_measured": 0.4},
+    {"category": "unclassified", "total_min": 2.4, "pct_of_measured": 3.4}
+  ],
+  "key_revisions_to_batch_2a": [
+    "STRtree rebuild is STILL negligible: 4.0s total (0.07% of measured) across 362 builds (pickup+dropoff x 181 chunks), ~0.011s each. Confirmed NOT the bottleneck. (Batch 2A correct.)",
+    "REVISED: Point construction is NOT 80% of spatial matching. Real production (53% match rate): point_construction 17.4 min ~= nearest_query 17.7 min (nearly equal). Batch 2A's synthetic random-point benchmark (9% match) undercounted nearest_query (estimated 3.9 min vs real 17.7 min).",
+    "REVISED: the #1 single phase is export_csv_gzip (12.7 min, 19%), which was in Batch 2A's 'unmeasured 44 min gap'. The 44 min gap is now fully decomposed (see gap_decomposition)."
+  ],
+  "gap_decomposition_batch_2a_44min": {
+    "batch_2a_unmeasured_gap_min": 44,
+    "now_measured": [
+      {"component": "underestimated spatial (nearest_query undercounted by synthetic benchmark)", "min": 13.8, "note": "Batch 2A estimated nearest_query 3.9 min; real 17.7 min"},
+      {"component": "assigned-orders export (gzip + join)", "min": 15.4},
+      {"component": "service labeling (compute + insert + index)", "min": 8.5},
+      {"component": "cluster OD (groupby + pivot + csv + tensor + npz)", "min": 2.1},
+      {"component": "SQLite index build", "min": 1.1},
+      {"component": "POI graph matching + other writes", "min": 0.5},
+      {"component": "unclassified overhead", "min": 2.4}
+    ],
+    "total_decomposed_min": 43.8,
+    "conclusion": "the 44 min gap is fully accounted for; ~14 min was an under-estimate of spatial nearest_query, ~28 min was the SQL/gzip passes (now measured), ~2 min unclassified overhead."
+  },
+  "dem_p1_max_savable": {
+    "dem_p1": "vectorize Point construction (points_from_xy)",
+    "point_construction_total_min": 17.4,
+    "ceiling_savable_min": 17.4,
+    "realistic_savable_min": "15-16 (vectorized points_from_xy still takes ~1-2 min for 2x500k points x 181 chunks)",
+    "caveat": "DEM-P1 is only ~25% of the demand wall; nearest_query (17.7 min) and export_csv_gzip (12.7 min) remain. Batch 2A's claim that point_construction is 80% of spatial is REVISED to ~equal-to-nearest."
+  },
+  "chunk_degradation": {
+    "chunks": 181, "rows_per_chunk": "180 x 500000 + 1 x 105866",
+    "finding": "minimal degradation across chunks",
+    "per_phase_p95_over_p50": {"csv_parse": 1.05, "sqlite_append": 1.04, "pickup_nearest_query": 1.03, "pickup_point_construction": 1.05, "export_join_fetch": 1.04, "export_csv_gzip": 1.02},
+    "sqlite_append_degradation": "slight (p95/p50=1.04, +4.4%) from the stage_id AUTOINCREMENT PK index growth; small, not a bottleneck",
+    "spatial_index_build": "constant across chunks (constant 59096-segment layer; p95/p50=1.03); no degradation"
+  },
+  "sqlite_evidence": {
+    "sqlite_version": "3.53.4",
+    "pragmas": {"journal_mode": "delete", "synchronous": 2, "temp_store": 0, "cache_size": -2000, "page_size": 4096, "mmap_size": 0, "automatic_index": 1},
+    "explain": {
+      "service_label_ordered_select": "SCAN staged_orders USING COVERING INDEX idx_staged_driver_time (index scan, not table scan)",
+      "cluster_od_groupby": "NOT CAPTURED - service_labels table did not exist at evidence-collection time (collected after stage_order_assignments, before label_staged_service_types); instrumentation gap",
+      "assigned_orders_export": "NOT CAPTURED - same reason (service_labels not yet created)"
+    },
+    "index_build_times": {"create_index_driver_time_s": 34.4, "create_index_slot_od_s": 32.0, "service_labels_create_index_s": 14.3},
+    "sqlite_peak_file_bytes": 12700127232,
+    "note": "PRAGMA values are SQLite defaults (no PRAGMA was modified); journal_mode=delete + synchronous=2(FULL) means fsync on every commit -> contributes to write amplification (proc_io write 26.6 GB)."
+  },
+  "batch_2c_candidates": [
+    {"rank": 1, "id": "2C-1", "title": "Assigned-orders export optimization (internal pipelining + compression tuning, keep .csv.gz format)", "measured_category_min": 15.4, "pct": 22.8, "evidence": "export_csv_gzip is the #1 single phase (12.7 min) + export_join_fetch 2.7 min; the per-chunk datetime-conversion + to_csv + gzip over 46M rows. Lowest determinism risk (output byte-identity preserved with the same compression level).", "scope": "in-scope (gzip pipelining/compression explicitly allowed in the Batch 2A decision tree; keep the final format)"},
+    {"rank": 2, "id": "2C-2", "title": "Point construction vectorization (points_from_xy) - DEM-P1", "measured_category_min": 17.4, "pct": 26.0, "evidence": "point_construction 17.4 min (pickup 8.7 + dropoff 8.7); ceiling ~15-16 min realistic. Low risk (no tie-break/row-order change). REVISED: point ~= nearest (not 80% of spatial), so vectorizing it leaves nearest_query (17.7 min) untouched.", "scope": "subject to Batch 2C scope (points_from_xy was prohibited for Batch 2B implementation; Batch 2C decides)"},
+    {"rank": 3, "id": "2C-3", "title": "Spatial nearest_query optimization (the query, not the index)", "measured_category_min": 17.7, "pct": 26.0, "evidence": "nearest_query 17.7 min (pickup 8.7 + dropoff 9.0); the sindex rebuild is negligible (4s, 0.07%) - the QUERY itself is the cost. Higher risk (must preserve nearest-neighbor tie-break + output equivalence).", "scope": "subject to Batch 2C scope + tie-break preservation; STRtree caching is NOT the fix (rebuild is already 0.07%)"}
+  ]
+}
