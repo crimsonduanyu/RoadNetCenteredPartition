@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 
@@ -78,7 +79,8 @@ def build_fixture(tmp_path: Path, output_root: Path) -> tuple[dict, Path]:
     return config, config_path
 
 
-def test_tiny_demand_outputs_and_contracts(tmp_path: Path) -> None:
+def test_tiny_demand_outputs_and_contracts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ROADNET_DEMAND_TIMING", raising=False)
     config, config_path = build_fixture(tmp_path, tmp_path / "unused")
     context = RunContext("tiny", tmp_path / "run", tmp_path).for_stage("demand")
     resolved = ResolvedStageConfig(config_path, config, "tiny")
@@ -98,3 +100,53 @@ def test_tiny_demand_outputs_and_contracts(tmp_path: Path) -> None:
     assert od_contract["sums"] == {"exclusive": 1, "carpool": 2, "total": 3}
     assert validate_graph_assets(new_root, "road", 3, add_self_loops=True, symmetric=True)["endpoint_nodes"] == 2
     assert result.metrics["orders"] == 3
+
+
+def test_tiny_timing_on_off_outputs_are_equal(tmp_path: Path, monkeypatch) -> None:
+    config, config_path = build_fixture(tmp_path, tmp_path / "unused")
+    resolved = ResolvedStageConfig(config_path, config, "tiny")
+
+    monkeypatch.delenv("ROADNET_DEMAND_TIMING", raising=False)
+    run_demand(resolved, RunContext("off", tmp_path / "off", tmp_path).for_stage("demand"))
+    monkeypatch.setenv("ROADNET_DEMAND_TIMING", "1")
+    run_demand(resolved, RunContext("on", tmp_path / "on", tmp_path).for_stage("demand"))
+
+    off_root = tmp_path / "off" / "demand"
+    on_root = tmp_path / "on" / "demand"
+    names = sorted(path.name for path in off_root.iterdir() if path.name != "timing_profile.json")
+    assert names == sorted(path.name for path in on_root.iterdir() if path.name != "timing_profile.json")
+    for name in names:
+        off_path = off_root / name
+        on_path = on_root / name
+        if name == "orders_region_assigned.csv.gz":
+            with gzip.open(off_path, "rb") as off_handle, gzip.open(on_path, "rb") as on_handle:
+                assert off_handle.read() == on_handle.read()
+        elif name == "metadata.json":
+            off_metadata = json.loads(off_path.read_text(encoding="utf-8"))
+            on_metadata = json.loads(on_path.read_text(encoding="utf-8"))
+
+            def normalize_paths(value):
+                if isinstance(value, dict):
+                    return {key: normalize_paths(item) for key, item in value.items()}
+                if isinstance(value, list):
+                    return [normalize_paths(item) for item in value]
+                if isinstance(value, str):
+                    return value.replace(str(off_root), str(on_root))
+                return value
+
+            assert normalize_paths(off_metadata) == on_metadata
+        else:
+            assert off_path.read_bytes() == on_path.read_bytes(), name
+
+    profile = json.loads((on_root / "timing_profile.json").read_text(encoding="utf-8"))
+    phases = {item["phase"] for item in profile["phases"]}
+    assert {
+        "export_join_execute",
+        "export_join_fetch",
+        "export_frame_build",
+        "export_datetime_format",
+        "export_other_format",
+        "export_csv_serialize",
+        "export_gzip_compress_write",
+        "export_flush_close",
+    } <= phases

@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-01",
+  "batch": "Performance Batch 2C-2A",
+  "status": "complete_measurement_only",
+  "repo": {
+    "root": "/home/dy/jupyter/workspace/RoadNetCenteredPartition",
+    "instrumentation_commit": "b79a752 RoadNet: refine Demand export profiling",
+    "formal_run_id": "demand-prof-2c-2a",
+    "baseline_run_id": "demand-prof-2c1"
+  },
+  "scope": {
+    "timing_env": "ROADNET_DEMAND_TIMING=1",
+    "default_off": true,
+    "config": "configs/pipelines/full.yaml",
+    "to_stage": "demand",
+    "isolate_stages": true,
+    "resume": false,
+    "production_optimizations_implemented": false,
+    "unchanged": [
+      "SQL text",
+      "export chunk size 100000",
+      "gzip default compression level",
+      "newline",
+      "UTF-8 encoding",
+      "header",
+      "float/date formatting",
+      "column order",
+      "output filename",
+      "manifest",
+      "Demand contract"
+    ]
+  },
+  "formal_run": {
+    "baseline_demand_wall_s": 3469.510,
+    "baseline_demand_wall_min": 57.825,
+    "demand_wall_s_official_stage_envelope": 3490.945995,
+    "demand_wall_min_official_stage_envelope": 58.18243325,
+    "instrumented_body_wall_s": 3255.5145533260657,
+    "instrumented_body_wall_min": 54.25857588876776,
+    "full_pipeline_wall_s": 4666.0,
+    "full_pipeline_wall_min": 77.76666666666667,
+    "user_time_s": 4220.43,
+    "system_time_s": 439.42,
+    "cpu_utilization_pct": 99.0,
+    "peak_rss_kb": 11641608,
+    "peak_rss_gib": 11.102302551269531,
+    "rows_read": 90105866,
+    "assigned_rows": 46002707,
+    "exclusive_rows": 30651791,
+    "carpool_rows": 15350916,
+    "od_rows": 19507610,
+    "clusters": 100,
+    "tensor_shape": [13248, 100, 100],
+    "sqlite_peak_bytes": 12700127232,
+    "proc_io": {
+      "read_bytes": 328019968,
+      "write_bytes": 29300445184
+    }
+  },
+  "completeness": {
+    "inclusive_phase_sum_s": 3571.4882835597964,
+    "known_nested_overlap": {
+      "phase": "service_labels_insert",
+      "parent_phase": "service_label_compute",
+      "seconds": 440.1259762864793
+    },
+    "exclusive_body_phase_sum_s": 3131.362307273317,
+    "body_unclassified_s": 124.15224605274852,
+    "body_unclassified_pct": 3.8135982505716566,
+    "body_target_le_3_pct": false,
+    "body_max_le_5_pct": true,
+    "official_envelope_residual_s": 359.58368772668473,
+    "official_envelope_residual_pct": 10.300465496793935,
+    "official_envelope_extra_scope_s": 235.4314416739355,
+    "official_envelope_extra_scope": "worker setup/import/contract validation outside run_from_config"
+  },
+  "export": {
+    "data_chunks": 461,
+    "rows_per_chunk": "460 x 100000 + 2707",
+    "uncompressed_bytes": 10523799657,
+    "compressed_bytes": 2690755454,
+    "compression_ratio_uncompressed_over_compressed": 3.911094797320069,
+    "phases": [
+      {"phase": "export_join_execute", "calls": 1, "total_s": 0.0001645450247451663, "p50_s": 0.0001645450247451663, "p95_s": 0.0001645450247451663, "max_s": 0.0001645450247451663},
+      {"phase": "export_join_fetch", "calls": 462, "total_s": 71.31968410487752, "p50_s": 0.1552, "p95_s": 0.1607, "max_s": 0.1836},
+      {"phase": "export_frame_build", "calls": 461, "total_s": 87.24057134741452, "p50_s": 0.1874, "p95_s": 0.2039, "max_s": 0.2130},
+      {"phase": "export_datetime_format", "calls": 461, "total_s": 28.173337912070565, "p50_s": 0.0609, "p95_s": 0.0642, "max_s": 0.0669},
+      {"phase": "export_other_format", "calls": 461, "total_s": 0.35494842112530023, "p50_s": 0.0008, "p95_s": 0.0009, "max_s": 0.0011},
+      {"phase": "export_csv_serialize", "calls": 461, "total_s": 229.4963963960763, "p50_s": 0.4996, "p95_s": 0.5199, "max_s": 0.5393},
+      {"phase": "export_gzip_compress_write", "calls": 462, "total_s": 519.3107297221432, "p50_s": 1.1294, "p95_s": 1.1692, "max_s": 1.1990},
+      {"phase": "export_flush_close", "calls": 2, "total_s": 0.00028383207973092794, "p50_s": 0.0001, "p95_s": 0.0002, "max_s": 0.0002}
+    ],
+    "phase_sum_s": 935.8961162808118,
+    "export_wall_s": 935.970938965911,
+    "phase_wall_difference_pct": 0.00799439812598973,
+    "baseline_export_s": 923.8611619850853,
+    "baseline_difference_pct": 1.3107788788096375
+  },
+  "synthetic_microbenchmark": {
+    "schema": "production assigned-orders export schema with generated synthetic values",
+    "warmup_runs": 1,
+    "measured_runs": 5,
+    "export_chunksize": 100000,
+    "rows": [
+      {"rows": 100000, "datetime_s": 0.07130508206319064, "csv_serialize_s": 0.373238155269064, "gzip_compress_write_s": 0.6998685196740553, "peak_rss_mib": 324.70703125, "uncompressed_bytes": 18869228, "compressed_bytes": 2299468, "compression_ratio": 8.205910236628647},
+      {"rows": 500000, "datetime_s": 0.3191685799974948, "csv_serialize_s": 1.8891217930940911, "gzip_compress_write_s": 3.465564709971659, "peak_rss_mib": 445.35546875, "uncompressed_bytes": 95678562, "compressed_bytes": 11519867, "compression_ratio": 8.305526617625013},
+      {"rows": 1000000, "datetime_s": 0.6196270399959758, "csv_serialize_s": 3.8029699015896767, "gzip_compress_write_s": 6.893732889438979, "peak_rss_mib": 449.8359375, "uncompressed_bytes": 191690229, "compressed_bytes": 23044856, "compression_ratio": 8.318135248924966}
+    ]
+  },
+  "chunk_progression": {
+    "full_chunk_count": 460,
+    "tail_rows": 2707,
+    "first_20_median_s": 2.0180873799836263,
+    "last_20_median_s": 2.0519081390229985,
+    "last_over_first_ratio": 1.016758817965378,
+    "full_p50_s": 2.0340924349147826,
+    "full_p95_s": 2.0748642770340666,
+    "full_p95_over_p50": 1.020044242542494,
+    "finding": "no material progress-related blow-up"
+  },
+  "output_equivalence": {
+    "baseline": "demand-prof-2c1",
+    "assigned_orders_decompressed_sha256_equal": true,
+    "assigned_orders_rows": 46002707,
+    "assigned_orders_header_schema_column_order_equal": true,
+    "service_labels_equal": true,
+    "cluster_od_equal": true,
+    "tensors_equal": true,
+    "graph_assets_equal": true,
+    "poi_assets_equal": true,
+    "normalized_metadata_equal": true,
+    "gzip_container_byte_identity_required": false
+  },
+  "analysis": {
+    "csv_serialization_min": 3.824939939934605,
+    "datetime_formatting_min": 0.46955563186784277,
+    "gzip_compression_write_min": 8.655178828702386,
+    "frame_build_min": 1.4540095224569085,
+    "join_fetch_min": 1.1886614017479586,
+    "fetch_consumer_overlap": false,
+    "classification": "primarily CPU-bound with material I/O",
+    "theoretical_entire_export_ceiling_min": 15.59951564943185,
+    "theoretical_format_csv_gzip_ceiling_min": 12.955594938058251
+  },
+  "verification": {
+    "full_tests": "252 passed, 59 warnings",
+    "tiny_timing_on_off_equivalence": "passed",
+    "privacy_scan": "passed",
+    "git_diff_check": "passed",
+    "demand_contract": "passed",
+    "formal_outputs_committed": false,
+    "timing_profile_committed": false,
+    "sanitized_repository_operated": false
+  },
+  "follow_up_experiments": [
+    "output-identical CSV formatting path",
+    "gzip compression level experiment",
+    "producer-consumer fetch/serialize/gzip pipeline"
+  ]
+}

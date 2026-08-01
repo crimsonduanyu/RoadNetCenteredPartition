@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-import gzip
 import json
 import sqlite3
+import time
 
 from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
@@ -480,6 +480,46 @@ def label_staged_service_types(connection: sqlite3.Connection) -> dict[str, int]
         connection.commit()
     return counts
 
+def _iter_export_chunks(
+    connection: sqlite3.Connection,
+    query: str,
+    chunksize: int,
+    timer,
+) -> Iterator[tuple[int, pd.DataFrame]]:
+    if not timer.enabled:
+        reader = pd.read_sql_query(query, connection, chunksize=chunksize)
+        export_index = 1
+        while True:
+            with timer.phase("export_join_fetch"):
+                try:
+                    chunk = next(reader)
+                except StopIteration:
+                    return
+            yield export_index, chunk
+            export_index += 1
+        return
+
+    cursor = None
+    try:
+        with timer.phase("export_join_execute", chunk=0):
+            cursor = connection.execute(query)
+            columns = [description[0] for description in cursor.description]
+        export_index = 1
+        while True:
+            with timer.phase("export_join_fetch", chunk=export_index):
+                rows = cursor.fetchmany(chunksize)
+            if not rows:
+                return
+            timer.set_chunk(export_index, len(rows), kind="export")
+            with timer.phase("export_frame_build"):
+                chunk = pd.DataFrame.from_records(rows, columns=columns, coerce_float=True)
+            yield export_index, chunk
+            export_index += 1
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+
 def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, chunksize: int = 100000) -> None:
     query = """
         SELECT
@@ -502,24 +542,20 @@ def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, ch
         JOIN service_labels l ON o.stage_id = l.stage_id
         ORDER BY o.stage_id
     """
+    from roadnet_partition.pipeline.timing import get_active_timer, open_timed_gzip_text
+    timer = get_active_timer()
+    export_start = time.perf_counter() if timer.enabled else None
     first = True
-    with gzip.open(output_path, "wt", encoding="utf-8", newline="") as handle:
-        from roadnet_partition.pipeline.timing import get_active_timer
-        timer = get_active_timer()
-        reader = pd.read_sql_query(query, connection, chunksize=chunksize)
-        while True:
-            with timer.phase("export_join_fetch"):
-                try:
-                    chunk = next(reader)
-                except StopIteration:
-                    break
-            with timer.phase("export_csv_gzip"):
+    with open_timed_gzip_text(output_path, timer) as (handle, compressor):
+        for export_index, chunk in _iter_export_chunks(connection, query, chunksize, timer):
+            with timer.phase("export_datetime_format"):
                 for source, target in [
                     ("departure_time_ns", "departure_time"),
                     ("finish_time_ns", "finish_time"),
                     ("slot_start_ns", "slot_start"),
                 ]:
                     chunk[target] = pd.to_datetime(chunk[source], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
+            with timer.phase("export_other_format"):
                 chunk = chunk[
                     [
                         "stage_id",
@@ -539,8 +575,24 @@ def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, ch
                         "service_type",
                     ]
                 ]
+            if timer.enabled:
+                before = compressor.write_seconds
+                start = time.perf_counter()
                 chunk.to_csv(handle, index=False, header=first)
-                first = False
+                csv_wall = time.perf_counter() - start
+                gzip_wall = compressor.write_seconds - before
+                timer.record("export_csv_serialize", max(0.0, csv_wall - gzip_wall), chunk=export_index)
+                timer.record("export_gzip_compress_write", gzip_wall, chunk=export_index)
+            else:
+                chunk.to_csv(handle, index=False, header=first)
+            first = False
+    if timer.enabled and export_start is not None:
+        compressed_bytes = output_path.stat().st_size
+        uncompressed_bytes = compressor.uncompressed_bytes
+        timer.metric("export_wall_s", time.perf_counter() - export_start)
+        timer.metric("export_uncompressed_bytes", uncompressed_bytes)
+        timer.metric("export_compressed_bytes", compressed_bytes)
+        timer.metric("export_compression_ratio", uncompressed_bytes / compressed_bytes if compressed_bytes else 0.0)
 
 def build_cluster_od_from_staging(connection: sqlite3.Connection) -> pd.DataFrame:
     from roadnet_partition.pipeline.timing import get_active_timer
