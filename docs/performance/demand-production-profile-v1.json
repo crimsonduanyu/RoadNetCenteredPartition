@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-31",
+  "phase": "Performance Batch 2A: Demand production profiling (measurement only, no optimizations implemented, no production code committed)",
+  "methodology": {
+    "approach": "Per-phase in-process measurement at production-representative scale on the canonical 59,096-segment Fifth Ring partition + synthetic points/data at the production chunk scale (~500k rows/chunk). Pure-function benchmarks are not sandbox-blocked.",
+    "why_not_full_run": "The full 12 GB / 90.1 M-row Demand run could NOT be executed: the sandbox boundary guard blocks Demand stage runs on non-tiny fixtures (verified blocked: 120 k-order run, 5 k-order run on the canonical partition; allowed: 3-order tiny run). The full run would take ~70 min and peak ~11 GiB and is certainly blocked.",
+    "scale_note": "Spatial-index build cost depends on the segment layer (59,096 segments), not the order count, so per-call STRtree costs are production-real. Point/nearest/sqlite/gzip costs are measured at representative scale and extrapolated to the 500 k-chunk / 90 M-row / 180-chunk production aggregate. Post-staging SQL passes over 46 M rows (ordered SELECT, GROUP BY, export JOIN) and the 413 MB POI read are GB-scale and remain unmeasured.",
+    "production_records_used": {
+      "full_run_wall": "1h56m", "demand_wall": "~70m", "peak_rss": "~11.2 GiB",
+      "rows_read": 90105866, "rows_after_time_window": 90036670, "both_matched_rows": 46002707,
+      "staged_rows": 46002707, "num_chunks_at_500k": 180, "num_clusters_C": 100, "num_segments": 59096,
+      "num_tensor_slots_T": 13248, "poi_valid_rows": 1389470,
+      "orders_region_assigned_gz": "2.69 GiB", "cluster_od_csv": "606 MB"
+    }
+  },
+  "spatial_matching_breakdown": {
+    "measurement": "match_points_to_segments_with_distance, 250,000 points x 59,096 segments, 3 calls, median",
+    "per_call_total_ms_p50": 1828.6,
+    "per_call_total_ms_p95": 1828.6,
+    "sub_phases": {
+      "point_construction": {"ms_p50": 1463.0, "pct_of_spatial": 80.0, "mechanism": "Python list comprehension [Point(xy) for xy in zip(...)] + GeoDataFrame construction"},
+      "nearest_query": {"ms_p50": 323.0, "pct_of_spatial": 17.7, "mechanism": "gpd.sjoin_nearest (uses the STRtree)"},
+      "spatial_index_build": {"ms_p50": 11.5, "pct_of_spatial": 0.6, "mechanism": "seg_view.sindex STRtree build (rebuilt every call: sindex_rebuild counter = 1 per call; seg_view is a fresh slice so the index is NOT reused across calls)"}
+    },
+    "sindex_reuse": {"rebuilt_per_call": true, "sindex_rebuild_count_per_call": 1, "note": "The STRtree IS rebuilt every call (fresh seg_view slice), but the build cost is only 0.6% of spatial matching -- NOT the bottleneck."},
+    "key_finding": "STRtree build is NOT the spatial bottleneck. The static-audit hypothesis (Batch 0 B2) that STRtree rebuild dominates is DISPROVEN by measurement. Point construction (the Python Point() list comprehension) dominates at 80%."
+  },
+  "per_phase_measured": [
+    {"phase": "spatial_match", "scope": "point_construction + spatial_index_build + nearest_query, pickup+dropoff", "per_chunk_ms_p50": 7190, "extrapolated_production_s": 1294, "extrapolated_production_min": 21.6, "calls": 360, "note": "point 17.5min + nearest 3.9min + sindex 0.04min"},
+    {"phase": "gzip_write", "scope": "gzip portion of export_assigned_orders", "per_unit_ms_p50": 626, "unit": "250k rows", "extrapolated_production_s": 115, "extrapolated_production_min": 1.9, "note": "single streaming pass over 46M rows; SQL JOIN scan is separate (unmeasured)"},
+    {"phase": "csv_parse", "scope": "pd.read_csv chunk of the 12GB orders CSV", "per_chunk_ms_p50": 573, "extrapolated_production_s": 103, "extrapolated_production_min": 1.7, "calls": 180},
+    {"phase": "sqlite_append", "scope": "DataFrame.to_sql append (250k rows)", "per_chunk_ms_p50": 444, "extrapolated_production_s": 80, "extrapolated_production_min": 1.3, "note": "LOWER BOUND: benchmark table had no PRIMARY KEY; production staged_orders has stage_id AUTOINCREMENT PK -> later appends slow as the PK index grows (degradation unmeasured at GB scale)"},
+    {"phase": "service_label_python_loop", "scope": "service_label_batches Python per-record loop", "per_million_ms_p50": 327, "extrapolated_production_s": 15, "extrapolated_production_min": 0.25, "note": "Python loop only; the ordered SQL SELECT (ORDER BY driver,time over 46M) is separate and unmeasured"},
+    {"phase": "od_tensors", "scope": "build_od_tensors (vectorized, post DEM-02)", "per_unit_ms_p50": 50, "unit": "200k OD rows", "extrapolated_production_s": 9, "extrapolated_production_min": 0.15, "note": "negligible; do NOT continue optimizing DEM-02"}
+  ],
+  "measured_sum_min": 26.0,
+  "production_demand_wall_min": 70,
+  "unmeasured_gap_min": 44,
+  "unmeasured_phases": [
+    "ordered SQL SELECT for service labeling (ORDER BY driver_id, departure_time_ns, finish_time_ns, stage_id over 46M rows, uses idx_staged_driver_time)",
+    "build_cluster_od_from_staging SQL GROUP BY over 46M rows (uses idx_staged_slot_od)",
+    "export_assigned_orders streaming JOIN (staged_orders JOIN service_labels) + gzip over 46M rows",
+    "POI graph build_cluster_poi_graph (read 413 MB / 1.39 M POI rows + buffer + sjoin on 59k segments)",
+    "per-chunk DataFrame overhead (.copy x3, to_numeric, boolean masks)",
+    "OD tensor materialization (3 x int32 x (13248,100,100) = 1.59 GiB)"
+  ],
+  "stage_level": {
+    "wall_total_min": 70,
+    "cpu_utilization": "single-core (no multiprocessing anywhere in src/; the pipeline runs stages in isolated child processes)",
+    "peak_rss_estimate": "~11.2 GiB (production record); the dense OD tensor (1.59 GiB) + SQLite staging (peak ~GB, deleted after) + POI (0.4 GiB) are the contributors",
+    "filesystem_read_bytes_estimate": "~12.5 GB (12 GB orders + 413 MB POI + 17.8 MB partition + 43 MB relations)",
+    "filesystem_write_bytes_estimate": "~5 GB outputs (orders_region_assigned.csv.gz 2.69 GiB + cluster_od 606 MB + od_tensor npz + graph assets) + SQLite staging peak (deleted)",
+    "sqlite_peak_size": "unmeasured at GB scale (sandbox-blocked); staged 46M rows x 14 cols, estimated GB-scale",
+    "per_chunk_degradation": "sqlite_append expected to slow as the DB grows (stage_id AUTOINCREMENT PK index updates) -- mechanism confirmed, magnitude unmeasured at GB scale; spatial_index_build cost is constant across chunks (constant 59k-segment layer, no degradation)"
+  },
+  "ranking_by_measured_wall_time": [
+    {"phase": "spatial_match (point_construction dominant)", "extrapolated_min": 21.6, "evidence": "measured"},
+    {"phase": "gzip_write", "extrapolated_min": 1.9, "evidence": "measured"},
+    {"phase": "csv_parse", "extrapolated_min": 1.7, "evidence": "measured"},
+    {"phase": "sqlite_append (lower bound)", "extrapolated_min": 1.3, "evidence": "measured_lower_bound"},
+    {"phase": "service_label_python_loop", "extrapolated_min": 0.25, "evidence": "measured"},
+    {"phase": "od_tensors", "extrapolated_min": 0.15, "evidence": "measured"},
+    {"phase": "UNMEASURED SQL passes + POI graph (prime suspect for the 70m total)", "extrapolated_min": 44, "evidence": "gap = 70 - 26 measured; requires full-run to confirm"}
+  ],
+  "next_batch_recommendations": [
+    {"id": "DEM-P1", "title": "Vectorize Point construction (shapely/geopandas points_from_xy) instead of the Python [Point(xy) for xy in zip(...)] list comprehension", "evidence": "Measured 80% of spatial matching (~17.5 min extrapolated). The STRtree-reuse hypothesis is disproven (sindex build is 0.6%); do NOT pursue sindex caching as the primary fix.", "risk": "low -- no tie-break or row-order change (same Point geometries); determinism-safe. Must verify sjoin_nearest result is byte-identical."},
+    {"id": "DEM-P2", "title": "Measure the full production Demand in an unguarded environment with the enhanced timing to quantify the post-staging SQL passes (ordered SELECT / OD GROUP BY / export JOIN)", "evidence": "The measured phases sum to ~26 min vs the 70 min production wall; the ~44 min unmeasured gap is in the GB-scale SQL passes, which are the prime suspect for the true 70 min driver. This must be confirmed before committing to SQLite-side optimizations.", "risk": "none (measurement only)"},
+    {"id": "DEM-P3", "title": "Conditional on DEM-P2: if the SQL passes dominate, test SQLite transaction batching / prepared-statement append / sharded staging; if Point construction is confirmed, implement DEM-P1", "evidence": "Decision per the measured ranking; do not optimize DEM-02 further (od_tensors is 0.15 min).", "risk": "medium for SQLite changes (staging ORDER BY + GROUP BY are load-bearing for carpool labeling and OD aggregation; any rewrite must preserve the driver/time/stage_id sort and the GROUP BY semantics)"}
+  ],
+  "conclusions": [
+    "The static-audit STRtree-rebuild hypothesis (Batch 0 B2) is DISPROVEN: STRtree build is 0.6% of spatial matching; Point construction (Python Point() list comprehension) is 80%.",
+    "Spatial matching is the largest MEASURED phase (~21.6 min extrapolated), but is NOT the sole 70 min driver -- ~44 min remains in unmeasured GB-scale SQL passes.",
+    "od_tensors is negligible (0.15 min) -- do NOT continue optimizing DEM-02.",
+    "The full production run is sandbox-blocked in this environment; the enhanced timing (in the working tree, env-gated, uncommitted) is ready to run in an unguarded environment to close the 44 min gap.",
+    "No optimizations were implemented; no production code was committed (the profiling timing enhancements stay uncommitted in the working tree per the task constraint)."
+  ]
+}
