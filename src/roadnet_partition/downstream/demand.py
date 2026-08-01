@@ -356,6 +356,7 @@ def stage_order_assignments(
                 except StopIteration:
                     break
             chunk_index += 1
+            timer.set_chunk(chunk_index, int(len(chunk)))
             stats["rows_read"] += int(len(chunk))
             chunk["source_row"] = chunk.index.astype("int64")
             departure = to_datetime_ns(chunk[departure_col])
@@ -388,20 +389,10 @@ def stage_order_assignments(
                 continue
 
             pickup_match = match_points_to_segments_with_distance(
-                work,
-                pickup_lon,
-                pickup_lat,
-                segments,
-                config["crs"]["geographic"],
-                max_match_distance,
+                work, pickup_lon, pickup_lat, segments, config["crs"]["geographic"], max_match_distance, tag="pickup",
             )
             dropoff_match = match_points_to_segments_with_distance(
-                work,
-                dropoff_lon,
-                dropoff_lat,
-                segments,
-                config["crs"]["geographic"],
-                max_match_distance,
+                work, dropoff_lon, dropoff_lat, segments, config["crs"]["geographic"], max_match_distance, tag="dropoff",
             )
 
             pickup_seg = pickup_match["seg_id"]
@@ -421,6 +412,9 @@ def stage_order_assignments(
             departure_ns = to_epoch_ns(assigned["_departure"])
             finish_ns = to_epoch_ns(assigned["_finish"])
             slot_start_ns = to_epoch_ns(floor_datetimes_to_slot(assigned["_departure"], slot_minutes))
+            with timer.phase("segment_mapping"):
+                origin_cluster = assigned_pickup.map(segment_to_cluster).astype(str).to_numpy()
+                destination_cluster = assigned_dropoff.map(segment_to_cluster).astype(str).to_numpy()
             stage = pd.DataFrame(
                 {
                     "source_file": str(order_path.relative_to(PROJECT_ROOT) if order_path.is_relative_to(PROJECT_ROOT) else order_path),
@@ -432,8 +426,8 @@ def stage_order_assignments(
                     "slot_start_ns": slot_start_ns,
                     "pickup_seg_id": assigned_pickup.to_numpy(),
                     "dropoff_seg_id": assigned_dropoff.to_numpy(),
-                    "origin_cluster_id": assigned_pickup.map(segment_to_cluster).astype(str).to_numpy(),
-                    "destination_cluster_id": assigned_dropoff.map(segment_to_cluster).astype(str).to_numpy(),
+                    "origin_cluster_id": origin_cluster,
+                    "destination_cluster_id": destination_cluster,
                     "pickup_match_distance_m": pickup_match.loc[both_valid, "distance_m"].astype(float).to_numpy(),
                     "dropoff_match_distance_m": dropoff_match.loc[both_valid, "distance_m"].astype(float).to_numpy(),
                 }
@@ -448,31 +442,42 @@ def stage_order_assignments(
                 f"window rows={stats['rows_after_time_window']:,}, staged rows={stats['staged_rows']:,}"
             )
 
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_driver_time ON staged_orders(driver_id, departure_time_ns, finish_time_ns)")
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_slot_od ON staged_orders(slot_start_ns, origin_cluster_id, destination_cluster_id)")
-    connection.commit()
+    with timer.phase("create_index_driver_time"):
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_driver_time ON staged_orders(driver_id, departure_time_ns, finish_time_ns)")
+    with timer.phase("create_index_slot_od"):
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_slot_od ON staged_orders(slot_start_ns, origin_cluster_id, destination_cluster_id)")
+    with timer.phase("sqlite_commit"):
+        connection.commit()
     return stats
 
 def label_staged_service_types(connection: sqlite3.Connection) -> dict[str, int]:
-    connection.execute("DROP TABLE IF EXISTS service_labels")
-    connection.execute("CREATE TABLE service_labels (stage_id INTEGER PRIMARY KEY, service_type TEXT NOT NULL)")
+    from roadnet_partition.pipeline.timing import get_active_timer
+    timer = get_active_timer()
+    with timer.phase("service_labels_create_table"):
+        connection.execute("DROP TABLE IF EXISTS service_labels")
+        connection.execute("CREATE TABLE service_labels (stage_id INTEGER PRIMARY KEY, service_type TEXT NOT NULL)")
     counts = {EXCLUSIVE: 0, CARPOOL: 0}
 
     def emit(batch: list[tuple[int, str]]) -> None:
-        connection.executemany("INSERT INTO service_labels(stage_id, service_type) VALUES (?, ?)", batch)
+        with timer.phase("service_labels_insert"):
+            connection.executemany("INSERT INTO service_labels(stage_id, service_type) VALUES (?, ?)", batch)
         for _, service_type in batch:
             counts[service_type] += 1
 
-    cursor = connection.execute(
-        """
-        SELECT stage_id, driver_id, departure_time_ns, finish_time_ns
-        FROM staged_orders
-        ORDER BY driver_id, departure_time_ns, finish_time_ns, stage_id
-        """
-    )
-    service_label_batches(cursor, emit)
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_service_type ON service_labels(service_type)")
-    connection.commit()
+    with timer.phase("ordered_select_execute"):
+        cursor = connection.execute(
+            """
+            SELECT stage_id, driver_id, departure_time_ns, finish_time_ns
+            FROM staged_orders
+            ORDER BY driver_id, departure_time_ns, finish_time_ns, stage_id
+            """
+        )
+    with timer.phase("service_label_compute"):
+        service_label_batches(cursor, emit)
+    with timer.phase("service_labels_create_index"):
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_service_type ON service_labels(service_type)")
+    with timer.phase("service_labels_commit"):
+        connection.commit()
     return counts
 
 def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, chunksize: int = 100000) -> None:
@@ -499,36 +504,47 @@ def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, ch
     """
     first = True
     with gzip.open(output_path, "wt", encoding="utf-8", newline="") as handle:
-        for chunk in pd.read_sql_query(query, connection, chunksize=chunksize):
-            for source, target in [
-                ("departure_time_ns", "departure_time"),
-                ("finish_time_ns", "finish_time"),
-                ("slot_start_ns", "slot_start"),
-            ]:
-                chunk[target] = pd.to_datetime(chunk[source], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
-            chunk = chunk[
-                [
-                    "stage_id",
-                    "source_file",
-                    "source_row",
-                    "order_id",
-                    "driver_id",
-                    "departure_time",
-                    "finish_time",
-                    "slot_start",
-                    "pickup_seg_id",
-                    "dropoff_seg_id",
-                    "origin_cluster_id",
-                    "destination_cluster_id",
-                    "pickup_match_distance_m",
-                    "dropoff_match_distance_m",
-                    "service_type",
+        from roadnet_partition.pipeline.timing import get_active_timer
+        timer = get_active_timer()
+        reader = pd.read_sql_query(query, connection, chunksize=chunksize)
+        while True:
+            with timer.phase("export_join_fetch"):
+                try:
+                    chunk = next(reader)
+                except StopIteration:
+                    break
+            with timer.phase("export_csv_gzip"):
+                for source, target in [
+                    ("departure_time_ns", "departure_time"),
+                    ("finish_time_ns", "finish_time"),
+                    ("slot_start_ns", "slot_start"),
+                ]:
+                    chunk[target] = pd.to_datetime(chunk[source], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
+                chunk = chunk[
+                    [
+                        "stage_id",
+                        "source_file",
+                        "source_row",
+                        "order_id",
+                        "driver_id",
+                        "departure_time",
+                        "finish_time",
+                        "slot_start",
+                        "pickup_seg_id",
+                        "dropoff_seg_id",
+                        "origin_cluster_id",
+                        "destination_cluster_id",
+                        "pickup_match_distance_m",
+                        "dropoff_match_distance_m",
+                        "service_type",
+                    ]
                 ]
-            ]
-            chunk.to_csv(handle, index=False, header=first)
-            first = False
+                chunk.to_csv(handle, index=False, header=first)
+                first = False
 
 def build_cluster_od_from_staging(connection: sqlite3.Connection) -> pd.DataFrame:
+    from roadnet_partition.pipeline.timing import get_active_timer
+    timer = get_active_timer()
     query = """
         SELECT
             o.slot_start_ns,
@@ -541,32 +557,34 @@ def build_cluster_od_from_staging(connection: sqlite3.Connection) -> pd.DataFram
         GROUP BY o.slot_start_ns, o.origin_cluster_id, o.destination_cluster_id, l.service_type
         ORDER BY o.slot_start_ns, o.origin_cluster_id, o.destination_cluster_id, l.service_type
     """
-    grouped = pd.read_sql_query(query, connection)
+    with timer.phase("od_groupby_fetch"):
+        grouped = pd.read_sql_query(query, connection)
     if grouped.empty:
         return aggregate_od_frame(pd.DataFrame(), 15)
 
-    grouped["slot_start"] = pd.to_datetime(grouped["slot_start_ns"], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
-    pivot = (
-        grouped.pivot_table(
-            index=["slot_start", "origin_cluster_id", "destination_cluster_id"],
-            columns="service_type",
-            values="order_count",
-            aggfunc="sum",
-            fill_value=0,
+    with timer.phase("od_pivot"):
+        grouped["slot_start"] = pd.to_datetime(grouped["slot_start_ns"], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
+        pivot = (
+            grouped.pivot_table(
+                index=["slot_start", "origin_cluster_id", "destination_cluster_id"],
+                columns="service_type",
+                values="order_count",
+                aggfunc="sum",
+                fill_value=0,
+            )
+            .reset_index()
+            .rename_axis(None, axis=1)
         )
-        .reset_index()
-        .rename_axis(None, axis=1)
-    )
-    for service_type in SERVICE_TYPES:
-        if service_type not in pivot.columns:
-            pivot[service_type] = 0
-    pivot = pivot.rename(columns={EXCLUSIVE: "exclusive_count", CARPOOL: "carpool_count"})
-    pivot["exclusive_count"] = pivot["exclusive_count"].astype(int)
-    pivot["carpool_count"] = pivot["carpool_count"].astype(int)
-    pivot["total_count"] = pivot["exclusive_count"] + pivot["carpool_count"]
-    return pivot[
-        ["slot_start", "origin_cluster_id", "destination_cluster_id", "exclusive_count", "carpool_count", "total_count"]
-    ].sort_values(["slot_start", "origin_cluster_id", "destination_cluster_id"])
+        for service_type in SERVICE_TYPES:
+            if service_type not in pivot.columns:
+                pivot[service_type] = 0
+        pivot = pivot.rename(columns={EXCLUSIVE: "exclusive_count", CARPOOL: "carpool_count"})
+        pivot["exclusive_count"] = pivot["exclusive_count"].astype(int)
+        pivot["carpool_count"] = pivot["carpool_count"].astype(int)
+        pivot["total_count"] = pivot["exclusive_count"] + pivot["carpool_count"]
+        return pivot[
+            ["slot_start", "origin_cluster_id", "destination_cluster_id", "exclusive_count", "carpool_count", "total_count"]
+        ].sort_values(["slot_start", "origin_cluster_id", "destination_cluster_id"])
 
 def load_staged_slot_bounds(connection: sqlite3.Connection) -> dict[str, int | None]:
     row = connection.execute(
@@ -639,30 +657,34 @@ def run_from_config(config: dict[str, Any]) -> None:
     completed = False
     try:
         order_stats = stage_order_assignments(connection, config, partition)
+        timer.record_sqlite_size(db_path)
+        from roadnet_partition.pipeline.timing import collect_sqlite_evidence
+        sqlite_evidence = collect_sqlite_evidence(connection)
         print("Inferring service types from driver time overlaps...")
-        with timer.phase("service_labeling"):
-            service_counts = label_staged_service_types(connection)
+        service_counts = label_staged_service_types(connection)
 
         assigned_path = output_dir / "orders_region_assigned.csv.gz"
         print(f"Exporting assigned orders to {assigned_path}...")
-        with timer.phase("gzip_write"):
-            export_assigned_orders(connection, assigned_path)
+        export_assigned_orders(connection, assigned_path)
 
         slot_suffix = f"{int(pipeline['time_slot_minutes'])}min"
-        with timer.phase("od_aggregation"):
-            od = build_cluster_od_from_staging(connection)
+        od = build_cluster_od_from_staging(connection)
+        with timer.phase("od_csv"):
             od_path = output_dir / f"cluster_od_{slot_suffix}.csv"
             od.to_csv(od_path, index=False)
 
-            staged_time_bounds = load_staged_slot_bounds(connection)
-            tensor_slot_labels = build_slot_labels_from_bounds(
-                staged_time_bounds["min_slot_start_ns"],
-                staged_time_bounds["max_slot_start_ns"],
-                int(pipeline["time_slot_minutes"]),
-            )
+        staged_time_bounds = load_staged_slot_bounds(connection)
+        tensor_slot_labels = build_slot_labels_from_bounds(
+            staged_time_bounds["min_slot_start_ns"],
+            staged_time_bounds["max_slot_start_ns"],
+            int(pipeline["time_slot_minutes"]),
+        )
+        with timer.phase("tensor_alloc_fill"):
             tensors = build_od_tensors(od, cluster_ids, tensor_slot_labels)
+        with timer.phase("npz_write"):
             tensor_path = output_dir / f"od_tensor_{slot_suffix}.npz"
             np.savez_compressed(tensor_path, **tensors)
+        timer.record_sqlite_size(db_path)
         completed = True
     finally:
         connection.close()
@@ -670,26 +692,27 @@ def run_from_config(config: dict[str, Any]) -> None:
             db_path.unlink()
 
     print("Building cluster-level graph assets...")
-    relation_edges = pd.read_csv(relation_edges_path)
-    road_edges = build_cluster_road_edges(
-        relation_edges,
-        segment_to_cluster,
-        cluster_to_index,
-        pipeline.get("road_graph", {}).get("weight_column", "base_weight"),
-    )
-    graph_summaries = [
-        save_graph_assets("road", road_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
-    ]
+    with timer.phase("other_writes"):
+        relation_edges = pd.read_csv(relation_edges_path)
+        road_edges = build_cluster_road_edges(
+            relation_edges,
+            segment_to_cluster,
+            cluster_to_index,
+            pipeline.get("road_graph", {}).get("weight_column", "base_weight"),
+        )
+        graph_summaries = [
+            save_graph_assets("road", road_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
+        ]
 
-    poi_edges, poi_stats = build_cluster_poi_graph(partition, cluster_ids, cluster_to_index, config, output_dir)
-    graph_summaries.append(
-        save_graph_assets("poi", poi_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
-    )
+        poi_edges, poi_stats = build_cluster_poi_graph(partition, cluster_ids, cluster_to_index, config, output_dir)
+        graph_summaries.append(
+            save_graph_assets("poi", poi_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
+        )
 
-    distance_edges = build_cluster_distance_graph(cluster_index, cluster_ids, config)
-    graph_summaries.append(
-        save_graph_assets("distance", distance_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
-    )
+        distance_edges = build_cluster_distance_graph(cluster_index, cluster_ids, config)
+        graph_summaries.append(
+            save_graph_assets("distance", distance_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
+        )
 
     metadata = {
         "active_scope": active_scope_name(config),
@@ -721,7 +744,12 @@ def run_from_config(config: dict[str, Any]) -> None:
     with metadata_path.open("w", encoding="utf-8") as handle:
         json.dump(json_safe(metadata), handle, ensure_ascii=False, indent=2)
 
+    timer.finalize_io()
     timer.report()
+    if timer.enabled:
+        profile = timer.to_profile()
+        profile["sqlite_evidence"] = sqlite_evidence
+        (output_dir / "timing_profile.json").write_text(json.dumps(profile, indent=2, default=str), encoding="utf-8")
     print(f"Saved order-region pipeline outputs to {output_dir}")
     print(f"Saved metadata to {metadata_path}")
 

@@ -306,9 +306,14 @@ def match_points_to_segments_with_distance(
     segments,
     source_crs: str,
     max_distance_m: float,
+    tag: str | None = None,
 ) -> pd.DataFrame:
     import geopandas as gpd
     from shapely.geometry import Point
+
+    from roadnet_partition.pipeline.timing import get_active_timer
+    timer = get_active_timer()
+    pfx = f"{tag}_" if tag else ""
 
     result = pd.DataFrame(index=frame.index, data={"seg_id": pd.NA, "distance_m": np.nan})
     valid = frame[[lon_col, lat_col]].notna().all(axis=1)
@@ -316,10 +321,7 @@ def match_points_to_segments_with_distance(
     if not bool(valid.any()):
         return result
 
-    from roadnet_partition.pipeline.timing import get_active_timer
-    timer = get_active_timer()
-
-    with timer.phase("point_construction"):
+    with timer.phase(f"{pfx}point_construction"):
         points = gpd.GeoDataFrame(
             {"row_id": frame.index[valid]},
             geometry=[Point(xy) for xy in zip(frame.loc[valid, lon_col], frame.loc[valid, lat_col])],
@@ -327,12 +329,12 @@ def match_points_to_segments_with_distance(
         ).to_crs(segments.crs)
     seg_view = segments[["seg_id", "geometry"]]
     if timer.enabled:
-        # Pre-build the STRtree so spatial-index build is timed separately from the
-        # sjoin_nearest query. Result-equivalent (sjoin_nearest builds/uses the
-        # index either way) and only runs when timing is enabled.
-        with timer.phase("spatial_index_build"):
+        rebuilt = getattr(seg_view, "_sindex", None) is None
+        with timer.phase(f"{pfx}spatial_index_build"):
             _ = seg_view.sindex
-    with timer.phase("nearest_query"):
+        if rebuilt:
+            timer.count(f"{pfx}sindex_rebuild")
+    with timer.phase(f"{pfx}nearest_query"):
         joined = gpd.sjoin_nearest(
             points,
             seg_view,
