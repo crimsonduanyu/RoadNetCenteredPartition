@@ -28,6 +28,16 @@ class ConfigError(ValueError):
     """A split configuration is invalid or internally inconsistent."""
 
 
+DEFAULT_GZIP_COMPRESSLEVEL = 9
+
+
+def validate_gzip_compresslevel(value: Any, *, source: Path | None = None) -> int:
+    prefix = f"{source}: " if source is not None else ""
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 9:
+        raise ConfigError(f"{prefix}gzip_compresslevel must be an integer in [0, 9]")
+    return value
+
+
 _ANY = object()
 _OPEN_MAPPING = object()
 _OUTPUT_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -182,6 +192,7 @@ _DEMAND_SCHEMA = {
     "schema_version": _ANY,
     "dataset_config": _ANY,
     "scope": _ANY,
+    "gzip_compresslevel": _ANY,
     "order_pipeline": {
         "inputs": {
             "partition_gpkg": _ANY,
@@ -659,12 +670,16 @@ def resolve_demand_config(path: str | Path) -> ResolvedStageConfig:
         _resolve_pattern(raw, field, source=source)
     _, dataset = _load_yaml_mapping(dataset_path)
     pipeline = deepcopy(raw["order_pipeline"])
+    gzip_compresslevel = validate_gzip_compresslevel(
+        raw.get("gzip_compresslevel", DEFAULT_GZIP_COMPRESSLEVEL), source=source,
+    )
     if raw.get("standalone", {}).get("output_dir") is not None:
         pipeline["outputs"] = {**dict(pipeline.get("outputs", {})), "root": raw["standalone"]["output_dir"]}
     values.update({
         "study_area": _dataset_study_area(dataset, scope),
         "crs": deepcopy(dataset["crs"]),
         "order_pipeline": pipeline,
+        "gzip_compresslevel": gzip_compresslevel,
         "contract": deepcopy(raw.get("contract", {})),
     })
     return _finish_resolved(

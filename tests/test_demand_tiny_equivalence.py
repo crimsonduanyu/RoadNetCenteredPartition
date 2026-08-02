@@ -104,6 +104,7 @@ def test_tiny_demand_outputs_and_contracts(tmp_path: Path, monkeypatch) -> None:
 
 def test_tiny_timing_on_off_outputs_are_equal(tmp_path: Path, monkeypatch) -> None:
     config, config_path = build_fixture(tmp_path, tmp_path / "unused")
+    config["gzip_compresslevel"] = 1
     resolved = ResolvedStageConfig(config_path, config, "tiny")
 
     monkeypatch.delenv("ROADNET_DEMAND_TIMING", raising=False)

@@ -208,15 +208,15 @@ class _TimedGzipFile(gzip.GzipFile):
 
 
 @contextlib.contextmanager
-def open_timed_gzip_text(path, timer: StageTimer):
+def open_timed_gzip_text(path, timer: StageTimer, compresslevel: int = 9):
     """Open the existing gzip text stream, exposing compression-only timing."""
     if not timer.enabled:
-        with gzip.open(path, "wt", encoding="utf-8", newline="") as handle:
+        with gzip.open(path, "wt", compresslevel=compresslevel, encoding="utf-8", newline="") as handle:
             yield handle, None
         return
 
     with timer.phase("export_flush_close"):
-        raw = _TimedGzipFile(filename=path, mode="wb")
+        raw = _TimedGzipFile(filename=path, mode="wb", compresslevel=compresslevel)
         handle = io.TextIOWrapper(raw, encoding="utf-8", newline="")
     try:
         yield handle, raw

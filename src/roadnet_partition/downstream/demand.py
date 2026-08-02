@@ -12,7 +12,11 @@ from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
 import pandas as pd
 
-from roadnet_partition.config import ResolvedStageConfig
+from roadnet_partition.config import (
+    DEFAULT_GZIP_COMPRESSLEVEL,
+    ResolvedStageConfig,
+    validate_gzip_compresslevel,
+)
 from roadnet_partition.graphs.build import (
     build_cluster_distance_graph, build_cluster_poi_graph, build_cluster_road_edges,
     save_graph_assets,
@@ -520,7 +524,12 @@ def _iter_export_chunks(
             cursor.close()
 
 
-def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, chunksize: int = 100000) -> None:
+def export_assigned_orders(
+    connection: sqlite3.Connection,
+    output_path: Path,
+    chunksize: int = 100000,
+    compresslevel: int = DEFAULT_GZIP_COMPRESSLEVEL,
+) -> None:
     query = """
         SELECT
             o.stage_id,
@@ -546,7 +555,7 @@ def export_assigned_orders(connection: sqlite3.Connection, output_path: Path, ch
     timer = get_active_timer()
     export_start = time.perf_counter() if timer.enabled else None
     first = True
-    with open_timed_gzip_text(output_path, timer) as (handle, compressor):
+    with open_timed_gzip_text(output_path, timer, compresslevel=compresslevel) as (handle, compressor):
         for export_index, chunk in _iter_export_chunks(connection, query, chunksize, timer):
             with timer.phase("export_datetime_format"):
                 for source, target in [
@@ -693,6 +702,9 @@ def run_from_config(config: dict[str, Any]) -> None:
     output_dir = resolve_output_root(config)
     output_dir.mkdir(parents=True, exist_ok=True)
     pipeline = config["order_pipeline"]
+    gzip_compresslevel = validate_gzip_compresslevel(
+        config.get("gzip_compresslevel", DEFAULT_GZIP_COMPRESSLEVEL),
+    )
     partition_path = Path(project_path(pipeline["inputs"]["partition_gpkg"]))
     configured_relation_edges = pipeline["inputs"].get("road_relation_edges_csv")
     relation_edges_path = Path(project_path(configured_relation_edges)) if configured_relation_edges else default_relation_edges_path(config)
@@ -717,7 +729,7 @@ def run_from_config(config: dict[str, Any]) -> None:
 
         assigned_path = output_dir / "orders_region_assigned.csv.gz"
         print(f"Exporting assigned orders to {assigned_path}...")
-        export_assigned_orders(connection, assigned_path)
+        export_assigned_orders(connection, assigned_path, compresslevel=gzip_compresslevel)
 
         slot_suffix = f"{int(pipeline['time_slot_minutes'])}min"
         od = build_cluster_od_from_staging(connection)

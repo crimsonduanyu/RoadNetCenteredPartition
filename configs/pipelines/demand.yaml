@@ -1,6 +1,7 @@
 schema_version: 1
 dataset_config: ../datasets/fifth_ring.yaml
 scope: fifth_ring
+gzip_compresslevel: 1
 
 order_pipeline:
   inputs:
