@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-02",
+  "batch": "Performance Batch 2C-2C",
+  "status": "complete_validated",
+  "repo": "RoadNetCenteredPartition",
+  "head": "5e1e8ef",
+  "scope": {
+    "purpose": "validate Demand gzip level 1 downstream impact",
+    "optimization_implemented": false,
+    "demand_runs": ["demand-prof-2c-2a", "demand-prof-2c-2b-level1"],
+    "downstream_cli": "standalone Supply/TTE stage CLI",
+    "time_command": "/usr/bin/time -v",
+    "cache_control": "interleaved order; no sudo or system cache clearing",
+    "timing_instrumentation_added": false
+  },
+  "input_equivalence": {
+    "demand_input_fingerprint": "366afc90c6e2d874d797725368bbd464983c18945da0253424226e559fb3d039",
+    "assigned_orders": {
+      "uncompressed_bytes": 10523799657,
+      "rows": 46002707,
+      "header_bytes": 220,
+      "header_sha256": "08b0dc6edc215da23a2d46665401b685d95fe763319fd1fe7a8eb298333622cc",
+      "sha256": "087dcf1ad1606874f55e6c3b28a0401462641960406631ef6d6742d47ceebfed",
+      "level9_compressed_bytes": 2690755454,
+      "level1_compressed_bytes": 3079468693,
+      "compressed_size_delta_bytes": 388713239,
+      "compressed_size_delta_pct": 14.446249227968666
+    },
+    "demand_exact_equal_outputs": [
+      "cluster_index", "cluster_od", "distance_adjacency_normalized",
+      "distance_adjacency_raw", "distance_graph_edges", "od_tensor",
+      "poi_adjacency_normalized", "poi_adjacency_raw", "poi_category_mapping",
+      "poi_features", "poi_graph_edges", "road_adjacency_normalized",
+      "road_adjacency_raw", "road_graph_edges"
+    ],
+    "allowed_differences": ["assigned_orders_gzip_container", "run_metadata"]
+  },
+  "execution_order": [
+    "supply-prof-2c-2c-level9-a",
+    "supply-prof-2c-2c-level1-a",
+    "tte-prof-2c-2c-level9-a",
+    "tte-prof-2c-2c-level1-a",
+    "supply-prof-2c-2c-level1-b",
+    "supply-prof-2c-2c-level9-b"
+  ],
+  "runs": {
+    "supply": [
+      {
+        "run_id": "supply-prof-2c-2c-level9-a",
+        "level": 9,
+        "repetition": "primary",
+        "wall_s": 886.31,
+        "user_s": 836.83,
+        "sys_s": 49.94,
+        "cpu_pct": 100,
+        "peak_rss_kb": 11750788,
+        "filesystem_inputs": 1240,
+        "filesystem_outputs": 273312,
+        "major_page_faults": 1,
+        "minor_page_faults": 18186246,
+        "contract": "passed"
+      },
+      {
+        "run_id": "supply-prof-2c-2c-level1-a",
+        "level": 1,
+        "repetition": "primary",
+        "wall_s": 881.93,
+        "user_s": 833.10,
+        "sys_s": 49.38,
+        "cpu_pct": 100,
+        "peak_rss_kb": 11782876,
+        "filesystem_inputs": 0,
+        "filesystem_outputs": 273328,
+        "major_page_faults": 0,
+        "minor_page_faults": 18038765,
+        "contract": "passed"
+      },
+      {
+        "run_id": "supply-prof-2c-2c-level1-b",
+        "level": 1,
+        "repetition": "reverse_order",
+        "wall_s": 878.40,
+        "user_s": 830.09,
+        "sys_s": 48.86,
+        "cpu_pct": 100,
+        "peak_rss_kb": 11783400,
+        "filesystem_inputs": 0,
+        "filesystem_outputs": 273312,
+        "major_page_faults": 0,
+        "minor_page_faults": 18034743,
+        "contract": "passed"
+      },
+      {
+        "run_id": "supply-prof-2c-2c-level9-b",
+        "level": 9,
+        "repetition": "reverse_order",
+        "wall_s": 880.26,
+        "user_s": 832.75,
+        "sys_s": 48.07,
+        "cpu_pct": 100,
+        "peak_rss_kb": 11784940,
+        "filesystem_inputs": 0,
+        "filesystem_outputs": 273312,
+        "major_page_faults": 0,
+        "minor_page_faults": 17688587,
+        "contract": "passed"
+      }
+    ],
+    "tte": [
+      {
+        "run_id": "tte-prof-2c-2c-level9-a",
+        "level": 9,
+        "wall_s": 651.98,
+        "user_s": 782.30,
+        "sys_s": 122.36,
+        "cpu_pct": 138,
+        "peak_rss_kb": 11444228,
+        "filesystem_inputs": 8,
+        "filesystem_outputs": 1245200,
+        "major_page_faults": 0,
+        "minor_page_faults": 8062164,
+        "contract": "passed",
+        "shape": [13248, 10000],
+        "observed_cells": 19343240,
+        "inferred_cells": 64709268,
+        "missing_cells": 48427492
+      },
+      {
+        "run_id": "tte-prof-2c-2c-level1-a",
+        "level": 1,
+        "wall_s": 653.96,
+        "user_s": 784.67,
+        "sys_s": 123.36,
+        "cpu_pct": 138,
+        "peak_rss_kb": 11593748,
+        "filesystem_inputs": 0,
+        "filesystem_outputs": 1245200,
+        "major_page_faults": 0,
+        "minor_page_faults": 7382496,
+        "contract": "passed",
+        "shape": [13248, 10000],
+        "observed_cells": 19343240,
+        "inferred_cells": 64709268,
+        "missing_cells": 48427492
+      }
+    ]
+  },
+  "output_equivalence": {
+    "supply": {
+      "orders": 46002707,
+      "drivers": 199668,
+      "clusters": 100,
+      "slots": 13248,
+      "inservice_rows": 41147628,
+      "available_rows": 1324800,
+      "fleet_rows": 1324800,
+      "decompressed_outputs_exact_equal": true,
+      "decompressed_sha256": {
+        "supply_available_floor.csv.gz": "582442ad90cc478737116b270e663120215f3b53e1efc2fa49b939a4500d116f",
+        "supply_fleet_lower_bound.csv.gz": "b8b1633f3005cf76f1bcfa69bcd828f4765642ef1314b698c66efa874db46de4",
+        "supply_inservice_od.csv.gz": "775639f554fc0ab7a82b403e5af29f244cc034eab81e141e4b2c786f6e575b85"
+      }
+    },
+    "tte": {
+      "shape": [13248, 10000],
+      "observed_cells": 19343240,
+      "inferred_cells": 64709268,
+      "missing_cells": 48427492,
+      "all_formal_parquet_and_distance_assets_exact_equal": true
+    }
+  },
+  "wall_analysis": {
+    "known_demand_gain_s": 440.176,
+    "supply_primary_level9_s": 886.31,
+    "supply_primary_level1_s": 881.93,
+    "supply_primary_delta_s": -4.38,
+    "tte_level9_s": 651.98,
+    "tte_level1_s": 653.96,
+    "tte_delta_s": 1.98,
+    "supply_plus_tte_primary_delta_s": -2.40,
+    "supply_mean_level9_s": 883.285,
+    "supply_mean_level1_s": 880.165,
+    "supply_mean_delta_s": -3.12,
+    "supply_plus_tte_mean_delta_s": -1.14,
+    "demand_to_tte_primary_reduction_s": 442.576,
+    "demand_to_tte_mean_supply_reduction_s": 441.316,
+    "supply_primary_peak_rss_delta_pct": 0.273,
+    "tte_peak_rss_delta_pct": 1.307,
+    "supply_plus_tte_regression_gate_s": 120,
+    "demand_to_tte_min_gain_gate_s": 300
+  },
+  "conclusion": {
+    "retain_level1": true,
+    "pareto_improvement": true,
+    "downstream_file_size_penalty_observed": false,
+    "dominant_behavior": "Supply and TTE are primarily compute-bound at whole-stage level; large sequential I/O remains present.",
+    "tradeoff_note_recommended": true,
+    "new_optimization_implemented": false
+  },
+  "verification": {
+    "all_six_stage_contracts_passed": true,
+    "demand_rerun": false,
+    "timing_on_off_changed": false,
+    "run_outputs_committed": false,
+    "privacy_scan": "passed",
+    "tracked_file_size_scan": "passed",
+    "git_diff_check": "passed",
+    "full_tests": "270 passed, 59 warnings"
+  }
+}
