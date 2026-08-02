@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-02",
+  "batch": "Performance Batch 2C-2B",
+  "status": "complete_optimized",
+  "repo": "RoadNetCenteredPartition",
+  "config_commit": "ae22ef2",
+  "formal_run_id": "demand-prof-2c-2b-level1",
+  "baseline_run_id": "demand-prof-2c-2a",
+  "scope": {
+    "timing_env": "ROADNET_DEMAND_TIMING=1",
+    "default_off": true,
+    "config": "configs/pipelines/full.yaml",
+    "to_stage": "demand",
+    "isolate_stages": true,
+    "resume": false,
+    "selected_level": 1,
+    "pre_change_level": 9,
+    "unchanged": [
+      "CSV writer",
+      "CSV bytes and formatting",
+      "datetime formatting",
+      "SQL text",
+      "SQLite and indexes",
+      "export chunk size 100000",
+      "UTF-8 encoding",
+      "newline",
+      "header and column order",
+      "output filename",
+      "service labeling",
+      "output contract"
+    ]
+  },
+  "current_level_confirmation": {
+    "gzip_open_default": 9,
+    "gzip_file_default": 9,
+    "controlled_zlib_levels_before_config": [9, 9],
+    "filename_header": "orders_region_assigned.csv",
+    "filename_header_mode": "basename automatically derived from output path",
+    "mtime_mode": "mtime=None, generated at open time",
+    "os_header": 255,
+    "encoding": "utf-8",
+    "newline": ""
+  },
+  "offline_input": {
+    "relative_experiment_dir": "outputs/perf-audit/demand-gzip-2c2b",
+    "uncompressed_bytes": 10523799657,
+    "rows": 46002707,
+    "sha256": "087dcf1ad1606874f55e6c3b28a0401462641960406631ef6d6742d47ceebfed",
+    "header_bytes_including_newline": 220,
+    "header_sha256_including_newline": "8c61944c7613deaa88d4293dc9f54633aa322df3be3c709d8b71f6c0d960a9ca",
+    "write_chunk_bytes": 8192,
+    "warmup_runs_per_level": 1,
+    "full_runs_per_level": 1,
+    "repeat_levels": {
+      "1": 1,
+      "3": 1
+    }
+  },
+  "offline_levels": [
+    {
+      "level": 1,
+      "time_v_wall_s": 74.65,
+      "user_s": 67.34,
+      "sys_s": 7.28,
+      "cpu_pct": 99,
+      "peak_rss_kb": 26108,
+      "gzip_raw_write_wall_s": 67.88880995113868,
+      "throughput_mib_s": 147.83404586277427,
+      "compressed_bytes": 3079468693,
+      "compression_ratio": 3.4174075810291082,
+      "time_change_pct_vs_level9": -86.77661647799528,
+      "size_change_pct_vs_level9": 14.446249227968666,
+      "decompressed_sha256_equal": true,
+      "decompressed_bytes_equal": true,
+      "rows_equal": true,
+      "header_equal": true
+    },
+    {
+      "level": 3,
+      "time_v_wall_s": 120.26,
+      "user_s": 113.16,
+      "sys_s": 7.05,
+      "cpu_pct": 99,
+      "peak_rss_kb": 25984,
+      "gzip_raw_write_wall_s": 113.21513907099143,
+      "throughput_mib_s": 88.64783920454813,
+      "compressed_bytes": 2959259672,
+      "compression_ratio": 3.5562271728210813,
+      "time_change_pct_vs_level9": -77.947953344442,
+      "size_change_pct_vs_level9": 9.978767026221181,
+      "decompressed_sha256_equal": true,
+      "decompressed_bytes_equal": true,
+      "rows_equal": true,
+      "header_equal": true
+    },
+    {
+      "level": 6,
+      "time_v_wall_s": 254.59,
+      "user_s": 243.51,
+      "sys_s": 11.04,
+      "cpu_pct": 99,
+      "peak_rss_kb": 25548,
+      "gzip_raw_write_wall_s": 247.1230196263641,
+      "throughput_mib_s": 40.612474948954905,
+      "compressed_bytes": 2736612170,
+      "compression_ratio": 3.845557573837728,
+      "time_change_pct_vs_level9": -51.86537416126116,
+      "size_change_pct_vs_level9": 1.7042320189978977,
+      "decompressed_sha256_equal": true,
+      "decompressed_bytes_equal": true,
+      "rows_equal": true,
+      "header_equal": true
+    },
+    {
+      "level": 9,
+      "time_v_wall_s": 521.09,
+      "user_s": 509.36,
+      "sys_s": 11.65,
+      "cpu_pct": 99,
+      "peak_rss_kb": 25904,
+      "gzip_raw_write_wall_s": 513.399689558777,
+      "throughput_mib_s": 19.54866286053099,
+      "compressed_bytes": 2690755454,
+      "compression_ratio": 3.911094797320069,
+      "time_change_pct_vs_level9": 0.0,
+      "size_change_pct_vs_level9": 0.0,
+      "decompressed_sha256_equal": true,
+      "decompressed_bytes_equal": true,
+      "rows_equal": true,
+      "header_equal": true
+    }
+  ],
+  "formal_before_after": {
+    "demand_stage_wall_s": {
+      "before": 3490.945995,
+      "after": 3050.770021,
+      "reduction_s": 440.175974,
+      "reduction_pct": 12.609074291909812
+    },
+    "full_pipeline_envelope_s": {
+      "before": 4654.330434,
+      "after": 4204.713921,
+      "reduction_s": 449.616513
+    },
+    "export_wall_s": {
+      "before": 935.970938965911,
+      "after": 485.0910158349434,
+      "reduction_s": 450.87992313096765,
+      "reduction_pct": 48.172427621429506
+    },
+    "export_gzip_compress_write_s": {
+      "before": 519.3107297221432,
+      "after": 71.08230537606869,
+      "reduction_s": 448.22842434607446,
+      "reduction_pct": 86.31218241646938
+    },
+    "export_csv_serialize_s": {
+      "before": 229.4963963960763,
+      "after": 227.97306694777217
+    },
+    "export_datetime_format_s": {
+      "before": 28.173337912070565,
+      "after": 28.800564436940476
+    },
+    "export_subtotal_s": {
+      "before": 935.8961162808118,
+      "after": 485.0150349108735,
+      "before_gap_pct": 0.00799412481565648,
+      "after_gap_pct": 0.015663230525740066
+    },
+    "assigned_compressed_bytes": {
+      "before": 2690755454,
+      "after": 3079468693,
+      "change_pct": 14.446249227968666
+    },
+    "peak_rss_kb": {
+      "before": 11641608,
+      "after": 11457552,
+      "change_pct": -1.581018704632553
+    },
+    "cpu_utilization_pct": {
+      "before": 99,
+      "after": 99
+    }
+  },
+  "completeness": {
+    "level1_inclusive_phase_sum_s": 3132.8933219874743,
+    "known_nested_service_labels_insert_s": 445.9744590332266,
+    "level1_exclusive_phase_sum_s": 2686.9188629542477,
+    "level1_instrumented_body_wall_s": 2814.251684498973,
+    "level1_unclassified_s": 127.33282154472545,
+    "level1_unclassified_pct": 4.524571211810246,
+    "hard_max_5pct_passed": true,
+    "target_3pct_passed": false
+  },
+  "equivalence": {
+    "decompressed_assigned_sha256": "087dcf1ad1606874f55e6c3b28a0401462641960406631ef6d6742d47ceebfed",
+    "decompressed_assigned_bytes": 10523799657,
+    "assigned_rows": 46002707,
+    "contract_equal": true,
+    "od_tensor_graph_poi_exact_equal": true,
+    "metadata_equal_after_run_owned_path_normalization": true,
+    "gzip_container_sha256_before": "7c3b7ba63c72d0944a988067667ace7728aa609a62b1bc35a5ba69b9b4afd26d",
+    "gzip_container_sha256_after": "8e559b93fbff557f171ed5b951478070c4ef9a42e86743a2bc5f4dbf005c31a",
+    "gzip_container_bytes_allowed_to_differ": true
+  },
+  "follow_up_experiments": [
+    "exact CSV formatting path",
+    "fetch-serialize-gzip pipelining",
+    "export batch-size sensitivity"
+  ],
+  "verification": {
+    "full_tests": "270 passed, 59 warnings",
+    "targeted_gzip_tests": "passed",
+    "demand_contract": "passed",
+    "timing_on_off_tiny_equivalence": "passed",
+    "outputs_committed": false,
+    "private_data_in_document": false
+  }
+}
