@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "document": "pipeline-architecture-v2-phase-a",
+  "date": "2026-08-03",
+  "phase": "A",
+  "status": "passed_and_stopped",
+  "repository": {
+    "root": "/home/dy/jupyter/workspace/RoadNetCenteredPartition",
+    "head_before_document_commit": "57047fd",
+    "default_backend": "sqlite_v1",
+    "v2_backend": "parquet_duckdb_v2",
+    "raw_only_fresh_validation": true,
+    "history_artifacts_reused": false
+  },
+  "commits": [
+    {"short": "3da6b5c", "message": "RoadNet: clarify v2 downstream timing estimates"},
+    {"short": "2ebd06a", "message": "RoadNet: add DuckDB runtime dependency"},
+    {"short": "b4d4b15", "message": "RoadNet: define columnar order checkpoint contract"},
+    {"short": "f96b088", "message": "RoadNet: add deterministic labeled checkpoint pipeline"},
+    {"short": "f1ddfba", "message": "RoadNet: harden Phase A checkpoint resume and recovery"},
+    {"short": "57047fd", "message": "RoadNet: bound v2 Arrow and OD streaming memory"}
+  ],
+  "stop_boundary": {
+    "supply_reader_migrated": false,
+    "tte_reader_migrated": false,
+    "fanout_production": false,
+    "csv_default_removed": false,
+    "sqlite_removed": false,
+    "public_contract_changed": false,
+    "entered_phase_b_c_d_e": false
+  },
+  "runtime": {
+    "duckdb": "1.5.5",
+    "memory_limit": "512MB",
+    "threads": 1,
+    "arrow_batch_size": 100000,
+    "target_shard_rows": 500000,
+    "temp_disk_budget_bytes": 42949672960,
+    "primary_sort_key": ["driver_id", "departure_time_ns", "finish_time_ns", "stage_id"],
+    "od_sort_key": ["slot_start_ns", "origin_cluster_id", "destination_cluster_id", "service_type"],
+    "compatibility_export_sort_key": ["stage_id"],
+    "temp_run_owned": true,
+    "temp_system_directory_used_by_v2": false,
+    "environment_definition": "environment.yml",
+    "import_version_arrow_smoke": "passed",
+    "platform_tested": "Linux Python 3.11",
+    "windows_packaging_assessment": "DuckDB/PyArrow Linux and Windows packages are available; Windows execution not run here"
+  },
+  "checkpoint_contracts": {
+    "nullable_columns": ["order_id", "pickup_match_distance_m", "dropoff_match_distance_m"],
+    "all_other_columns_non_nullable": true,
+    "matched_columns": [
+      {"name": "stage_id", "arrow_type": "int64", "nullable": false},
+      {"name": "source_file", "arrow_type": "string", "nullable": false},
+      {"name": "source_row", "arrow_type": "int64", "nullable": false},
+      {"name": "order_id", "arrow_type": "string", "nullable": true},
+      {"name": "driver_id", "arrow_type": "string", "nullable": false},
+      {"name": "departure_time_ns", "arrow_type": "int64", "nullable": false},
+      {"name": "finish_time_ns", "arrow_type": "int64", "nullable": false},
+      {"name": "slot_start_ns", "arrow_type": "int64", "nullable": false},
+      {"name": "pickup_seg_id", "arrow_type": "string", "nullable": false},
+      {"name": "dropoff_seg_id", "arrow_type": "string", "nullable": false},
+      {"name": "origin_cluster_id", "arrow_type": "string", "nullable": false},
+      {"name": "destination_cluster_id", "arrow_type": "string", "nullable": false},
+      {"name": "pickup_match_distance_m", "arrow_type": "double", "nullable": true},
+      {"name": "dropoff_match_distance_m", "arrow_type": "double", "nullable": true}
+    ],
+    "labeled_extra_column": {"name": "service_type", "arrow_type": "string", "nullable": false},
+    "sort_key": ["driver_id", "departure_time_ns", "finish_time_ns", "stage_id"],
+    "stage_id_unique": true,
+    "durable_labeled_shard_boundary": "driver_boundary",
+    "completed_marker": "_CHECKPOINT_COMPLETE",
+    "atomic_publish": ["partial_file", "atomic_rename", "manifest", "completed_marker"],
+    "matched": {
+      "kind": "MatchedOrderCheckpointV1",
+      "rows": 46002707,
+      "shards": 181,
+      "shard_bytes": 1794583335,
+      "global_ordinal_range": [0, 46002707],
+      "stage_id_validation": "sequential",
+      "schema_fingerprint_prefix": "26543c10245a",
+      "manifest_sha256_prefix": "c95c56ced0cc",
+      "completed": true
+    },
+    "labeled": {
+      "kind": "LabeledOrderCheckpointV1",
+      "rows": 46002707,
+      "shards": 93,
+      "shard_bytes": 2267525665,
+      "global_ordinal_range": [0, 46002707],
+      "stage_id_validation": "inherited_source",
+      "schema_fingerprint_prefix": "028e790e1b32",
+      "manifest_sha256_prefix": "fb65687b234b",
+      "completed": true
+    },
+    "checkpoint_bytes_before_cleanup": 4062331929,
+    "resume_bindings": ["backend", "duckdb_version", "source_fingerprint", "config_fingerprint", "runtime_fingerprint", "schema_fingerprint", "matched_manifest_sha256"]
+  },
+  "production_input": {
+    "raw_rows": 90105866,
+    "matched_rows": 46002707,
+    "drivers": 199668,
+    "exclusive_rows": 30651791,
+    "carpool_rows": 15350916,
+    "clusters": 100,
+    "od_rows": 19507610,
+    "tensor_shape": [13248, 100, 100]
+  },
+  "production_validation": {
+    "v1": {
+      "backend": "sqlite_v1",
+      "external_wall_seconds": 3100.62,
+      "internal_stage_wall_seconds": 2855.3248168230057,
+      "user_seconds": 2641.08,
+      "sys_seconds": 451.81,
+      "peak_rss_bytes": 11878850560,
+      "sqlite_peak_bytes": 12700127232,
+      "assigned_gzip_bytes": 3079468693,
+      "assigned_uncompressed_bytes": 10523799657
+    },
+    "v2_export_true": {
+      "backend": "parquet_duckdb_v2",
+      "external_wall_seconds": 2979.05,
+      "internal_stage_wall_seconds": 2723.2224526749924,
+      "user_seconds": 2914.73,
+      "sys_seconds": 64.37,
+      "peak_rss_bytes": 4797521920,
+      "sqlite_created": false,
+      "temp_spill_peak_bytes": 11041865728,
+      "checkpoint_bytes": 4062331929,
+      "formal_contract": "passed"
+    },
+    "v2_export_false_experiment": {
+      "backend": "parquet_duckdb_v2",
+      "external_wall_seconds": 2265.48,
+      "internal_stage_wall_seconds": 2263.518106185016,
+      "user_seconds": 2232.0,
+      "sys_seconds": 41.11,
+      "peak_rss_bytes": 2959626240,
+      "sqlite_created": false,
+      "temp_spill_peak_bytes": 11521622016,
+      "checkpoint_bytes": 4062331929,
+      "formal_output_gate": "not_applicable",
+      "assigned_csv_created": false,
+      "non_csv_demand_artifacts_exact": true,
+      "metadata_difference_reason": "experimental flag and intentionally absent assigned CSV"
+    },
+    "demand_gate": {
+      "external_wall_delta_seconds": -121.57,
+      "external_wall_delta_percent": -3.92,
+      "internal_wall_delta_percent": -4.63,
+      "wall_regression_gate_percent": 5,
+      "peak_rss_gate_percent": 5,
+      "temp_disk_budget_passed": true,
+      "passed": true
+    },
+    "exact_output": {
+      "matched_public14_digest": "c48ed7b0542bd1a9c42c88fbb83e47dc08d0043c25fd3f8c3f978406e081fad3",
+      "stage_id_sequence_sha256": "3d42ce3efbbb35d029bbbbd88da7ec7b1afd56e46da8ff530362654d6a5369e3",
+      "service_digest": "08ac9c4fed09c9068139af64ac045f13a58f7182dd1eeaba54962bdc3872a7f8",
+      "assigned_decompressed_sha256": "087dcf1ad1606874f55e6c3b28a0401462641960406631ef6d6742d47ceebfed",
+      "cluster_od_sha256": "45b8ba6b8cf3dba38254e0ae8561f5197722a3a3ead6f4cd0338b64499d27b1a",
+      "tensor_exact": true,
+      "graph_poi_exact": true,
+      "metadata_normalized_exact": true,
+      "formal_comparator": "passed"
+    },
+    "downstream_compatibility": {
+      "supply": {
+        "reader_changed": false,
+        "wall_seconds": 977.2838192549534,
+        "user_seconds": 927.0,
+        "sys_seconds": 52.32,
+        "peak_rss_bytes": 12056084480,
+        "contract": "passed",
+        "orders": 46002707,
+        "drivers": 199668,
+        "slots": 13248,
+        "inservice_rows": 41147628,
+        "available_rows": 1324800,
+        "fleet_rows": 1324800,
+        "wall_semantics": "complete stage wall; not pure CSV reread"
+      },
+      "tte": {
+        "reader_changed": false,
+        "wall_seconds": 702.4760863620322,
+        "user_seconds": 828.11,
+        "sys_seconds": 129.98,
+        "peak_rss_bytes": 11968761856,
+        "contract": "passed",
+        "shape": [13248, 10000],
+        "observed_cells": 19343240,
+        "inferred_cells": 84241693,
+        "missing_cells": 28895067,
+        "wall_semantics": "complete stage wall; not pure CSV reread"
+      }
+    }
+  },
+  "v2_phase_profile": {
+    "export_true": {
+      "matched_block_seconds": 1563.42421711504,
+      "matched_parquet_serialization_seconds": 50.587377823656425,
+      "primary_sort_seconds": 537.620041460963,
+      "primary_spill_bytes": 10226237440,
+      "service_label_seconds": 156.4133579346817,
+      "labeled_parquet_write_seconds": 213.45557490491774,
+      "od_sort_seconds": 189.5795116359368,
+      "od_spill_bytes": 11041865728,
+      "stage_id_reorder_sort_seconds": 393.9146176469512,
+      "stage_id_reorder_spill_bytes": 9040330752,
+      "compatibility_export_block_seconds": 368.24727209703997,
+      "csv_serialize_seconds": 245.701341383392,
+      "gzip_seconds": 72.11169105826411
+    },
+    "export_false": {
+      "matched_block_seconds": 1528.8932220019633,
+      "matched_parquet_serialization_seconds": 49.929178488324396,
+      "primary_sort_seconds": 516.0739762849407,
+      "primary_spill_bytes": 11521622016,
+      "service_label_seconds": 151.71069164329674,
+      "labeled_parquet_write_seconds": 203.07667092850897,
+      "od_sort_seconds": 181.6056823739782,
+      "od_spill_bytes": 11038752768,
+      "stage_id_reorder_seconds": 0,
+      "compatibility_export_block_seconds": 0
+    },
+    "core_stage_wall_delta_export_true_minus_false_seconds": 459.7043464899764
+  },
+  "prototype_benchmark": {
+    "synthetic_input_policy": "production-shaped driver skew and service mix; no real IDs or rows recorded",
+    "all_equivalence_gates_passed": true,
+    "scales": [100000, 1000000, 5000000, 10000000],
+    "metrics_units": {"rss": "GiB", "input": "MiB", "written": "MiB", "spill": "MiB", "checkpoint": "MiB"},
+    "results": [
+      {"rows":100000,"backend":"P0","wall":3.91,"user":3.62,"sys":0.39,"cpu_pct":102.72,"rss_gib":0.41,"input_mib":4.24,"written_mib":29.54,"spill_mib":0,"checkpoint_mib":5.85,"rows_per_second":25594,"sort":0.11,"label":0.47,"output":1.50},
+      {"rows":100000,"backend":"P1","wall":3.43,"user":3.15,"sys":0.38,"cpu_pct":103.08,"rss_gib":0.36,"input_mib":4.24,"written_mib":5.12,"spill_mib":0,"checkpoint_mib":5.12,"rows_per_second":29175,"sort":0.06,"label":0.43,"output":0.07},
+      {"rows":100000,"backend":"P2","wall":2.81,"user":2.50,"sys":0.33,"cpu_pct":100.39,"rss_gib":0.29,"input_mib":4.24,"written_mib":5.12,"spill_mib":0,"checkpoint_mib":5.12,"rows_per_second":35564,"sort":0.06,"label":0.71,"output":0.06},
+      {"rows":1000000,"backend":"P0","wall":50.27,"user":42.49,"sys":8.14,"cpu_pct":100.71,"rss_gib":1.24,"input_mib":43.72,"written_mib":295.95,"spill_mib":0,"checkpoint_mib":59.29,"rows_per_second":19892,"sort":1.36,"label":6.34,"output":16.26},
+      {"rows":1000000,"backend":"P1","wall":34.55,"user":31.67,"sys":3.40,"cpu_pct":101.53,"rss_gib":1.22,"input_mib":43.72,"written_mib":52.22,"spill_mib":0,"checkpoint_mib":52.22,"rows_per_second":28945,"sort":0.66,"label":4.24,"output":0.65},
+      {"rows":1000000,"backend":"P2","wall":29.08,"user":26.09,"sys":3.04,"cpu_pct":100.20,"rss_gib":0.99,"input_mib":43.72,"written_mib":52.22,"spill_mib":0,"checkpoint_mib":52.22,"rows_per_second":34391,"sort":0.64,"label":7.88,"output":0.65},
+      {"rows":5000000,"backend":"P0","wall":256.50,"user":207.90,"sys":50.31,"cpu_pct":100.67,"rss_gib":3.96,"input_mib":219.63,"written_mib":1592.85,"spill_mib":0,"checkpoint_mib":298.76,"rows_per_second":19493,"sort":7.32,"label":35.86,"output":82.74},
+      {"rows":5000000,"backend":"P1","wall":168.66,"user":155.39,"sys":15.88,"cpu_pct":101.54,"rss_gib":4.09,"input_mib":219.63,"written_mib":1091.31,"spill_mib":804.66,"checkpoint_mib":263.36,"rows_per_second":29645,"sort":4.51,"label":20.99,"output":3.25},
+      {"rows":5000000,"backend":"P2","wall":145.79,"user":132.20,"sys":14.02,"cpu_pct":100.30,"rss_gib":3.45,"input_mib":219.63,"written_mib":1081.16,"spill_mib":793.97,"checkpoint_mib":263.36,"rows_per_second":34296,"sort":4.57,"label":40.36,"output":3.26},
+      {"rows":10000000,"backend":"P0","wall":511.26,"user":408.84,"sys":105.80,"cpu_pct":100.66,"rss_gib":6.52,"input_mib":443.29,"written_mib":3531.11,"spill_mib":0,"checkpoint_mib":598.85,"rows_per_second":19560,"sort":15.61,"label":74.82,"output":166.79},
+      {"rows":10000000,"backend":"P1","wall":335.64,"user":312.41,"sys":28.35,"cpu_pct":101.53,"rss_gib":6.83,"input_mib":443.29,"written_mib":2927.60,"spill_mib":1891.41,"checkpoint_mib":528.17,"rows_per_second":29794,"sort":9.35,"label":43.94,"output":6.61},
+      {"rows":10000000,"backend":"P2","wall":290.44,"user":264.21,"sys":27.14,"cpu_pct":100.31,"rss_gib":5.80,"input_mib":443.29,"written_mib":2940.95,"spill_mib":1909.03,"checkpoint_mib":528.17,"rows_per_second":34430,"sort":9.12,"label":85.00,"output":6.59}
+    ],
+    "equivalence_dimensions": ["sorted_stage_id_sequence", "service_label_by_stage_id", "exclusive_carpool_counts", "demand_aggregate", "supply_aggregate", "tte_aggregate", "row_count", "schema", "dtypes", "null_behavior", "duplicate_behavior", "driver_state_cross_batch", "component_state_cross_batch", "tie_break"]
+  },
+  "tests": {
+    "focused_phase_a": "11 passed",
+    "full_pytest": {"passed": 288, "warnings": 77, "wall_seconds": 75.76},
+    "production_comparator": "passed",
+    "failure_recovery": "passed; early OOM run was failed and excluded, rerun passed with cleanup",
+    "resume_overwrite_failure": "passed",
+    "supply_tte_compatibility": "passed"
+  },
+  "frozen_forecast": {
+    "changed_by_phase_a": false,
+    "baseline_total_seconds": 4586.66,
+    "conservative": {"demand": 2850,"supply":850,"tte":640,"total":4340,"peak_rss_gib":"about 11.5","temp_disk_gib":"8-12"},
+    "expected": {"demand":2450,"supply":760,"tte":600,"total":3810,"peak_rss_gib":"about 9-10.5","temp_disk_gib":"10-16"},
+    "optimistic": {"demand":2200,"supply":650,"tte":520,"total":3370,"peak_rss_gib":"about 7-9","temp_disk_gib":"12-20"}
+  },
+  "migration": {
+    "phase_a": "complete",
+    "phase_b": "not_started",
+    "phase_c": "not_started",
+    "phase_d": "not_started",
+    "phase_e": "not_started",
+    "rollback": "restore sqlite_v1/default path; no public output deletion required",
+    "cleanup": "delete run-owned DuckDB temp and partial files after success/failure; retain complete checkpoint manifests"
+  },
+  "privacy": {
+    "row_level_data_in_report": false,
+    "prototype_outputs_committed": false,
+    "protected_external_repository_accessed": false,
+    "local_qoder_settings_read": false
+  }
+}
