@@ -608,14 +608,15 @@ def _sorted_checkpoint_batches(
     try:
         connection.execute(f"SET memory_limit = '{memory_limit}'")
         connection.execute(f"SET threads = {int(threads)}")
+        connection.execute("SET preserve_insertion_order = false")
         connection.execute("SET temp_directory = ?", [str(temp_directory)])
         select_columns = ", ".join(f'"{name}"' for name in checkpoint_columns(expected_kind))
-        relation = connection.from_query(
+        result = connection.execute(
             f"SELECT {select_columns} FROM read_parquet(?) "
             "ORDER BY " + ", ".join(order_key),
-            params=[paths],
+            [paths],
         )
-        reader = relation.to_arrow_reader(batch_size=batch_size)
+        reader = result.to_arrow_reader(batch_size=batch_size)
 
         def batches() -> Iterator[pa.RecordBatch]:
             nonlocal peak_temp
@@ -691,6 +692,29 @@ def sorted_labeled_checkpoint_batches(
         yield result
 
 
+@contextmanager
+def sorted_labeled_od_batches(
+    labeled_manifest: str | Path,
+    *,
+    temp_directory: Path,
+    run_owned_root: Path,
+    memory_limit: str = "512MB",
+    threads: int = 1,
+    batch_size: int = 100_000,
+) -> Iterator[tuple[Iterator[pa.RecordBatch], dict[str, Any]]]:
+    with _sorted_checkpoint_batches(
+        labeled_manifest,
+        expected_kind=LABELED_ORDER_CHECKPOINT,
+        order_key=("slot_start_ns", "origin_cluster_id", "destination_cluster_id", "service_type"),
+        temp_directory=temp_directory,
+        run_owned_root=run_owned_root,
+        memory_limit=memory_limit,
+        threads=threads,
+        batch_size=batch_size,
+    ) as result:
+        yield result
+
+
 __all__ = [
     "CHECKPOINT_COMPLETE_FILENAME",
     "CHECKPOINT_BACKEND",
@@ -714,5 +738,6 @@ __all__ = [
     "schema_fingerprint",
     "sorted_checkpoint_batches",
     "sorted_labeled_checkpoint_batches",
+    "sorted_labeled_od_batches",
     "validate_checkpoint_manifest",
 ]

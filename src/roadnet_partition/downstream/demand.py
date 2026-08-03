@@ -37,6 +37,7 @@ from roadnet_partition.downstream.order_checkpoints import (
     iter_checkpoint_batches,
     load_checkpoint_manifest,
     sorted_labeled_checkpoint_batches,
+    sorted_labeled_od_batches,
     sorted_checkpoint_batches,
 )
 from roadnet_partition.io.manifests import collect_runtime_info, file_record, load_manifest
@@ -768,65 +769,9 @@ def _open_columnar_connection(
     connection = duckdb.connect(database=":memory:")
     connection.execute(f"SET memory_limit = '{settings['memory_limit']}'")
     connection.execute(f"SET threads = {int(settings['threads'])}")
+    connection.execute("SET preserve_insertion_order = false")
     connection.execute("SET temp_directory = ?", [str(temp_directory.resolve())])
     return connection, _checkpoint_paths(manifest_path)
-
-
-def _build_cluster_od_from_labeled(
-    manifest_path: Path,
-    temp_directory: Path,
-    settings: dict[str, Any],
-    profile: dict[str, Any],
-) -> pd.DataFrame:
-    manifest = load_checkpoint_manifest(manifest_path, expected_kind=LABELED_ORDER_CHECKPOINT)
-    if int(manifest["row_count"]) == 0:
-        return aggregate_od_frame(pd.DataFrame(), 15)
-    with _columnar_phase(profile, "od_groupby_fetch"):
-        connection, paths = _open_columnar_connection(manifest_path, temp_directory, settings)
-        try:
-            relation = connection.from_query(
-                """
-                SELECT
-                    slot_start_ns,
-                    origin_cluster_id,
-                    destination_cluster_id,
-                    service_type,
-                    COUNT(*) AS order_count
-                FROM read_parquet(?)
-                GROUP BY slot_start_ns, origin_cluster_id, destination_cluster_id, service_type
-                ORDER BY slot_start_ns, origin_cluster_id, destination_cluster_id, service_type
-                """,
-                params=[paths],
-            )
-            grouped = relation.df()
-        finally:
-            connection.close()
-    if grouped.empty:
-        return aggregate_od_frame(pd.DataFrame(), 15)
-
-    with _columnar_phase(profile, "od_pivot"):
-        grouped["slot_start"] = pd.to_datetime(grouped["slot_start_ns"], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
-        pivot = (
-            grouped.pivot_table(
-                index=["slot_start", "origin_cluster_id", "destination_cluster_id"],
-                columns="service_type",
-                values="order_count",
-                aggfunc="sum",
-                fill_value=0,
-            )
-            .reset_index()
-            .rename_axis(None, axis=1)
-        )
-        for service_type in SERVICE_TYPES:
-            if service_type not in pivot.columns:
-                pivot[service_type] = 0
-        pivot = pivot.rename(columns={EXCLUSIVE: "exclusive_count", CARPOOL: "carpool_count"})
-        pivot["exclusive_count"] = pivot["exclusive_count"].astype(int)
-        pivot["carpool_count"] = pivot["carpool_count"].astype(int)
-        pivot["total_count"] = pivot["exclusive_count"] + pivot["carpool_count"]
-        return pivot[
-            ["slot_start", "origin_cluster_id", "destination_cluster_id", "exclusive_count", "carpool_count", "total_count"]
-        ].sort_values(["slot_start", "origin_cluster_id", "destination_cluster_id"])
 
 
 def _load_columnar_slot_bounds(
@@ -863,6 +808,134 @@ def _load_columnar_slot_bounds(
         "min_slot_start_ns": None if row[2] is None else int(row[2]),
         "max_slot_start_ns": None if row[3] is None else int(row[3]),
     }
+
+
+def _stream_cluster_od_to_csv(
+    manifest_path: Path,
+    *,
+    temp_directory: Path,
+    run_owned_root: Path,
+    settings: dict[str, Any],
+    output_path: Path,
+    cluster_ids: list[str],
+    slot_labels: np.ndarray,
+    min_slot_start_ns: int | None,
+    time_slot_minutes: int,
+    profile: dict[str, Any],
+    timer,
+) -> dict[str, np.ndarray]:
+    columns = [
+        "slot_start",
+        "origin_cluster_id",
+        "destination_cluster_id",
+        "exclusive_count",
+        "carpool_count",
+        "total_count",
+    ]
+    tensors = {
+        "Y_exclusive": np.zeros((len(slot_labels), len(cluster_ids), len(cluster_ids)), dtype=np.int32),
+        "Y_carpool": np.zeros((len(slot_labels), len(cluster_ids), len(cluster_ids)), dtype=np.int32),
+        "Y_total": np.zeros((len(slot_labels), len(cluster_ids), len(cluster_ids)), dtype=np.int32),
+        "slot_start": slot_labels,
+        "cluster_ids": np.array(cluster_ids, dtype=str),
+    }
+    cluster_to_index = {cluster_id: index for index, cluster_id in enumerate(cluster_ids)}
+    slot_step_ns = int(time_slot_minutes) * 60 * 1_000_000_000
+    pending: list[tuple[int, str, str, int, int]] = []
+    first = True
+    group_count = 0
+
+    def flush_pending(handle) -> None:
+        nonlocal pending, first
+        if not pending:
+            return
+        frame = pd.DataFrame(
+            pending,
+            columns=[
+                "slot_start_ns",
+                "origin_cluster_id",
+                "destination_cluster_id",
+                "exclusive_count",
+                "carpool_count",
+            ],
+        )
+        with _columnar_phase(profile, "od_csv"):
+            with timer.phase("od_csv"):
+                frame["slot_start"] = pd.to_datetime(frame["slot_start_ns"], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
+                frame["total_count"] = frame["exclusive_count"] + frame["carpool_count"]
+                frame.loc[:, columns].to_csv(handle, index=False, header=first)
+        if min_slot_start_ns is not None:
+            slot_index = ((frame["slot_start_ns"].to_numpy(dtype=np.int64) - min_slot_start_ns) // slot_step_ns)
+            origin_index = frame["origin_cluster_id"].astype(str).map(cluster_to_index)
+            destination_index = frame["destination_cluster_id"].astype(str).map(cluster_to_index)
+            valid = (
+                (slot_index >= 0)
+                & (slot_index < len(slot_labels))
+                & origin_index.notna().to_numpy()
+                & destination_index.notna().to_numpy()
+            )
+            if bool(valid.any()):
+                slots = slot_index[valid].astype(np.intp)
+                origins = origin_index.to_numpy()[valid].astype(np.intp)
+                destinations = destination_index.to_numpy()[valid].astype(np.intp)
+                exclusive = frame["exclusive_count"].to_numpy(dtype=np.int32)[valid]
+                carpool = frame["carpool_count"].to_numpy(dtype=np.int32)[valid]
+                tensors["Y_exclusive"][slots, origins, destinations] = exclusive
+                tensors["Y_carpool"][slots, origins, destinations] = carpool
+                tensors["Y_total"][slots, origins, destinations] = exclusive + carpool
+        pending = []
+        first = False
+
+    current_key: tuple[int, str, str] | None = None
+    current_exclusive = 0
+    current_carpool = 0
+
+    def emit_current() -> None:
+        nonlocal current_key, current_exclusive, current_carpool, group_count
+        if current_key is None:
+            return
+        pending.append((*current_key, current_exclusive, current_carpool))
+        group_count += 1
+        current_key = None
+        current_exclusive = 0
+        current_carpool = 0
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as handle:
+        with sorted_labeled_od_batches(
+            manifest_path,
+            temp_directory=temp_directory,
+            run_owned_root=run_owned_root,
+            memory_limit=settings["memory_limit"],
+            threads=int(settings["threads"]),
+            batch_size=int(settings["batch_size"]),
+        ) as (batches, sort_metrics):
+            for batch_index, batch in enumerate(batches, start=1):
+                with _columnar_phase(profile, "od_arrow_to_pandas"):
+                    with timer.phase("od_arrow_to_pandas", chunk=batch_index):
+                        frame = batch.to_pandas()
+                for slot_ns, origin, destination, service_type in frame.loc[
+                    :, ["slot_start_ns", "origin_cluster_id", "destination_cluster_id", "service_type"]
+                ].itertuples(index=False, name=None):
+                    key = (int(slot_ns), str(origin), str(destination))
+                    if current_key != key:
+                        emit_current()
+                        current_key = key
+                    if service_type == EXCLUSIVE:
+                        current_exclusive += 1
+                    elif service_type == CARPOOL:
+                        current_carpool += 1
+                    else:
+                        raise ValueError(f"unknown service type: {service_type!r}")
+                if pending and len(pending) >= 100_000:
+                    flush_pending(handle)
+            emit_current()
+            flush_pending(handle)
+        profile["od_sort"] = sort_metrics
+    if first:
+        pd.DataFrame(columns=columns).to_csv(output_path, index=False)
+    profile["od_group_count"] = group_count
+    return tensors
 
 
 def export_assigned_orders_from_labeled(
@@ -1054,20 +1127,28 @@ def _run_columnar_from_config(
         labeled_manifest_path = labeled_writer.finish()
     profile["labeled_manifest"] = labeled_manifest_path.relative_to(output_dir).as_posix()
 
-    with _columnar_phase(profile, "od_from_labeled_checkpoint"):
-        od = _build_cluster_od_from_labeled(labeled_manifest_path, sort_temp, config["order_staging"], profile)
     slot_suffix = f"{int(pipeline['time_slot_minutes'])}min"
-    with _columnar_phase(profile, "od_csv"):
-        od_path = output_dir / f"cluster_od_{slot_suffix}.csv"
-        od.to_csv(od_path, index=False)
     staged_time_bounds = _load_columnar_slot_bounds(labeled_manifest_path, sort_temp, config["order_staging"])
     tensor_slot_labels = build_slot_labels_from_bounds(
         staged_time_bounds["min_slot_start_ns"],
         staged_time_bounds["max_slot_start_ns"],
         int(pipeline["time_slot_minutes"]),
     )
-    with _columnar_phase(profile, "tensor_alloc_fill"):
-        tensors = build_od_tensors(od, cluster_ids, tensor_slot_labels)
+    od_path = output_dir / f"cluster_od_{slot_suffix}.csv"
+    with _columnar_phase(profile, "od_from_labeled_checkpoint"):
+        tensors = _stream_cluster_od_to_csv(
+            labeled_manifest_path,
+            temp_directory=sort_temp,
+            run_owned_root=output_dir,
+            settings=config["order_staging"],
+            output_path=od_path,
+            cluster_ids=cluster_ids,
+            slot_labels=tensor_slot_labels,
+            min_slot_start_ns=staged_time_bounds["min_slot_start_ns"],
+            time_slot_minutes=int(pipeline["time_slot_minutes"]),
+            profile=profile,
+            timer=timer,
+        )
     with _columnar_phase(profile, "npz_write"):
         tensor_path = output_dir / f"od_tensor_{slot_suffix}.npz"
         np.savez_compressed(tensor_path, **tensors)
