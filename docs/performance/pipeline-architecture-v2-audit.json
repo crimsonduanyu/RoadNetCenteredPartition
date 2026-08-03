@@ -1,0 +1,1141 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-03",
+  "title": "RoadNet Pipeline Architecture v2 Audit",
+  "repository": {
+    "root": "/home/dy/jupyter/workspace/RoadNetCenteredPartition",
+    "verified_root": true,
+    "starting_head": "674ea08",
+    "starting_worktree_clean": true,
+    "sanitized_repository_operated": false,
+    "qoder_settings_read_or_modified": false,
+    "production_code_modified": false,
+    "formal_config_modified": false,
+    "prototype_root": "outputs/perf-architecture-v2/",
+    "prototype_gitignored": true,
+    "prototype_real_row_data_recorded": false
+  },
+  "decision": {
+    "recommended_architecture": "Candidate C engine with Candidate B labeled-stream fan-out",
+    "migration_first_step": "Candidate A columnar staging with downstream compatibility",
+    "primary_engine": "DuckDB + PyArrow",
+    "backup_engine": "SQLite v1 path as correctness oracle and fallback",
+    "cancel_service_labels_table": true,
+    "cancel_service_labels_index": true,
+    "cancel_staged_service_label_join": true,
+    "assigned_csv_internal_transport": "optional publication/compatibility adapter",
+    "default_behavior_changed_in_audit": false
+  },
+  "baseline": {
+    "raw_rows": 90105866,
+    "staged_rows": 46002707,
+    "drivers": 199668,
+    "exclusive_rows": 30651791,
+    "carpool_rows": 15350916,
+    "demand_wall_seconds": 3050.770021,
+    "supply_wall_seconds": 881.93,
+    "tte_wall_seconds": 653.96,
+    "total_wall_seconds": 4586.660021,
+    "demand_peak_rss_gib": 11.06,
+    "supply_peak_rss_gib": 11.237,
+    "tte_peak_rss_gib": 11.057,
+    "sqlite_peak_file_bytes": 12700127232,
+    "raw_input_size_note": "approximately 12 GB; exact raw file size was not part of the formal profile JSON",
+    "assigned_uncompressed_bytes": 10523799657,
+    "assigned_gzip_level1_bytes": 3079468693,
+    "demand_process_io_write_bytes": 26637164544,
+    "service_label_insert_seconds_current_profile": 445.9744590332266,
+    "service_label_index_seconds": 14.3,
+    "assigned_export_seconds": 485.0910158349434,
+    "assigned_export_csv_seconds": 227.97306694777217,
+    "assigned_export_gzip_seconds": 71.08230537606869,
+    "assigned_export_join_fetch_seconds": 70.206,
+    "formal_sources": [
+      "docs/performance/demand-full-production-profile-v1.json",
+      "docs/performance/demand-gzip-level-v1.json",
+      "docs/performance/demand-gzip-downstream-impact-v1.json"
+    ]
+  },
+  "field_dependency": {
+    "staged_columns": [
+      "stage_id",
+      "source_file",
+      "source_row",
+      "order_id",
+      "driver_id",
+      "departure_time_ns",
+      "finish_time_ns",
+      "slot_start_ns",
+      "pickup_seg_id",
+      "dropoff_seg_id",
+      "origin_cluster_id",
+      "destination_cluster_id",
+      "pickup_match_distance_m",
+      "dropoff_match_distance_m"
+    ],
+    "assigned_columns": [
+      "stage_id",
+      "source_file",
+      "source_row",
+      "order_id",
+      "driver_id",
+      "departure_time",
+      "finish_time",
+      "slot_start",
+      "pickup_seg_id",
+      "dropoff_seg_id",
+      "origin_cluster_id",
+      "destination_cluster_id",
+      "pickup_match_distance_m",
+      "dropoff_match_distance_m",
+      "service_type"
+    ],
+    "service_label_sort_key": [
+      "driver_id",
+      "departure_time_ns",
+      "finish_time_ns",
+      "stage_id"
+    ],
+    "minimum_before_label": [
+      "stage_id",
+      "order_id",
+      "driver_id",
+      "departure_time_ns",
+      "finish_time_ns",
+      "slot_start_ns",
+      "origin_cluster_id",
+      "destination_cluster_id"
+    ],
+    "minimum_for_lossless_publication": [
+      "stage_id",
+      "source_file",
+      "source_row",
+      "order_id",
+      "driver_id",
+      "departure_time_ns",
+      "finish_time_ns",
+      "slot_start_ns",
+      "pickup_seg_id",
+      "dropoff_seg_id",
+      "origin_cluster_id",
+      "destination_cluster_id",
+      "pickup_match_distance_m",
+      "dropoff_match_distance_m"
+    ],
+    "consumer_columns": {
+      "demand_od": [
+        "slot_start_ns",
+        "origin_cluster_id",
+        "destination_cluster_id",
+        "service_type"
+      ],
+      "service_label": [
+        "stage_id",
+        "driver_id",
+        "departure_time_ns",
+        "finish_time_ns"
+      ],
+      "supply": [
+        "order_id",
+        "driver_id",
+        "departure_time",
+        "finish_time",
+        "origin_cluster_id",
+        "destination_cluster_id",
+        "service_type"
+      ],
+      "tte": [
+        "departure_time",
+        "finish_time",
+        "origin_cluster_id",
+        "destination_cluster_id"
+      ],
+      "graph_poi_order_rows": [],
+      "publication": "all 15 assigned columns",
+      "contracts": [
+        "assigned exact 15-column order",
+        "stage_id non-null unique increasing",
+        "required driver/cluster/service non-null",
+        "cluster membership",
+        "service type domain",
+        "formal output schemas and hashes"
+      ],
+      "manifests": [
+        "file-level path/size/sha256",
+        "input fingerprints",
+        "runtime bindings",
+        "Supply cluster universe fallback reads origin/destination"
+      ],
+      "tests": [
+        "service overlap and half-open boundary",
+        "Demand tiny output and schema equivalence",
+        "assigned contract",
+        "Supply grouping/chain/slot behavior",
+        "TTE dataset/migration",
+        "stage binding and publication checks"
+      ]
+    },
+    "matrix": [
+      {
+        "field": "stage_id",
+        "demand_od": "identity only",
+        "service_label": "read and emit key",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required first column",
+        "contract": "non-null unique increasing",
+        "manifest": "file-level only",
+        "tests": "order and label digest"
+      },
+      {
+        "field": "source_file",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "schema/header"
+      },
+      {
+        "field": "source_row",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "schema"
+      },
+      {
+        "field": "order_id",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "tie sort and internal order provenance",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "Supply grouping"
+      },
+      {
+        "field": "driver_id",
+        "demand_od": "not consumed",
+        "service_label": "driver state and boundary",
+        "supply": "chain/group/distinct driver",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "required non-null",
+        "manifest": "file-level hash",
+        "tests": "overlap and chain"
+      },
+      {
+        "field": "departure_time_ns/departure_time",
+        "demand_od": "slot is already derived",
+        "service_label": "sort key",
+        "supply": "trip start, gaps and slots",
+        "tte": "trip time and slots",
+        "graph_poi": "not consumed",
+        "publication": "required formatted field",
+        "contract": "parseable departure",
+        "manifest": "file-level hash",
+        "tests": "date and boundary"
+      },
+      {
+        "field": "finish_time_ns/finish_time",
+        "demand_od": "not consumed",
+        "service_label": "overlap end and sort key",
+        "supply": "trip end, gaps and slots",
+        "tte": "trip time",
+        "graph_poi": "not consumed",
+        "publication": "required formatted field",
+        "contract": "schema; Supply rejects non-positive interval",
+        "manifest": "file-level hash",
+        "tests": "boundary and filtering"
+      },
+      {
+        "field": "slot_start_ns/slot_start",
+        "demand_od": "group key",
+        "service_label": "not consumed",
+        "supply": "recomputed from intervals",
+        "tte": "recomputed from departure",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema",
+        "manifest": "file-level hash",
+        "tests": "slot bounds"
+      },
+      {
+        "field": "pickup_seg_id",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "schema"
+      },
+      {
+        "field": "dropoff_seg_id",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "schema"
+      },
+      {
+        "field": "origin_cluster_id",
+        "demand_od": "group key",
+        "service_label": "not consumed",
+        "supply": "trip origin and fleet/in-service",
+        "tte": "OD endpoint",
+        "graph_poi": "not consumed from order rows",
+        "publication": "required",
+        "contract": "required and in cluster index",
+        "manifest": "Supply cluster universe fallback",
+        "tests": "OD and chain"
+      },
+      {
+        "field": "destination_cluster_id",
+        "demand_od": "group key",
+        "service_label": "not consumed",
+        "supply": "trip destination and in-service",
+        "tte": "OD endpoint",
+        "graph_poi": "not consumed from order rows",
+        "publication": "required",
+        "contract": "required and in cluster index",
+        "manifest": "Supply cluster universe fallback",
+        "tests": "OD and chain"
+      },
+      {
+        "field": "pickup_match_distance_m",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "schema"
+      },
+      {
+        "field": "dropoff_match_distance_m",
+        "demand_od": "not consumed",
+        "service_label": "not consumed",
+        "supply": "not consumed",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "exact schema only",
+        "manifest": "file-level hash",
+        "tests": "schema"
+      },
+      {
+        "field": "service_type",
+        "demand_od": "group/pivot category",
+        "service_label": "generated",
+        "supply": "exclusive/carpool branch",
+        "tte": "not consumed",
+        "graph_poi": "not consumed",
+        "publication": "required",
+        "contract": "non-null and two-value domain",
+        "manifest": "metadata counts and file hash",
+        "tests": "label and Supply"
+      }
+    ]
+  },
+  "materialization_ledger": [
+    {
+      "step": "raw_csv_read",
+      "rows": 90105866,
+      "columns": 8,
+      "logical_bytes": null,
+      "physical_bytes": null,
+      "physical_bytes_note": "approximately 12 GB",
+      "read_count": 1,
+      "write_count": 0,
+      "format": "CSV text",
+      "wall_seconds": 132.8,
+      "peak_rss_note": "shared Demand peak 11.06 GiB",
+      "sort": false,
+      "random_access": false,
+      "contract": "external input and manifest"
+    },
+    {
+      "step": "matched_dataframe",
+      "rows": 46002707,
+      "columns": 14,
+      "logical_bytes": null,
+      "physical_bytes": 0,
+      "physical_bytes_note": "transient 500k-row chunks",
+      "read_count": 0,
+      "write_count": 181,
+      "format": "pandas DataFrame to SQLite",
+      "wall_seconds": 126.9,
+      "peak_rss_note": "shared Demand peak",
+      "sort": false,
+      "random_access": false,
+      "contract": "implementation detail"
+    },
+    {
+      "step": "sqlite_staged_orders",
+      "rows": 46002707,
+      "columns": 14,
+      "logical_bytes": null,
+      "physical_bytes": 12700127232,
+      "physical_bytes_note": "formal peak includes PK/index/journal effects",
+      "read_count": 3,
+      "write_count": 181,
+      "format": "SQLite table",
+      "wall_seconds": 126.9,
+      "peak_rss_note": "shared Demand peak",
+      "sort": true,
+      "random_access": true,
+      "contract": "internal checkpoint, not public"
+    },
+    {
+      "step": "staged_indexes",
+      "rows": 46002707,
+      "columns": 2,
+      "logical_bytes": null,
+      "physical_bytes": null,
+      "physical_bytes_note": "included in SQLite peak",
+      "read_count": 2,
+      "write_count": 2,
+      "format": "SQLite B-tree",
+      "wall_seconds": 66.4,
+      "peak_rss_note": "shared Demand peak",
+      "sort": true,
+      "random_access": true,
+      "contract": "implementation detail"
+    },
+    {
+      "step": "ordered_select",
+      "rows": 46002707,
+      "columns": 4,
+      "logical_bytes": null,
+      "physical_bytes": null,
+      "physical_bytes_note": "projection/page reads not isolated",
+      "read_count": 1,
+      "write_count": 0,
+      "format": "SQLite cursor",
+      "wall_seconds": 263.0,
+      "wall_note": "service_label_compute; execute is lazy and measured near zero",
+      "peak_rss_note": "shared Demand peak",
+      "sort": true,
+      "random_access": false,
+      "contract": "load-bearing label order"
+    },
+    {
+      "step": "service_labels_table",
+      "rows": 46002707,
+      "columns": 2,
+      "logical_bytes": null,
+      "physical_bytes": null,
+      "physical_bytes_note": "10M prototype table 200507392 B; formal table not isolated",
+      "read_count": 2,
+      "write_count": 1,
+      "format": "SQLite table",
+      "wall_seconds": 445.9744590332266,
+      "wall_note": "current level-1 nested insert; older profile measured 225.2 s",
+      "peak_rss_note": "shared Demand peak",
+      "sort": false,
+      "random_access": true,
+      "contract": "internal and removable"
+    },
+    {
+      "step": "service_labels_index",
+      "rows": 46002707,
+      "columns": 1,
+      "logical_bytes": null,
+      "physical_bytes": null,
+      "physical_bytes_note": "10M prototype index 175644672 B; formal index not isolated",
+      "read_count": 0,
+      "write_count": 1,
+      "format": "SQLite B-tree",
+      "wall_seconds": 14.3,
+      "peak_rss_note": "shared Demand peak",
+      "sort": true,
+      "random_access": true,
+      "contract": "unused implementation detail"
+    },
+    {
+      "step": "assigned_join",
+      "rows": 46002707,
+      "columns": 15,
+      "logical_bytes": null,
+      "physical_bytes": 0,
+      "physical_bytes_note": "feeds CSV writer",
+      "read_count": 1,
+      "write_count": 0,
+      "format": "SQLite JOIN plus pandas chunks",
+      "wall_seconds": 156.804,
+      "wall_note": "70.206 s JOIN fetch plus 86.598 s frame build",
+      "peak_rss_note": "shared Demand peak",
+      "sort": true,
+      "random_access": true,
+      "contract": "feeds current assigned contract"
+    },
+    {
+      "step": "assigned_csv_serialization",
+      "rows": 46002707,
+      "columns": 15,
+      "logical_bytes": 10523799657,
+      "physical_bytes": 3079468693,
+      "read_count": 0,
+      "write_count": 1,
+      "format": "CSV text and gzip level 1",
+      "wall_seconds": 485.0910158349434,
+      "wall_note": "CSV 227.973 s, gzip 71.082 s, total includes fetch/format",
+      "peak_rss_note": "shared Demand peak",
+      "sort": true,
+      "random_access": false,
+      "contract": "current public/compatibility output"
+    },
+    {
+      "step": "supply_reread",
+      "rows": 46002707,
+      "columns": 7,
+      "logical_bytes": 10523799657,
+      "physical_bytes": 3079468693,
+      "read_count": 1,
+      "write_count": 0,
+      "format": "gzip CSV to pandas",
+      "wall_seconds": 881.93,
+      "peak_rss_gib": 11.237,
+      "sort": true,
+      "random_access": false,
+      "contract": "stage input binding"
+    },
+    {
+      "step": "tte_reread",
+      "rows": 46002707,
+      "columns": 4,
+      "logical_bytes": 10523799657,
+      "physical_bytes": 3079468693,
+      "read_count": 1,
+      "write_count": 0,
+      "format": "gzip CSV to pandas",
+      "wall_seconds": 653.96,
+      "peak_rss_gib": 11.057,
+      "sort": false,
+      "random_access": false,
+      "contract": "stage input binding"
+    },
+    {
+      "step": "downstream_materialization",
+      "rows": null,
+      "columns": null,
+      "logical_bytes": null,
+      "physical_bytes": null,
+      "physical_bytes_note": "OD CSV approximately 606 MB; Demand tensors are 3 x 13248 x 100 x 100 int32 working arrays; TTE output sizes not fully captured here",
+      "read_count": 0,
+      "write_count": 1,
+      "format": "CSV.gz, NPZ, Parquet",
+      "wall_seconds": null,
+      "peak_rss_note": "included in stage peaks",
+      "sort": false,
+      "random_access": false,
+      "contract": "formal output families"
+    }
+  ],
+  "serialization_counts": {
+    "raw_csv_parse": 1,
+    "staged_orders_write": 1,
+    "staged_orders_full_logical_reads": 3,
+    "service_labels_projection_write": 1,
+    "service_labels_projection_reads": 2,
+    "assigned_csv_write": 1,
+    "downstream_csv_parses": 2,
+    "full_order_logical_read_traversals": 6,
+    "internal_durable_materializations": [
+      "staged_orders",
+      "service_labels",
+      "orders_region_assigned.csv.gz"
+    ]
+  },
+  "architectures": {
+    "A": {
+      "name": "Columnar staging, stage independence retained",
+      "flow": [
+        "raw chunks",
+        "typed matched Parquet shards",
+        "DuckDB external ORDER BY",
+        "labeled Parquet checkpoint",
+        "independent Demand/Supply/TTE scans"
+      ],
+      "strength": "lowest migration risk",
+      "weakness": "standalone stages reread the labeled checkpoint",
+      "partitioning": "matched source shard_id; labeled global ordinal/shard range; date/slot secondary only"
+    },
+    "B": {
+      "name": "Labeled stream fan-out",
+      "flow": [
+        "matched shards",
+        "one external sort",
+        "Python label state machine",
+        "labeled Arrow RecordBatch",
+        "Demand/Supply/TTE consumers and labeled checkpoint"
+      ],
+      "strength": "no service_labels table, no JOIN, one labeled traversal",
+      "weakness": "Supply/TTE full algorithm integration and failure state need proof"
+    },
+    "C": {
+      "name": "DuckDB/Arrow hybrid",
+      "flow": [
+        "Parquet shards",
+        "DuckDB external sort",
+        "Arrow RecordBatch",
+        "Python labeling",
+        "partitioned labeled Parquet",
+        "DuckDB/Arrow consumers"
+      ],
+      "safe_pushdown": [
+        "typed projection",
+        "null/time filters",
+        "external sort",
+        "Demand integer group aggregation"
+      ],
+      "must_remain_python": [
+        "driver boundary",
+        "half-open overlap",
+        "component_max_end",
+        "component_overlap",
+        "cross-batch state",
+        "Supply driver-chain reducer",
+        "existing TTE median/imputation until full equivalence"
+      ]
+    }
+  },
+  "core_answers": {
+    "global_driver_time_sort": "required for arbitrary raw chunk order; equivalent complete-driver partition plus deterministic merge is acceptable",
+    "sqlite_roles_to_keep": [
+      "durable checkpoint",
+      "transaction boundary",
+      "resume",
+      "deterministic ordering",
+      "schema/null/duplicate validation",
+      "failure cleanup"
+    ],
+    "service_labels_table": "not required in v2",
+    "staged_service_label_join": "not required in v2",
+    "label_attach": "safe at component close with state carried across Arrow batches",
+    "shared_labeled_batch": "safe; P2 projection probe passed",
+    "tte_service_label": false,
+    "supply_columns": [
+      "order_id",
+      "driver_id",
+      "departure_time",
+      "finish_time",
+      "origin_cluster_id",
+      "destination_cluster_id",
+      "service_type"
+    ],
+    "demand_direct_accumulation": true,
+    "csv_optional_internal_transport": true,
+    "labeled_partition": "deterministic shard_id/global ordinal range",
+    "replay_resume_rule": "manifest fingerprints plus complete marker and state snapshot at every checkpoint boundary"
+  },
+  "benchmark": {
+    "artifact": "outputs/perf-architecture-v2/benchmark-summary.json",
+    "scales": [100000, 1000000, 5000000, 10000000],
+    "generator": {
+      "anonymous_ids": true,
+      "driver_size_model": "lognormal surrogate calibrated to production row/driver ratio",
+      "overlap_model": "driver-level overlapping or non-overlapping intervals",
+      "production_aggregate_basis": {
+        "rows": 46002707,
+        "drivers": 199668,
+        "exclusive": 30651791,
+        "carpool": 15350916,
+        "sample_unique_od": 8116,
+        "sample_unique_slots_10min": 1969
+      },
+      "row_level_data_recorded": false
+    },
+    "results": [
+      {
+        "rows": 100000,
+        "input_drivers": 434,
+        "input_shards": 1,
+        "input_logical_bytes": 16280146,
+        "input_physical_bytes": 4446828,
+        "backends": {
+          "P0": {
+            "wall_s": 3.9071886310121045,
+            "user_s": 3.624461,
+            "sys_s": 0.388829,
+            "cpu_pct": 102.7155425296273,
+            "peak_rss_bytes": 435642368,
+            "bytes_read_reported": 0,
+            "bytes_written": 30973952,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 6135681,
+            "rows_per_second": 25593.850065563984,
+            "sort_s": 0.11145280895289034,
+            "label_s": 0.46877945587038994,
+            "label_insert_s": 0.08108468516729772,
+            "output_s": 1.5009633499430493,
+            "join_fetch_s": 0.18539544299710542,
+            "stage_s": 0.6138836719328538
+          },
+          "P1": {
+            "wall_s": 3.427605726988986,
+            "user_s": 3.151598,
+            "sys_s": 0.381631,
+            "cpu_pct": 103.08154675373936,
+            "peak_rss_bytes": 385683456,
+            "bytes_read_reported": 0,
+            "bytes_written": 5373952,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 5372736,
+            "rows_per_second": 29174.88415093937,
+            "sort_s": 0.058093758998438716,
+            "label_s": 0.4286991583649069,
+            "output_s": 0.06559876911342144,
+            "verification_s": 1.8558936970075592
+          },
+          "P2": {
+            "wall_s": 2.8118554929969832,
+            "user_s": 2.497028,
+            "sys_s": 0.325786,
+            "cpu_pct": 100.38972511319692,
+            "peak_rss_bytes": 309915648,
+            "bytes_read_reported": 0,
+            "bytes_written": 5373952,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 5372736,
+            "rows_per_second": 35563.70526474537,
+            "sort_s": 0.05839547095820308,
+            "label_s": 0.7143294429406524,
+            "output_s": 0.06366236682515591,
+            "verification_s": 0.9056526890490204
+          }
+        },
+        "equivalence": "passed"
+      },
+      {
+        "rows": 1000000,
+        "input_drivers": 4340,
+        "input_shards": 8,
+        "input_logical_bytes": 162800117,
+        "input_physical_bytes": 45842248,
+        "backends": {
+          "P0": {
+            "wall_s": 50.27181661804207,
+            "user_s": 42.486159,
+            "sys_s": 8.140205,
+            "cpu_pct": 100.70526073217472,
+            "peak_rss_bytes": 1327251456,
+            "bytes_read_reported": 0,
+            "bytes_written": 310325248,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 62171204,
+            "rows_per_second": 19891.86123107216,
+            "sort_s": 1.3553148669889197,
+            "label_s": 6.339882623869926,
+            "label_insert_s": 6.1105974081438035,
+            "output_s": 16.25634268403519,
+            "join_fetch_s": 1.72190127405338,
+            "stage_s": 6.2233706950210035
+          },
+          "P1": {
+            "wall_s": 34.54823157703504,
+            "user_s": 31.673530000000003,
+            "sys_s": 3.403536,
+            "cpu_pct": 101.53071343691147,
+            "peak_rss_bytes": 1304801280,
+            "bytes_read_reported": 0,
+            "bytes_written": 54759424,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 54757313,
+            "rows_per_second": 28945.041594103524,
+            "sort_s": 0.6635116229299456,
+            "label_s": 4.23898242902942,
+            "output_s": 0.6519865799928084,
+            "verification_s": 20.502182496944442
+          },
+          "P2": {
+            "wall_s": 29.077759289066307,
+            "user_s": 26.093975,
+            "sys_s": 3.042922,
+            "cpu_pct": 100.20337781307629,
+            "peak_rss_bytes": 1065947136,
+            "bytes_read_reported": 0,
+            "bytes_written": 54759424,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 54757313,
+            "rows_per_second": 34390.5453669539,
+            "sort_s": 0.6409357619704679,
+            "label_s": 7.880879455129616,
+            "output_s": 0.65191171457991,
+            "verification_s": 10.526103705051355
+          }
+        },
+        "equivalence": "passed"
+      },
+      {
+        "rows": 5000000,
+        "input_drivers": 21702,
+        "input_shards": 8,
+        "input_logical_bytes": 814000596,
+        "input_physical_bytes": 230300044,
+        "backends": {
+          "P0": {
+            "wall_s": 256.4977988990722,
+            "user_s": 207.90221499999998,
+            "sys_s": 50.314635,
+            "cpu_pct": 100.67020111217569,
+            "peak_rss_bytes": 4249268224,
+            "bytes_read_reported": 0,
+            "bytes_written": 1670221824,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 313273151,
+            "rows_per_second": 19493.34466596113,
+            "sort_s": 7.322685520048253,
+            "label_s": 35.862279418855906,
+            "label_insert_s": 41.9616705091903,
+            "output_s": 82.73652742803097,
+            "join_fetch_s": 8.228837869595736,
+            "stage_s": 29.664299217052758
+          },
+          "P1": {
+            "wall_s": 168.66434407397173,
+            "user_s": 155.39209499999998,
+            "sys_s": 15.877813,
+            "cpu_pct": 101.54482201933891,
+            "peak_rss_bytes": 4388270080,
+            "bytes_read_reported": 0,
+            "bytes_written": 1144320000,
+            "temp_spill_bytes": 843743232,
+            "checkpoint_bytes": 276153719,
+            "rows_per_second": 29644.676991167333,
+            "sort_s": 4.508035221020691,
+            "label_s": 20.98917347600218,
+            "output_s": 3.2536127525381744,
+            "verification_s": 99.66905048303306
+          },
+          "P2": {
+            "wall_s": 145.79037684795912,
+            "user_s": 132.203538,
+            "sys_s": 14.022935,
+            "cpu_pct": 100.29912547142646,
+            "peak_rss_bytes": 3704107008,
+            "bytes_read_reported": 0,
+            "bytes_written": 1133674496,
+            "temp_spill_bytes": 832536576,
+            "checkpoint_bytes": 276153719,
+            "rows_per_second": 34295.81641876381,
+            "sort_s": 4.574680555029772,
+            "label_s": 40.36338972195517,
+            "output_s": 3.2616013495717198,
+            "verification_s": 48.89441363804508
+          }
+        },
+        "equivalence": "passed"
+      },
+      {
+        "rows": 10000000,
+        "input_drivers": 43404,
+        "input_shards": 8,
+        "input_logical_bytes": 1628002593,
+        "input_physical_bytes": 464818187,
+        "backends": {
+          "P0": {
+            "wall_s": 511.25977041595615,
+            "user_s": 408.837653,
+            "sys_s": 105.796728,
+            "cpu_pct": 100.6600579156264,
+            "peak_rss_bytes": 7000977408,
+            "bytes_read_reported": 0,
+            "bytes_written": 3702632448,
+            "temp_spill_bytes": 0,
+            "checkpoint_bytes": 627938403,
+            "rows_per_second": 19559.528401509262,
+            "sort_s": 15.605015659006312,
+            "label_s": 74.81806357204914,
+            "label_insert_s": 89.50996383198071,
+            "output_s": 166.79385072202422,
+            "join_fetch_s": 16.213143857661635,
+            "stage_s": 58.86915839405265
+          },
+          "P1": {
+            "wall_s": 335.64191396406386,
+            "user_s": 312.411358,
+            "sys_s": 28.351461,
+            "cpu_pct": 101.52570487262933,
+            "peak_rss_bytes": 7338115072,
+            "bytes_read_reported": 0,
+            "bytes_written": 3069808640,
+            "temp_spill_bytes": 1983283200,
+            "checkpoint_bytes": 553830194,
+            "rows_per_second": 29793.656822820612,
+            "sort_s": 9.350008580018766,
+            "label_s": 43.93746743781958,
+            "output_s": 6.608606110676192,
+            "verification_s": 191.297739850007
+          },
+          "P2": {
+            "wall_s": 290.44407240103465,
+            "user_s": 264.212496,
+            "sys_s": 27.142962,
+            "cpu_pct": 100.31379039394093,
+            "peak_rss_bytes": 6222467072,
+            "bytes_read_reported": 0,
+            "bytes_written": 3083808768,
+            "temp_spill_bytes": 2001764352,
+            "checkpoint_bytes": 553830194,
+            "rows_per_second": 34430.03645187967,
+            "sort_s": 9.122893907944672,
+            "label_s": 84.9966897056438,
+            "output_s": 6.588212969945744,
+            "verification_s": 89.82596316398121
+          }
+        },
+        "equivalence": "passed"
+      }
+    ],
+    "strict_equivalence_checks": [
+      "sorted stage_id order",
+      "service label by stage_id",
+      "exclusive/carpool counts",
+      "Demand OD aggregate",
+      "Supply projection aggregate",
+      "TTE projection aggregate",
+      "row count",
+      "schema",
+      "dtypes",
+      "null behavior",
+      "duplicate behavior",
+      "stage_id tie-break",
+      "driver state across Arrow batches",
+      "component state across Arrow batches"
+    ],
+    "all_scales_passed": true,
+    "limitations": [
+      "bytes_read reported by /proc/self/io was zero in this environment",
+      "prototype uses anonymous production-shaped synthetic rows, not raw spatial matching",
+      "P1 includes checkpoint verification reread while P2 uses live fan-out",
+      "P1/P2 Supply and TTE are projection probes, not complete production algorithm equivalence",
+      "synthetic null and duplicate counts are zero; adversarial fixtures remain a production gate"
+    ]
+  },
+  "engine_evaluation": [
+    {
+      "engine": "DuckDB",
+      "external_sort_spill": true,
+      "record_batch_stream": true,
+      "stable_sort": "must provide complete ORDER BY including stage_id",
+      "temporary_disk": "configurable run-owned temp directory; 10M prototype about 2.0 GB spill",
+      "python_copy": "avoid row-by-row dict conversion in production; consume Arrow columns",
+      "dependency_cost": "new dependency; lock version and add packaging/manifest evidence",
+      "windows_linux": "supported by maintained wheels",
+      "determinism": "complete total key and explicit dtypes required",
+      "recommendation": "primary"
+    },
+    {
+      "engine": "PyArrow Dataset",
+      "external_sort_spill": false,
+      "record_batch_stream": true,
+      "stable_sort": "not a replacement for a global external sort contract",
+      "temporary_disk": "custom implementation required",
+      "python_copy": "controllable at RecordBatch boundary",
+      "dependency_cost": "already present",
+      "windows_linux": "supported",
+      "determinism": "schema and key explicit",
+      "recommendation": "paired storage/stream layer"
+    },
+    {
+      "engine": "Polars lazy",
+      "external_sort_spill": "version/configuration dependent",
+      "record_batch_stream": "available through Arrow interop",
+      "stable_sort": "complete key still required",
+      "temporary_disk": "must validate sink and spill behavior",
+      "python_copy": "extra Rust/Python boundary",
+      "dependency_cost": "new dependency and version surface",
+      "windows_linux": "supported",
+      "determinism": "requires explicit contract",
+      "recommendation": "secondary experiment only"
+    },
+    {
+      "engine": "SQLite",
+      "external_sort_spill": "B-tree index path works; not the desired columnar external sort",
+      "record_batch_stream": "fetchmany only",
+      "stable_sort": "complete key required and current covering index verified",
+      "temporary_disk": "page/journal write amplification",
+      "python_copy": "pandas/tuple materialization",
+      "dependency_cost": "stdlib",
+      "windows_linux": "strong",
+      "determinism": "v1 proven path",
+      "recommendation": "oracle/fallback"
+    }
+  ],
+  "compatibility": {
+    "internal_contract_change": [
+      "SQLite staged_orders to typed Parquet matched checkpoint",
+      "service_labels and JOIN to label-in-stream",
+      "CSV internal binding to labeled Parquet/stream"
+    ],
+    "public_contract_unchanged": [
+      "Demand OD and tensors",
+      "Supply output tables",
+      "TTE output matrices and assets",
+      "orders_region_assigned.csv.gz remains generatable",
+      "run manifests and publish inventory"
+    ],
+    "optional_compatibility_adapter": [
+      "stage_id-sorted 15-column CSV exporter",
+      "Supply CSV reader",
+      "TTE CSV reader"
+    ],
+    "deprecated_path": [
+      "SQLite as v2 main staging",
+      "service_labels table/index",
+      "staged_orders x service_labels JOIN"
+    ],
+    "preserved_behaviors": [
+      "v1 correctness oracle",
+      "raw-only fresh run",
+      "resume",
+      "overwrite",
+      "run-owned outputs",
+      "transactional publish",
+      "failed-run recovery",
+      "deterministic replay"
+    ]
+  },
+  "forecast": {
+    "unit": "seconds, GiB, and approximate GB; engineering forecast, not production measurement",
+    "scenarios": [
+      {
+        "name": "conservative",
+        "demand_wall_s": 2850,
+        "supply_wall_s": 850,
+        "tte_wall_s": 640,
+        "total_wall_s": 4340,
+        "total_wall_change_pct": -5.4,
+        "peak_rss_gib": 11.5,
+        "total_bytes_written_gb_range": [18, 24],
+        "total_bytes_reread_gb_range": [20, 27],
+        "temp_disk_gb_range": [8, 12],
+        "assumptions": [
+          "A-style stage separation",
+          "spatial matching unchanged",
+          "CSV may remain for compatibility",
+          "only partial downstream parse savings"
+        ]
+      },
+      {
+        "name": "expected",
+        "demand_wall_s": 2450,
+        "supply_wall_s": 760,
+        "tte_wall_s": 600,
+        "total_wall_s": 3810,
+        "total_wall_change_pct": -16.9,
+        "peak_rss_gib_range": [9, 10.5],
+        "total_bytes_written_gb_range": [10, 16],
+        "total_bytes_reread_gb_range": [5, 10],
+        "temp_disk_gb_range": [10, 16],
+        "assumptions": [
+          "B/C fan-out in combined execution",
+          "service label table/index/JOIN removed",
+          "CSV not used for internal communication",
+          "Supply/TTE retain current compute semantics"
+        ]
+      },
+      {
+        "name": "optimistic",
+        "demand_wall_s": 2200,
+        "supply_wall_s": 650,
+        "tte_wall_s": 520,
+        "total_wall_s": 3370,
+        "total_wall_change_pct": -26.5,
+        "peak_rss_gib_range": [7, 9],
+        "total_bytes_written_gb_range": [6, 10],
+        "total_bytes_reread_gb_range": [2, 5],
+        "temp_disk_gb_range": [12, 20],
+        "assumptions": [
+          "full streaming reducers avoid three full DataFrame copies",
+          "external sort scales below linear spill estimate",
+          "CSV generated only when publication is requested",
+          "no new correctness retries"
+        ]
+      }
+    ],
+    "explicit_savings_estimates": {
+      "service_labels_insert": "up to current level-1 nested 445.974 s, less replacement writer/state cost",
+      "service_labels_index": "about 14.3 s and one full index allocation",
+      "join": "up to 70.206 s JOIN fetch plus part of 86.598 s frame build, not all guaranteed",
+      "csv_internal_transport": "one 10,523,799,657 B text serialization and 3,079,468,693 B gzip container",
+      "duplicate_supply_tte_parse": "two downstream parses of the assigned container; whole-stage savings are less than parse time",
+      "new_costs": "typed Parquet writes, DuckDB spill, Arrow/reader state, checkpoint hashes",
+      "fanout_memory": "compact reducer state if streaming; full DataFrame adapters may retain current RSS"
+    }
+  },
+  "migration_phases": [
+    {
+      "phase": "A",
+      "name": "columnar matched/labeled checkpoint, downstream unchanged",
+      "output_equivalence_gate": "full v1 Demand and assigned decompressed bytes exact",
+      "performance_gate": "Demand no more than 5 percent regression; record sort/spill/RSS",
+      "rollback_point": "v1 SQLite path",
+      "commit_boundary": "writer/checkpoint/adapter/tests only",
+      "full_production_validation": "raw-only fresh v1 versus A, contracts, resume, overwrite, publish",
+      "disk_cleanup_rule": "retain published checkpoint/CSV; remove only run-owned temp and partial files"
+    },
+    {
+      "phase": "B",
+      "name": "Supply reads labeled Parquet, CSV retained",
+      "output_equivalence_gate": "all three Supply tables exact, including chain/order tie behavior",
+      "performance_gate": "no more than 5 percent regression and no more than 5 percent RSS increase",
+      "rollback_point": "CSV Supply adapter",
+      "commit_boundary": "Supply input adapter/tests only",
+      "full_production_validation": "standalone and full-pipeline Supply with repeated hashes",
+      "disk_cleanup_rule": "retain CSV until B passes; clean only current run Parquet temp"
+    },
+    {
+      "phase": "C",
+      "name": "TTE reads labeled Parquet, CSV retained",
+      "output_equivalence_gate": "TTE raw/count/support/hops/imputed matrices and axes exact",
+      "performance_gate": "no more than 5 percent regression and no more than 5 percent RSS increase",
+      "rollback_point": "CSV TTE adapter",
+      "commit_boundary": "TTE input adapter/tests only",
+      "full_production_validation": "fresh and standalone TTE with distance-cache and contract validation",
+      "disk_cleanup_rule": "retain CSV and distance assets; clean current run partial matrices/temp"
+    },
+    {
+      "phase": "D",
+      "name": "one labeled stream fan-out",
+      "output_equivalence_gate": "all Demand/Supply/TTE outputs, labels, boundaries and replay exact",
+      "performance_gate": "one sort and no assigned CSV/checkpoint reread in combined run",
+      "rollback_point": "independent B/C Parquet readers, then v1",
+      "commit_boundary": "stream interface, then one consumer per commit",
+      "full_production_validation": "full raw-only v1/A/D, fault injection, resume, standalone and read-count audit",
+      "disk_cleanup_rule": "retain checkpoint until consumers pass; remove spill/transient buffers only"
+    },
+    {
+      "phase": "E",
+      "name": "CSV optional publication export",
+      "output_equivalence_gate": "flag=true CSV exact; flag=false formal outputs and allowlist exact",
+      "performance_gate": "flag=false has no CSV write/parse; flag=true cost is separately reported",
+      "rollback_point": "re-enable CSV export and old bindings",
+      "commit_boundary": "optional flag/publication inventory only; public deletion separate",
+      "full_production_validation": "raw-only true/false, release validation, replay and publish swap",
+      "disk_cleanup_rule": "retain publication CSV only when requested; remove stale/partial temp safely"
+    }
+  ]
+}
