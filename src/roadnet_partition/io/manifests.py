@@ -27,6 +27,7 @@ SUCCESS_MARKER = "_SUCCESS"
 STAGE_RESULT_FILENAME = "stage_result.json"
 DEPENDENCY_ALLOWLIST = (
     "geopandas",
+    "duckdb",
     "networkx",
     "numpy",
     "pandas",
