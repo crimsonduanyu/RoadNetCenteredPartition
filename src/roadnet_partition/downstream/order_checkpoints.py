@@ -10,6 +10,7 @@ import time
 from typing import Any, Iterator, Mapping
 
 import pandas as pd
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -200,6 +201,7 @@ def _manifest_template(
     config_fingerprint: str,
     runtime: Mapping[str, Any],
     duckdb_version: str | None,
+    stage_id_validation: str,
 ) -> dict[str, Any]:
     schema = checkpoint_schema(kind)
     columns = checkpoint_columns(kind)
@@ -216,6 +218,10 @@ def _manifest_template(
         "global_ordinal_range": [0, 0],
         "sort_key": list(SORT_KEY),
         "stage_id_unique": True,
+        "stage_id_validation": stage_id_validation,
+        "stage_id_validation_source": (
+            MATCHED_ORDER_CHECKPOINT if stage_id_validation == "inherited_source" else None
+        ),
         "min_sort_key": None,
         "max_sort_key": None,
         "min_stage_id": None,
@@ -247,6 +253,7 @@ def validate_checkpoint_manifest(
     required = {
         "contract", "schema_version", "checkpoint_kind", "columns", "nullable_policy", "row_count",
         "global_ordinal_range", "sort_key", "stage_id_unique", "shards", "source_fingerprint",
+        "stage_id_validation", "stage_id_validation_source",
         "config_fingerprint", "runtime", "runtime_fingerprint", "duckdb_version",
         "arrow_schema_fingerprint", "parquet_schema_fingerprint", "completed_marker", "completed",
         "atomic_publish", "status",
@@ -272,6 +279,11 @@ def validate_checkpoint_manifest(
         raise ValueError("nullable policy differs")
     if tuple(manifest["sort_key"]) != SORT_KEY or manifest["stage_id_unique"] is not True:
         raise ValueError("checkpoint sort or uniqueness contract differs")
+    stage_id_validation = manifest["stage_id_validation"]
+    if stage_id_validation not in {"unchecked", "sequential", "inherited_source"}:
+        raise ValueError("checkpoint stage_id validation mode differs")
+    if stage_id_validation == "inherited_source" and manifest["stage_id_validation_source"] != MATCHED_ORDER_CHECKPOINT:
+        raise ValueError("checkpoint inherited stage_id source differs")
     if not isinstance(manifest["shards"], list) or int(manifest["row_count"]) < 0:
         raise ValueError("checkpoint row/shard metadata is invalid")
     if manifest["completed"]:
@@ -309,7 +321,7 @@ def validate_checkpoint_manifest(
                 raise ValueError(f"checkpoint shard hash/size differs: {path}")
             if schema_fingerprint(pq.read_schema(path)) != expected_schema_fp:
                 raise ValueError(f"checkpoint Parquet schema differs: {path}")
-            if int(shard["row_count"]):
+            if stage_id_validation == "unchecked" and int(shard["row_count"]):
                 stage_ids.update(
                     int(value)
                     for value in pq.read_table(path, columns=["stage_id"])["stage_id"].to_pylist()
@@ -318,8 +330,15 @@ def validate_checkpoint_manifest(
         raise ValueError("checkpoint row count differs from shard ranges")
     if int(manifest["global_ordinal_range"][0]) != 0 or int(manifest["global_ordinal_range"][1]) != previous_end:
         raise ValueError("checkpoint global ordinal range differs")
-    if manifest["stage_id_unique"] and len(stage_ids) != int(manifest["row_count"]):
-        raise ValueError("checkpoint stage_id values are not unique")
+    if manifest["stage_id_unique"]:
+        if stage_id_validation == "sequential":
+            if int(manifest["row_count"]) and (
+                int(manifest["min_stage_id"]) != 1
+                or int(manifest["max_stage_id"]) != int(manifest["row_count"])
+            ):
+                raise ValueError("sequential checkpoint stage_id range differs")
+        elif stage_id_validation == "unchecked" and len(stage_ids) != int(manifest["row_count"]):
+            raise ValueError("checkpoint stage_id values are not unique")
 
 
 class ParquetCheckpointWriter:
@@ -333,6 +352,7 @@ class ParquetCheckpointWriter:
         runtime: Mapping[str, Any],
         duckdb_version: str | None,
         target_rows: int = 500_000,
+        stage_id_validation: str = "unchecked",
     ) -> None:
         if target_rows <= 0:
             raise ValueError("target_rows must be positive")
@@ -349,6 +369,7 @@ class ParquetCheckpointWriter:
             config_fingerprint=config_fingerprint,
             runtime=runtime,
             duckdb_version=duckdb_version,
+            stage_id_validation=stage_id_validation,
         )
         atomic_write_json(self._manifest_path, self._manifest)
         self._row_count = 0
@@ -370,6 +391,11 @@ class ParquetCheckpointWriter:
             raise RuntimeError("checkpoint writer is closed")
         if any(shard["shard_id"] == shard_id for shard in self._manifest["shards"]):
             raise ValueError(f"duplicate checkpoint shard ID: {shard_id}")
+        if self._manifest["stage_id_validation"] == "sequential" and not frame.empty:
+            actual = frame["stage_id"].to_numpy(dtype=np.int64)
+            expected = np.arange(self._row_count + 1, self._row_count + len(frame) + 1, dtype=np.int64)
+            if not np.array_equal(actual, expected):
+                raise ValueError("sequential checkpoint stage_id values differ")
         table = _table_from_frame(frame, self.kind)
         path = self.root / "shards" / f"{shard_id}.parquet"
         _write_parquet_atomic(path, table)
@@ -440,6 +466,7 @@ class DriverBoundaryCheckpointWriter(ParquetCheckpointWriter):
     """Write labeled shards without closing a durable shard inside a driver."""
 
     def __init__(self, *args: Any, target_rows: int = 500_000, **kwargs: Any) -> None:
+        kwargs.setdefault("stage_id_validation", "inherited_source")
         super().__init__(*args, target_rows=target_rows, **kwargs)
         self._pending: list[pd.DataFrame] = []
         self._pending_rows = 0
@@ -505,9 +532,11 @@ def _temp_dir_peak(path: Path, peak: int) -> int:
 
 
 @contextmanager
-def sorted_checkpoint_batches(
-    matched_manifest: str | Path,
+def _sorted_checkpoint_batches(
+    manifest_path: str | Path,
     *,
+    expected_kind: str,
+    order_key: tuple[str, ...],
     temp_directory: Path,
     run_owned_root: Path,
     memory_limit: str = "512MB",
@@ -523,8 +552,8 @@ def sorted_checkpoint_batches(
     if not temp_directory.is_relative_to(run_owned_root):
         raise ValueError(f"DuckDB temp directory is not run-owned: {temp_directory}")
     temp_directory.mkdir(parents=True, exist_ok=True)
-    manifest = load_checkpoint_manifest(matched_manifest, expected_kind=MATCHED_ORDER_CHECKPOINT)
-    root = Path(matched_manifest).resolve().parent
+    manifest = load_checkpoint_manifest(manifest_path, expected_kind=expected_kind)
+    root = Path(manifest_path).resolve().parent
     paths = [str((root / shard["path"]).resolve()) for shard in manifest["shards"]]
     import duckdb
 
@@ -535,10 +564,10 @@ def sorted_checkpoint_batches(
         connection.execute(f"SET memory_limit = '{memory_limit}'")
         connection.execute(f"SET threads = {int(threads)}")
         connection.execute("SET temp_directory = ?", [str(temp_directory)])
-        select_columns = ", ".join(f'"{name}"' for name in MATCHED_COLUMNS)
+        select_columns = ", ".join(f'"{name}"' for name in checkpoint_columns(expected_kind))
         relation = connection.from_query(
             f"SELECT {select_columns} FROM read_parquet(?) "
-            "ORDER BY driver_id, departure_time_ns, finish_time_ns, stage_id",
+            "ORDER BY " + ", ".join(order_key),
             params=[paths],
         )
         reader = relation.to_arrow_reader(batch_size=batch_size)
@@ -555,7 +584,7 @@ def sorted_checkpoint_batches(
             "memory_limit": memory_limit,
             "threads": int(threads),
             "temp_directory": temp_directory.as_posix(),
-            "sort_key": list(SORT_KEY),
+            "sort_key": list(order_key),
             "sort_wall_seconds": None,
             "temp_spill_bytes": None,
             "temp_peak_disk_bytes": None,
@@ -569,6 +598,52 @@ def sorted_checkpoint_batches(
             metrics["temp_peak_disk_bytes"] = peak_temp
     finally:
         connection.close()
+
+
+@contextmanager
+def sorted_checkpoint_batches(
+    matched_manifest: str | Path,
+    *,
+    temp_directory: Path,
+    run_owned_root: Path,
+    memory_limit: str = "512MB",
+    threads: int = 1,
+    batch_size: int = 100_000,
+) -> Iterator[tuple[Iterator[pa.RecordBatch], dict[str, Any]]]:
+    with _sorted_checkpoint_batches(
+        matched_manifest,
+        expected_kind=MATCHED_ORDER_CHECKPOINT,
+        order_key=SORT_KEY,
+        temp_directory=temp_directory,
+        run_owned_root=run_owned_root,
+        memory_limit=memory_limit,
+        threads=threads,
+        batch_size=batch_size,
+    ) as result:
+        yield result
+
+
+@contextmanager
+def sorted_labeled_checkpoint_batches(
+    labeled_manifest: str | Path,
+    *,
+    temp_directory: Path,
+    run_owned_root: Path,
+    memory_limit: str = "512MB",
+    threads: int = 1,
+    batch_size: int = 100_000,
+) -> Iterator[tuple[Iterator[pa.RecordBatch], dict[str, Any]]]:
+    with _sorted_checkpoint_batches(
+        labeled_manifest,
+        expected_kind=LABELED_ORDER_CHECKPOINT,
+        order_key=("stage_id",),
+        temp_directory=temp_directory,
+        run_owned_root=run_owned_root,
+        memory_limit=memory_limit,
+        threads=threads,
+        batch_size=batch_size,
+    ) as result:
+        yield result
 
 
 __all__ = [
@@ -592,5 +667,6 @@ __all__ = [
     "runtime_fingerprint",
     "schema_fingerprint",
     "sorted_checkpoint_batches",
+    "sorted_labeled_checkpoint_batches",
     "validate_checkpoint_manifest",
 ]

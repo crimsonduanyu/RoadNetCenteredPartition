@@ -29,6 +29,16 @@ class ConfigError(ValueError):
 
 
 DEFAULT_GZIP_COMPRESSLEVEL = 9
+DEFAULT_ORDER_STAGING_BACKEND = "sqlite_v1"
+ORDER_STAGING_BACKENDS = {"sqlite_v1", "parquet_duckdb_v2"}
+DEFAULT_ORDER_STAGING = {
+    "memory_limit": "512MB",
+    "threads": 1,
+    "batch_size": 100_000,
+    "target_shard_rows": 500_000,
+    "temp_disk_budget_bytes": 40 * 1024**3,
+    "compatibility_export": True,
+}
 
 
 def validate_gzip_compresslevel(value: Any, *, source: Path | None = None) -> int:
@@ -36,6 +46,33 @@ def validate_gzip_compresslevel(value: Any, *, source: Path | None = None) -> in
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 9:
         raise ConfigError(f"{prefix}gzip_compresslevel must be an integer in [0, 9]")
     return value
+
+
+def validate_order_staging(
+    backend: Any,
+    settings: Mapping[str, Any] | None = None,
+    *,
+    source: Path | None = None,
+) -> tuple[str, dict[str, Any]]:
+    prefix = f"{source}: " if source is not None else ""
+    backend = DEFAULT_ORDER_STAGING_BACKEND if backend is None else str(backend)
+    if backend not in ORDER_STAGING_BACKENDS:
+        raise ConfigError(f"{prefix}order_staging_backend must be one of {sorted(ORDER_STAGING_BACKENDS)}")
+    values = dict(DEFAULT_ORDER_STAGING)
+    if settings is not None:
+        values.update(settings)
+    memory_limit = values["memory_limit"]
+    if not isinstance(memory_limit, str) or not _DUCKDB_MEMORY_LIMIT.fullmatch(memory_limit.strip()):
+        raise ConfigError(f"{prefix}order_staging.memory_limit must be a size such as '512MB'")
+    values["memory_limit"] = memory_limit.strip().upper().replace(" ", "")
+    for name in ("threads", "batch_size", "target_shard_rows", "temp_disk_budget_bytes"):
+        value = values[name]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ConfigError(f"{prefix}order_staging.{name} must be a positive integer")
+        values[name] = int(value)
+    if not isinstance(values["compatibility_export"], bool):
+        raise ConfigError(f"{prefix}order_staging.compatibility_export must be boolean")
+    return backend, values
 
 
 _ANY = object()
@@ -48,6 +85,7 @@ _TTE_FILENAMES = {
     ("distance", "matrix_filename"): "cluster_network_distance.parquet",
     ("distance", "representatives_filename"): "cluster_representative_nodes.csv",
 }
+_DUCKDB_MEMORY_LIMIT = re.compile(r"^[0-9]+(?:\.[0-9]+)?\s*(?:B|KB|MB|GB|TB)$", re.IGNORECASE)
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -193,6 +231,15 @@ _DEMAND_SCHEMA = {
     "dataset_config": _ANY,
     "scope": _ANY,
     "gzip_compresslevel": _ANY,
+    "order_staging_backend": _ANY,
+    "order_staging": {
+        "memory_limit": _ANY,
+        "threads": _ANY,
+        "batch_size": _ANY,
+        "target_shard_rows": _ANY,
+        "temp_disk_budget_bytes": _ANY,
+        "compatibility_export": _ANY,
+    },
     "order_pipeline": {
         "inputs": {
             "partition_gpkg": _ANY,
@@ -673,6 +720,9 @@ def resolve_demand_config(path: str | Path) -> ResolvedStageConfig:
     gzip_compresslevel = validate_gzip_compresslevel(
         raw.get("gzip_compresslevel", DEFAULT_GZIP_COMPRESSLEVEL), source=source,
     )
+    order_staging_backend, order_staging = validate_order_staging(
+        raw.get("order_staging_backend"), raw.get("order_staging"), source=source,
+    )
     if raw.get("standalone", {}).get("output_dir") is not None:
         pipeline["outputs"] = {**dict(pipeline.get("outputs", {})), "root": raw["standalone"]["output_dir"]}
     values.update({
@@ -680,6 +730,8 @@ def resolve_demand_config(path: str | Path) -> ResolvedStageConfig:
         "crs": deepcopy(dataset["crs"]),
         "order_pipeline": pipeline,
         "gzip_compresslevel": gzip_compresslevel,
+        "order_staging_backend": order_staging_backend,
+        "order_staging": order_staging,
         "contract": deepcopy(raw.get("contract", {})),
     })
     return _finish_resolved(

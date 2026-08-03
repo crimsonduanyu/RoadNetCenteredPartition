@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -673,7 +674,18 @@ def execute_stage(
             inputs=inputs,
             runtime_bindings=runtime_bindings,
         )
-        raw_result = _run_stage(stage, config, stage_context)
+        run_config = config
+        if (
+            stage == "demand"
+            and config.values.get("order_staging_backend") == "parquet_duckdb_v2"
+        ):
+            run_values = deepcopy(dict(config.values))
+            run_values["_resolved"] = {
+                **dict(run_values.get("_resolved", {})),
+                "stage_input_fingerprint": inputs_fingerprint,
+            }
+            run_config = replace(config, values=run_values)
+        raw_result = _run_stage(stage, run_config, stage_context)
         if raw_result.stage != stage or raw_result.status is not StageStatus.COMPLETE:
             raise RuntimeError("stage function returned a non-complete or mismatched result")
         if any(not isinstance(name, str) for name in raw_result.outputs):

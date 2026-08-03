@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
+import contextlib
 from copy import deepcopy
+import os
 from pathlib import Path
 from typing import Any
 import json
+import shutil
 import sqlite3
 import time
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows
+    resource = None
 
 from roadnet_partition.io import environment as _environment  # noqa: F401
 import numpy as np
@@ -15,8 +23,22 @@ import pandas as pd
 from roadnet_partition.config import (
     DEFAULT_GZIP_COMPRESSLEVEL,
     ResolvedStageConfig,
+    config_fingerprint as compute_config_fingerprint,
     validate_gzip_compresslevel,
 )
+from roadnet_partition.downstream.order_checkpoints import (
+    DriverBoundaryCheckpointWriter,
+    LABELED_COLUMNS,
+    LABELED_ORDER_CHECKPOINT,
+    MATCHED_COLUMNS,
+    MATCHED_ORDER_CHECKPOINT,
+    ParquetCheckpointWriter,
+    deterministic_shard_id,
+    iter_checkpoint_batches,
+    sorted_labeled_checkpoint_batches,
+    sorted_checkpoint_batches,
+)
+from roadnet_partition.io.manifests import collect_runtime_info, load_manifest
 from roadnet_partition.graphs.build import (
     build_cluster_distance_graph, build_cluster_poi_graph, build_cluster_road_edges,
     save_graph_assets,
@@ -303,10 +325,15 @@ def create_staging_database(db_path: Path) -> sqlite3.Connection:
     return connection
 
 def stage_order_assignments(
-    connection: sqlite3.Connection,
+    connection: sqlite3.Connection | None,
     config: dict[str, Any],
     partition,
+    matched_writer: ParquetCheckpointWriter | None = None,
 ) -> dict[str, int]:
+    if connection is None and matched_writer is None:
+        raise ValueError("stage_order_assignments requires SQLite or a matched checkpoint writer")
+    if connection is not None and matched_writer is not None:
+        raise ValueError("stage_order_assignments accepts only one staging backend")
     pipeline = config["order_pipeline"]
     order_config = pipeline["order"]
     inputs = pipeline["inputs"]
@@ -342,6 +369,7 @@ def stage_order_assignments(
         "both_matched_rows": 0,
         "staged_rows": 0,
     }
+    next_stage_id = 1
 
     for file_index, dataset in enumerate(inputs["order_datasets"]):
         order_path = Path(project_path(dataset))
@@ -436,8 +464,21 @@ def stage_order_assignments(
                     "dropoff_match_distance_m": dropoff_match.loc[both_valid, "distance_m"].astype(float).to_numpy(),
                 }
             )
-            with timer.phase("sqlite_append"):
-                stage.to_sql("staged_orders", connection, if_exists="append", index=False)
+            if matched_writer is not None:
+                stage.insert(
+                    0,
+                    "stage_id",
+                    np.arange(next_stage_id, next_stage_id + len(stage), dtype=np.int64),
+                )
+                with timer.phase("matched_parquet_write"):
+                    matched_writer.write_frame(
+                        stage.loc[:, MATCHED_COLUMNS],
+                        deterministic_shard_id("matched", file_index, chunk_index),
+                    )
+                next_stage_id += len(stage)
+            else:
+                with timer.phase("sqlite_append"):
+                    stage.to_sql("staged_orders", connection, if_exists="append", index=False)
             stats["staged_rows"] += int(len(stage))
 
             print(
@@ -446,12 +487,13 @@ def stage_order_assignments(
                 f"window rows={stats['rows_after_time_window']:,}, staged rows={stats['staged_rows']:,}"
             )
 
-    with timer.phase("create_index_driver_time"):
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_driver_time ON staged_orders(driver_id, departure_time_ns, finish_time_ns)")
-    with timer.phase("create_index_slot_od"):
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_slot_od ON staged_orders(slot_start_ns, origin_cluster_id, destination_cluster_id)")
-    with timer.phase("sqlite_commit"):
-        connection.commit()
+    if connection is not None:
+        with timer.phase("create_index_driver_time"):
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_driver_time ON staged_orders(driver_id, departure_time_ns, finish_time_ns)")
+        with timer.phase("create_index_slot_od"):
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_staged_slot_od ON staged_orders(slot_start_ns, origin_cluster_id, destination_cluster_id)")
+        with timer.phase("sqlite_commit"):
+            connection.commit()
     return stats
 
 def label_staged_service_types(connection: sqlite3.Connection) -> dict[str, int]:
@@ -647,6 +689,475 @@ def build_cluster_od_from_staging(connection: sqlite3.Connection) -> pd.DataFram
             ["slot_start", "origin_cluster_id", "destination_cluster_id", "exclusive_count", "carpool_count", "total_count"]
         ].sort_values(["slot_start", "origin_cluster_id", "destination_cluster_id"])
 
+
+PUBLIC_ASSIGNED_COLUMNS = [
+    "stage_id",
+    "source_file",
+    "source_row",
+    "order_id",
+    "driver_id",
+    "departure_time",
+    "finish_time",
+    "slot_start",
+    "pickup_seg_id",
+    "dropoff_seg_id",
+    "origin_cluster_id",
+    "destination_cluster_id",
+    "pickup_match_distance_m",
+    "dropoff_match_distance_m",
+    "service_type",
+]
+
+
+@contextlib.contextmanager
+def _columnar_phase(profile: dict[str, Any], name: str) -> Iterator[None]:
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        profile[name] = profile.get(name, 0.0) + (time.perf_counter() - started)
+
+
+def _process_io() -> dict[str, int] | None:
+    try:
+        with open("/proc/self/io", encoding="utf-8") as handle:
+            values = {}
+            for line in handle:
+                key, _, value = line.partition(":")
+                values[key.strip()] = int(value)
+            return {
+                "read_bytes": int(values.get("read_bytes", 0)),
+                "write_bytes": int(values.get("write_bytes", 0)),
+            }
+    except OSError:
+        return None
+
+
+def _peak_rss_gib() -> float | None:
+    if resource is None:
+        return None
+    value = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return value / (1024.0 * 1024.0) if value else 0.0
+
+
+def _checkpoint_paths(manifest_path: Path) -> list[str]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    root = manifest_path.parent
+    return [str((root / shard["path"]).resolve()) for shard in manifest["shards"]]
+
+
+def _open_columnar_connection(
+    manifest_path: Path,
+    temp_directory: Path,
+    settings: dict[str, Any],
+):
+    import duckdb
+
+    connection = duckdb.connect(database=":memory:")
+    connection.execute(f"SET memory_limit = '{settings['memory_limit']}'")
+    connection.execute(f"SET threads = {int(settings['threads'])}")
+    connection.execute("SET temp_directory = ?", [str(temp_directory.resolve())])
+    return connection, _checkpoint_paths(manifest_path)
+
+
+def _build_cluster_od_from_labeled(
+    manifest_path: Path,
+    temp_directory: Path,
+    settings: dict[str, Any],
+    profile: dict[str, Any],
+) -> pd.DataFrame:
+    with _columnar_phase(profile, "od_groupby_fetch"):
+        connection, paths = _open_columnar_connection(manifest_path, temp_directory, settings)
+        try:
+            relation = connection.from_query(
+                """
+                SELECT
+                    slot_start_ns,
+                    origin_cluster_id,
+                    destination_cluster_id,
+                    service_type,
+                    COUNT(*) AS order_count
+                FROM read_parquet(?)
+                GROUP BY slot_start_ns, origin_cluster_id, destination_cluster_id, service_type
+                ORDER BY slot_start_ns, origin_cluster_id, destination_cluster_id, service_type
+                """,
+                params=[paths],
+            )
+            grouped = relation.df()
+        finally:
+            connection.close()
+    if grouped.empty:
+        return aggregate_od_frame(pd.DataFrame(), 15)
+
+    with _columnar_phase(profile, "od_pivot"):
+        grouped["slot_start"] = pd.to_datetime(grouped["slot_start_ns"], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
+        pivot = (
+            grouped.pivot_table(
+                index=["slot_start", "origin_cluster_id", "destination_cluster_id"],
+                columns="service_type",
+                values="order_count",
+                aggfunc="sum",
+                fill_value=0,
+            )
+            .reset_index()
+            .rename_axis(None, axis=1)
+        )
+        for service_type in SERVICE_TYPES:
+            if service_type not in pivot.columns:
+                pivot[service_type] = 0
+        pivot = pivot.rename(columns={EXCLUSIVE: "exclusive_count", CARPOOL: "carpool_count"})
+        pivot["exclusive_count"] = pivot["exclusive_count"].astype(int)
+        pivot["carpool_count"] = pivot["carpool_count"].astype(int)
+        pivot["total_count"] = pivot["exclusive_count"] + pivot["carpool_count"]
+        return pivot[
+            ["slot_start", "origin_cluster_id", "destination_cluster_id", "exclusive_count", "carpool_count", "total_count"]
+        ].sort_values(["slot_start", "origin_cluster_id", "destination_cluster_id"])
+
+
+def _load_columnar_slot_bounds(
+    manifest_path: Path,
+    temp_directory: Path,
+    settings: dict[str, Any],
+) -> dict[str, int | None]:
+    connection, paths = _open_columnar_connection(manifest_path, temp_directory, settings)
+    try:
+        row = connection.from_query(
+            """
+            SELECT
+                MIN(departure_time_ns),
+                MAX(departure_time_ns),
+                MIN(slot_start_ns),
+                MAX(slot_start_ns)
+            FROM read_parquet(?)
+            """,
+            params=[paths],
+        ).fetchone()
+    finally:
+        connection.close()
+    return {
+        "min_departure_time_ns": None if row[0] is None else int(row[0]),
+        "max_departure_time_ns": None if row[1] is None else int(row[1]),
+        "min_slot_start_ns": None if row[2] is None else int(row[2]),
+        "max_slot_start_ns": None if row[3] is None else int(row[3]),
+    }
+
+
+def export_assigned_orders_from_labeled(
+    batches: Iterable[Any],
+    output_path: Path,
+    *,
+    timer,
+    compresslevel: int,
+) -> None:
+    from roadnet_partition.pipeline.timing import open_timed_gzip_text
+
+    first = True
+    with open_timed_gzip_text(output_path, timer, compresslevel=compresslevel) as (handle, compressor):
+        for batch_index, batch in enumerate(batches, start=1):
+            with timer.phase("compatibility_arrow_to_pandas", chunk=batch_index):
+                chunk = batch.to_pandas()
+            with timer.phase("compatibility_datetime_format", chunk=batch_index):
+                for source, target in [
+                    ("departure_time_ns", "departure_time"),
+                    ("finish_time_ns", "finish_time"),
+                    ("slot_start_ns", "slot_start"),
+                ]:
+                    chunk[target] = pd.to_datetime(chunk[source], unit="ns").dt.strftime("%Y-%m-%d %H:%M:%S")
+            with timer.phase("compatibility_other_format", chunk=batch_index):
+                chunk = chunk[PUBLIC_ASSIGNED_COLUMNS]
+            if timer.enabled:
+                before = compressor.write_seconds
+                started = time.perf_counter()
+                chunk.to_csv(handle, index=False, header=first)
+                csv_wall = time.perf_counter() - started
+                gzip_wall = compressor.write_seconds - before
+                timer.record("compatibility_csv_serialize", max(0.0, csv_wall - gzip_wall), chunk=batch_index)
+                timer.record("compatibility_gzip_compress_write", gzip_wall, chunk=batch_index)
+            else:
+                chunk.to_csv(handle, index=False, header=first)
+            first = False
+
+
+def _run_columnar_from_config(
+    config: dict[str, Any],
+    *,
+    source_fingerprint: str | None = None,
+    config_fingerprint_value: str | None = None,
+) -> None:
+    import duckdb
+
+    from roadnet_partition.pipeline.timing import get_active_timer, reset as reset_timer
+
+    timer = reset_timer("demand")
+    started = time.perf_counter()
+    process_io_start = _process_io()
+    profile: dict[str, Any] = {
+        "backend": "parquet_duckdb_v2",
+        "duckdb_version": duckdb.__version__,
+        "sort_key": ["driver_id", "departure_time_ns", "finish_time_ns", "stage_id"],
+        "memory_limit": config["order_staging"]["memory_limit"],
+        "threads": int(config["order_staging"]["threads"]),
+        "batch_size": int(config["order_staging"]["batch_size"]),
+        "target_shard_rows": int(config["order_staging"]["target_shard_rows"]),
+        "temp_disk_budget_bytes": int(config["order_staging"]["temp_disk_budget_bytes"]),
+        "compatibility_export": bool(config["order_staging"]["compatibility_export"]),
+    }
+    output_dir = resolve_output_root(config)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pipeline = config["order_pipeline"]
+    gzip_compresslevel = validate_gzip_compresslevel(
+        config.get("gzip_compresslevel", DEFAULT_GZIP_COMPRESSLEVEL),
+    )
+    partition_path = Path(project_path(pipeline["inputs"]["partition_gpkg"]))
+    configured_relation_edges = pipeline["inputs"].get("road_relation_edges_csv")
+    relation_edges_path = (
+        Path(project_path(configured_relation_edges))
+        if configured_relation_edges
+        else default_relation_edges_path(config)
+    )
+
+    print(f"Loading partition from {partition_path}...")
+    partition = load_partition(partition_path, config["crs"]["projected"])
+    cluster_index = build_cluster_index(partition, config, output_dir)
+    cluster_ids = cluster_index.sort_values("cluster_index")["cluster_id"].astype(str).tolist()
+    cluster_to_index = dict(zip(cluster_ids, range(len(cluster_ids))))
+    segment_to_cluster = dict(zip(partition["seg_id"].astype(str), partition["cluster_id"].astype(str)))
+
+    columnar_root = output_dir / "columnar"
+    matched_root = columnar_root / "matched"
+    labeled_root = columnar_root / "labeled"
+    sort_temp = columnar_root / "duckdb-temp-sort"
+    export_temp = columnar_root / "duckdb-temp-stage-id"
+    runtime = collect_runtime_info()
+    runtime["duckdb"] = duckdb.__version__
+    source_fingerprint = source_fingerprint or compute_config_fingerprint({
+        "orders": [str(path) for path in pipeline["inputs"]["order_datasets"]],
+        "partition": str(partition_path),
+        "relation_edges": str(relation_edges_path),
+        "poi": str(pipeline["inputs"]["poi_path"]),
+    })
+    config_fingerprint_value = config_fingerprint_value or compute_config_fingerprint(config)
+
+    matched_writer = ParquetCheckpointWriter(
+        matched_root,
+        kind=MATCHED_ORDER_CHECKPOINT,
+        source_fingerprint=source_fingerprint,
+        config_fingerprint=config_fingerprint_value,
+        runtime=runtime,
+        duckdb_version=duckdb.__version__,
+        target_rows=int(config["order_staging"]["target_shard_rows"]),
+        stage_id_validation="sequential",
+    )
+    with _columnar_phase(profile, "matched_parquet_write"):
+        order_stats = stage_order_assignments(
+            None,
+            config,
+            partition,
+            matched_writer=matched_writer,
+        )
+        matched_manifest_path = matched_writer.finish()
+    profile["matched_manifest"] = matched_manifest_path.relative_to(output_dir).as_posix()
+
+    label_counts = {EXCLUSIVE: 0, CARPOOL: 0}
+    labeled_writer = DriverBoundaryCheckpointWriter(
+        labeled_root,
+        kind=LABELED_ORDER_CHECKPOINT,
+        source_fingerprint=source_fingerprint,
+        config_fingerprint=config_fingerprint_value,
+        runtime=runtime,
+        duckdb_version=duckdb.__version__,
+        target_rows=int(config["order_staging"]["target_shard_rows"]),
+    )
+    current_driver: str | None = None
+    current_parts: list[pd.DataFrame] = []
+
+    def flush_driver() -> None:
+        nonlocal current_driver, current_parts
+        if not current_parts:
+            return
+        frame = current_parts[0] if len(current_parts) == 1 else pd.concat(current_parts, ignore_index=True)
+        labels: list[tuple[int, str]] = []
+        with _columnar_phase(profile, "service_label_compute"):
+            service_label_batches(
+                frame[["stage_id", "driver_id", "departure_time_ns", "finish_time_ns"]].itertuples(
+                    index=False,
+                    name=None,
+                ),
+                labels.extend,
+            )
+        if len(labels) != len(frame):
+            raise ValueError(f"service label count differs for driver {current_driver!r}")
+        frame = frame.copy()
+        frame["service_type"] = [label for _, label in labels]
+        for _, service_type in labels:
+            label_counts[service_type] += 1
+        with _columnar_phase(profile, "labeled_parquet_write"):
+            labeled_writer.write_driver(frame.loc[:, LABELED_COLUMNS].reset_index(drop=True))
+        current_parts = []
+        current_driver = None
+
+    with _columnar_phase(profile, "duckdb_external_sort_and_arrow_stream"):
+        with sorted_checkpoint_batches(
+            matched_manifest_path,
+            temp_directory=sort_temp,
+            run_owned_root=output_dir,
+            memory_limit=config["order_staging"]["memory_limit"],
+            threads=int(config["order_staging"]["threads"]),
+            batch_size=int(config["order_staging"]["batch_size"]),
+        ) as (batches, sort_metrics):
+            for batch in batches:
+                frame = batch.to_pandas()
+                driver_values = frame["driver_id"].astype(str).to_numpy()
+                boundaries = np.flatnonzero(driver_values[1:] != driver_values[:-1]) + 1
+                starts = [0, *boundaries.tolist()]
+                ends = [*boundaries.tolist(), len(frame)]
+                for start, end in zip(starts, ends):
+                    piece = frame.iloc[start:end]
+                    driver = str(piece["driver_id"].iloc[0])
+                    if current_driver is None:
+                        current_driver = driver
+                    elif driver != current_driver:
+                        flush_driver()
+                        current_driver = driver
+                    current_parts.append(piece.reset_index(drop=True))
+        profile["sort"] = sort_metrics
+        if int(sort_metrics["temp_peak_disk_bytes"] or 0) > int(config["order_staging"]["temp_disk_budget_bytes"]):
+            raise RuntimeError("DuckDB sort temporary disk budget exceeded")
+    flush_driver()
+    with _columnar_phase(profile, "labeled_checkpoint_finalize"):
+        labeled_manifest_path = labeled_writer.finish()
+    profile["labeled_manifest"] = labeled_manifest_path.relative_to(output_dir).as_posix()
+
+    with _columnar_phase(profile, "od_from_labeled_checkpoint"):
+        od = _build_cluster_od_from_labeled(labeled_manifest_path, sort_temp, config["order_staging"], profile)
+    slot_suffix = f"{int(pipeline['time_slot_minutes'])}min"
+    with _columnar_phase(profile, "od_csv"):
+        od_path = output_dir / f"cluster_od_{slot_suffix}.csv"
+        od.to_csv(od_path, index=False)
+    staged_time_bounds = _load_columnar_slot_bounds(labeled_manifest_path, sort_temp, config["order_staging"])
+    tensor_slot_labels = build_slot_labels_from_bounds(
+        staged_time_bounds["min_slot_start_ns"],
+        staged_time_bounds["max_slot_start_ns"],
+        int(pipeline["time_slot_minutes"]),
+    )
+    with _columnar_phase(profile, "tensor_alloc_fill"):
+        tensors = build_od_tensors(od, cluster_ids, tensor_slot_labels)
+    with _columnar_phase(profile, "npz_write"):
+        tensor_path = output_dir / f"od_tensor_{slot_suffix}.npz"
+        np.savez_compressed(tensor_path, **tensors)
+
+    assigned_path: Path | None = None
+    if bool(config["order_staging"]["compatibility_export"]):
+        assigned_path = output_dir / "orders_region_assigned.csv.gz"
+        with _columnar_phase(profile, "stage_id_reorder_wall"):
+            with sorted_labeled_checkpoint_batches(
+                labeled_manifest_path,
+                temp_directory=export_temp,
+                run_owned_root=output_dir,
+                memory_limit=config["order_staging"]["memory_limit"],
+                threads=int(config["order_staging"]["threads"]),
+                batch_size=int(config["order_staging"]["batch_size"]),
+            ) as (export_batches, export_sort_metrics):
+                with _columnar_phase(profile, "compatibility_csv_export"):
+                    export_assigned_orders_from_labeled(
+                        export_batches,
+                        assigned_path,
+                        timer=timer,
+                        compresslevel=gzip_compresslevel,
+                    )
+                profile["stage_id_reorder"] = export_sort_metrics
+                if int(export_sort_metrics["temp_peak_disk_bytes"] or 0) > int(config["order_staging"]["temp_disk_budget_bytes"]):
+                    raise RuntimeError("DuckDB stage_id reorder temporary disk budget exceeded")
+
+    with _columnar_phase(profile, "other_writes"):
+        relation_edges = pd.read_csv(relation_edges_path)
+        road_edges = build_cluster_road_edges(
+            relation_edges,
+            segment_to_cluster,
+            cluster_to_index,
+            pipeline.get("road_graph", {}).get("weight_column", "base_weight"),
+        )
+        graph_summaries = [
+            save_graph_assets("road", road_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
+        ]
+        poi_edges, poi_stats = build_cluster_poi_graph(
+            partition,
+            cluster_ids,
+            cluster_to_index,
+            config,
+            output_dir,
+        )
+        graph_summaries.append(
+            save_graph_assets("poi", poi_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
+        )
+        distance_edges = build_cluster_distance_graph(cluster_index, cluster_ids, config)
+        graph_summaries.append(
+            save_graph_assets("distance", distance_edges, len(cluster_ids), output_dir, pipeline.get("graph_normalization", {}))
+        )
+
+    metadata_outputs = {
+        "cluster_od": display_path(od_path),
+        "od_tensor": display_path(tensor_path),
+        "cluster_index": display_path(output_dir / "cluster_index.csv"),
+        "metadata": display_path(output_dir / "metadata.json"),
+        "matched_checkpoint": display_path(matched_manifest_path),
+        "labeled_checkpoint": display_path(labeled_manifest_path),
+    }
+    if assigned_path is not None:
+        metadata_outputs["orders_region_assigned"] = display_path(assigned_path)
+    metadata = {
+        "active_scope": active_scope_name(config),
+        "partition_gpkg": display_path(partition_path),
+        "road_relation_edges_csv": display_path(relation_edges_path),
+        "output_root": display_path(output_dir),
+        "time_slot_minutes": int(pipeline["time_slot_minutes"]),
+        "num_clusters": int(len(cluster_ids)),
+        "num_segments": int(len(partition)),
+        "order_stats": order_stats,
+        "service_type_counts": label_counts,
+        "data_min_departure_time": format_timestamp_ns(staged_time_bounds["min_departure_time_ns"]),
+        "data_max_departure_time": format_timestamp_ns(staged_time_bounds["max_departure_time_ns"]),
+        "data_min_slot_start": format_timestamp_ns(staged_time_bounds["min_slot_start_ns"]),
+        "data_max_slot_start": format_timestamp_ns(staged_time_bounds["max_slot_start_ns"]),
+        "num_tensor_slots": int(len(tensor_slot_labels)),
+        "poi_stats": poi_stats,
+        "graph_summaries": graph_summaries,
+        "order_staging_backend": "parquet_duckdb_v2",
+        "order_staging": config["order_staging"],
+        "columnar_profile": profile,
+        "outputs": metadata_outputs,
+        "config": pipeline,
+    }
+    metadata_path = output_dir / "metadata.json"
+    with metadata_path.open("w", encoding="utf-8") as handle:
+        json.dump(json_safe(metadata), handle, ensure_ascii=False, indent=2)
+
+    profile["stage_wall_seconds"] = time.perf_counter() - started
+    profile["process_io_start"] = process_io_start
+    profile["process_io_end"] = _process_io()
+    if process_io_start and profile["process_io_end"]:
+        profile["process_bytes_read"] = profile["process_io_end"]["read_bytes"] - process_io_start["read_bytes"]
+        profile["process_bytes_written"] = profile["process_io_end"]["write_bytes"] - process_io_start["write_bytes"]
+    profile["peak_rss_gib"] = _peak_rss_gib()
+    profile["columnar_peak_disk_bytes"] = sum(
+        path.stat().st_size for path in columnar_root.rglob("*") if path.is_file()
+    )
+    profile_path = output_dir / "columnar_profile.json"
+    profile_path.write_text(json.dumps(json_safe(profile), indent=2), encoding="utf-8")
+    timer.finalize_io()
+    if timer.enabled:
+        timing_profile = timer.to_profile()
+        timing_profile["backend"] = "parquet_duckdb_v2"
+        timing_profile["columnar"] = json_safe(profile)
+        (output_dir / "timing_profile.json").write_text(
+            json.dumps(timing_profile, indent=2),
+            encoding="utf-8",
+        )
+    for path in (sort_temp, export_temp):
+        if path.exists():
+            shutil.rmtree(path)
+    print(f"Saved columnar Demand outputs to {output_dir}")
+
 def load_staged_slot_bounds(connection: sqlite3.Connection) -> dict[str, int | None]:
     row = connection.execute(
         """
@@ -692,9 +1203,21 @@ def json_safe(value: Any) -> Any:
         return str(value)
     return value
 
-def run_from_config(config: dict[str, Any]) -> None:
+def run_from_config(
+    config: dict[str, Any],
+    *,
+    source_fingerprint: str | None = None,
+    config_fingerprint_value: str | None = None,
+) -> None:
     if "order_pipeline" not in config:
         raise ValueError("configuration must contain an order_pipeline section.")
+    if config.get("order_staging_backend", "sqlite_v1") == "parquet_duckdb_v2":
+        _run_columnar_from_config(
+            config,
+            source_fingerprint=source_fingerprint,
+            config_fingerprint_value=config_fingerprint_value,
+        )
+        return
 
     from roadnet_partition.pipeline.timing import reset as _reset_timer
     timer = _reset_timer("demand")
@@ -818,7 +1341,12 @@ def run_from_config(config: dict[str, Any]) -> None:
     print(f"Saved metadata to {metadata_path}")
 
 
-def run_demand(config: ResolvedStageConfig, context: RunContext) -> StageResult:
+def run_demand(
+    config: ResolvedStageConfig,
+    context: RunContext,
+    *,
+    source_fingerprint: str | None = None,
+) -> StageResult:
     if context.stage_dir is None or context.stage_name != "demand":
         raise ValueError("run_demand requires context.for_stage('demand')")
     output_dir = context.stage_dir
@@ -831,7 +1359,20 @@ def run_demand(config: ResolvedStageConfig, context: RunContext) -> StageResult:
         **dict(values["order_pipeline"].get("outputs", {})),
         "root": str(output_dir),
     }
-    run_from_config(values)
+    if (
+        values.get("order_staging_backend") == "parquet_duckdb_v2"
+        and not bool(values.get("order_staging", {}).get("compatibility_export", True))
+    ):
+        raise ValueError("compatibility_export=false is experimental and cannot be a formal Demand stage output")
+    source_fingerprint = source_fingerprint or values.get("_resolved", {}).get("stage_input_fingerprint")
+    if values.get("order_staging_backend") == "parquet_duckdb_v2":
+        run_from_config(
+            values,
+            source_fingerprint=source_fingerprint,
+            config_fingerprint_value=config.fingerprint,
+        )
+    else:
+        run_from_config(values)
 
     suffix = f"{int(values['order_pipeline']['time_slot_minutes'])}min"
     names = {
