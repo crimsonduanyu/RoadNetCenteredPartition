@@ -507,7 +507,7 @@
       "contract": "current public/compatibility output"
     },
     {
-      "step": "supply_reread",
+      "step": "supply_stage",
       "rows": 46002707,
       "columns": 7,
       "logical_bytes": 10523799657,
@@ -516,13 +516,14 @@
       "write_count": 0,
       "format": "gzip CSV to pandas",
       "wall_seconds": 881.93,
+      "wall_note": "complete Supply stage wall; includes gzip CSV parse and downstream Supply computation, not a pure reread",
       "peak_rss_gib": 11.237,
       "sort": true,
       "random_access": false,
       "contract": "stage input binding"
     },
     {
-      "step": "tte_reread",
+      "step": "tte_stage",
       "rows": 46002707,
       "columns": 4,
       "logical_bytes": 10523799657,
@@ -531,6 +532,7 @@
       "write_count": 0,
       "format": "gzip CSV to pandas",
       "wall_seconds": 653.96,
+      "wall_note": "complete TTE stage wall; includes gzip CSV parse and downstream TTE computation, not a pure reread",
       "peak_rss_gib": 11.057,
       "sort": false,
       "random_access": false,

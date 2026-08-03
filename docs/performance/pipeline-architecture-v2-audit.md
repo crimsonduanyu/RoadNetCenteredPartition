@@ -166,8 +166,8 @@ overhead 假装成文件 bytes。
 | service_labels index | same rows / service_type key | index payload not isolated；10M typed surrogate scales to about 0.808 GB | formal run not isolated；10M prototype 175,644,672 B | 1 index build | SQLite B-tree | 14.3 s | shared peak | index is not referenced by current export/OD SQL | unused implementation detail；可删除 |
 | assigned JOIN | 46,002,707 / 15 | 15-column row projection | no separate file；feeds CSV | 1 staged read + 1 label lookup per row | SQLite JOIN + pandas chunks | export fetch 70.206 s + frame build 86.598 s | shared peak | ORDER BY stage_id；PK label lookup | feeds current public contract |
 | assigned CSV serialization | 46,002,707 / 15 | 10,523,799,657 B uncompressed | 3,079,468,693 B gzip level 1 | 1 write | CSV text + gzip | export total 485.091 s；CSV 227.973 s；gzip 71.082 s | shared peak | stage_id order required by contract | current public/compatibility output |
-| Supply reread | 46,002,707 / 7 selected columns | decompressed CSV payload，10.52 GB source stream | 1 read of 3,079,468,693 B container | 1 parse | gzip CSV → pandas DataFrame | 881.93 s | 11.237 GiB | no input random access；internal driver sorting | stage input binding |
-| TTE reread | 46,002,707 / 4 selected columns | same decompressed source stream | 1 read of 3,079,468,693 B container | 1 parse | gzip CSV → pandas DataFrame | 653.96 s | 11.057 GiB | no input random access；group/pivot downstream | stage input binding |
+| Supply stage wall (CSV parse + compute) | 46,002,707 / 7 selected columns | decompressed CSV payload，10.52 GB source stream | 1 read of 3,079,468,693 B container | 1 parse plus downstream stage work | gzip CSV → pandas DataFrame → Supply compute | 881.93 s（完整 stage wall，不是纯 reread） | 11.237 GiB | no input random access；internal driver sorting | stage input binding |
+| TTE stage wall (CSV parse + compute) | 46,002,707 / 4 selected columns | same decompressed source stream | 1 read of 3,079,468,693 B container | 1 parse plus downstream stage work | gzip CSV → pandas DataFrame → TTE compute | 653.96 s（完整 stage wall，不是纯 reread） | 11.057 GiB | no input random access；group/pivot downstream | stage input binding |
 | downstream materialization | Demand OD 19,507,610 rows；Supply 3 tables；TTE wide matrices | OD CSV about 606 MB；Demand dense OD tensors 3 × 13,248 × 100 × 100 int32 ≈ 1.59 GB | exact total not captured in this profile | one write per formal output family | CSV.gz / NPZ / Parquet | included in stage walls | TTE/Supply peaks above | aggregators and matrix fills | formal stage contracts |
 
 ### 3.1 同一订单的读写/解析次数
@@ -182,7 +182,7 @@ overhead 假装成文件 bytes。
 | service_labels write | 1 个两列 projection |
 | service_labels reads | 2：assigned export JOIN、OD groupby JOIN |
 | assigned CSV write | 1 |
-| Supply/TTE assigned CSV parses | 2 |
+| Supply/TTE assigned CSV parses | 2（各自完整 stage wall 还包含下游计算） |
 
 因此当前完整路径至少有 6 次 full-order logical traversal（raw parse、3 次 staged
 pass、2 次 downstream parse），并另外写入/读取 1 个 label projection。按 durable
