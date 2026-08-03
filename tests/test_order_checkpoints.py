@@ -84,6 +84,7 @@ def test_label_shards_close_only_at_driver_boundaries(tmp_path: Path) -> None:
         runtime={"python": "test"},
         duckdb_version="1.5.5",
         target_rows=2,
+        source_manifest_fingerprint="matched-manifest-sha256",
     )
     writer.write_driver(labeled_frame("d1", [1, 2]))
     writer.write_driver(labeled_frame("d2", [3]))
@@ -161,3 +162,32 @@ def test_wrong_version_hash_and_temp_ownership_are_rejected(tmp_path: Path) -> N
             run_owned_root=tmp_path / "run",
         ):
             pass
+
+
+def test_checkpoint_expected_fingerprints_and_shard_hash_are_checked(tmp_path: Path) -> None:
+    writer = ParquetCheckpointWriter(
+        tmp_path / "matched",
+        kind=MATCHED_ORDER_CHECKPOINT,
+        source_fingerprint="source",
+        config_fingerprint="config",
+        runtime={"python": "test"},
+        duckdb_version=None,
+    )
+    manifest_path = writer.finish()
+    with pytest.raises(ValueError, match="source_fingerprint"):
+        load_checkpoint_manifest(manifest_path, expected_source_fingerprint="different")
+
+    writer = ParquetCheckpointWriter(
+        tmp_path / "matched-with-shard",
+        kind=MATCHED_ORDER_CHECKPOINT,
+        source_fingerprint="source",
+        config_fingerprint="config",
+        runtime={"python": "test"},
+        duckdb_version=None,
+    )
+    writer.write_frame(matched_frame(), "matched-000000")
+    manifest_path = writer.finish()
+    shard_path = manifest_path.parent / "shards" / "matched-000000.parquet"
+    shard_path.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="hash/size"):
+        load_checkpoint_manifest(manifest_path)

@@ -35,10 +35,11 @@ from roadnet_partition.downstream.order_checkpoints import (
     ParquetCheckpointWriter,
     deterministic_shard_id,
     iter_checkpoint_batches,
+    load_checkpoint_manifest,
     sorted_labeled_checkpoint_batches,
     sorted_checkpoint_batches,
 )
-from roadnet_partition.io.manifests import collect_runtime_info, load_manifest
+from roadnet_partition.io.manifests import collect_runtime_info, file_record, load_manifest
 from roadnet_partition.graphs.build import (
     build_cluster_distance_graph, build_cluster_poi_graph, build_cluster_road_edges,
     save_graph_assets,
@@ -740,6 +741,17 @@ def _peak_rss_gib() -> float | None:
     return value / (1024.0 * 1024.0) if value else 0.0
 
 
+def _process_usage() -> dict[str, float | int] | None:
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return {
+        "user_s": float(usage.ru_utime),
+        "sys_s": float(usage.ru_stime),
+        "peak_rss_bytes": int(float(usage.ru_maxrss) * 1024),
+    }
+
+
 def _checkpoint_paths(manifest_path: Path) -> list[str]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     root = manifest_path.parent
@@ -766,6 +778,9 @@ def _build_cluster_od_from_labeled(
     settings: dict[str, Any],
     profile: dict[str, Any],
 ) -> pd.DataFrame:
+    manifest = load_checkpoint_manifest(manifest_path, expected_kind=LABELED_ORDER_CHECKPOINT)
+    if int(manifest["row_count"]) == 0:
+        return aggregate_od_frame(pd.DataFrame(), 15)
     with _columnar_phase(profile, "od_groupby_fetch"):
         connection, paths = _open_columnar_connection(manifest_path, temp_directory, settings)
         try:
@@ -819,6 +834,14 @@ def _load_columnar_slot_bounds(
     temp_directory: Path,
     settings: dict[str, Any],
 ) -> dict[str, int | None]:
+    manifest = load_checkpoint_manifest(manifest_path, expected_kind=LABELED_ORDER_CHECKPOINT)
+    if int(manifest["row_count"]) == 0:
+        return {
+            "min_departure_time_ns": None,
+            "max_departure_time_ns": None,
+            "min_slot_start_ns": None,
+            "max_slot_start_ns": None,
+        }
     connection, paths = _open_columnar_connection(manifest_path, temp_directory, settings)
     try:
         row = connection.from_query(
@@ -891,6 +914,7 @@ def _run_columnar_from_config(
     timer = reset_timer("demand")
     started = time.perf_counter()
     process_io_start = _process_io()
+    process_usage_start = _process_usage()
     profile: dict[str, Any] = {
         "backend": "parquet_duckdb_v2",
         "duckdb_version": duckdb.__version__,
@@ -957,6 +981,7 @@ def _run_columnar_from_config(
         )
         matched_manifest_path = matched_writer.finish()
     profile["matched_manifest"] = matched_manifest_path.relative_to(output_dir).as_posix()
+    matched_manifest_fingerprint = file_record(matched_manifest_path)["sha256"]
 
     label_counts = {EXCLUSIVE: 0, CARPOOL: 0}
     labeled_writer = DriverBoundaryCheckpointWriter(
@@ -967,6 +992,7 @@ def _run_columnar_from_config(
         runtime=runtime,
         duckdb_version=duckdb.__version__,
         target_rows=int(config["order_staging"]["target_shard_rows"]),
+        source_manifest_fingerprint=matched_manifest_fingerprint,
     )
     current_driver: str | None = None
     current_parts: list[pd.DataFrame] = []
@@ -1100,8 +1126,6 @@ def _run_columnar_from_config(
         "od_tensor": display_path(tensor_path),
         "cluster_index": display_path(output_dir / "cluster_index.csv"),
         "metadata": display_path(output_dir / "metadata.json"),
-        "matched_checkpoint": display_path(matched_manifest_path),
-        "labeled_checkpoint": display_path(labeled_manifest_path),
     }
     if assigned_path is not None:
         metadata_outputs["orders_region_assigned"] = display_path(assigned_path)
@@ -1122,9 +1146,6 @@ def _run_columnar_from_config(
         "num_tensor_slots": int(len(tensor_slot_labels)),
         "poi_stats": poi_stats,
         "graph_summaries": graph_summaries,
-        "order_staging_backend": "parquet_duckdb_v2",
-        "order_staging": config["order_staging"],
-        "columnar_profile": profile,
         "outputs": metadata_outputs,
         "config": pipeline,
     }
@@ -1138,9 +1159,25 @@ def _run_columnar_from_config(
     if process_io_start and profile["process_io_end"]:
         profile["process_bytes_read"] = profile["process_io_end"]["read_bytes"] - process_io_start["read_bytes"]
         profile["process_bytes_written"] = profile["process_io_end"]["write_bytes"] - process_io_start["write_bytes"]
+    process_usage_end = _process_usage()
+    if process_usage_start and process_usage_end:
+        profile["user_s"] = process_usage_end["user_s"] - process_usage_start["user_s"]
+        profile["sys_s"] = process_usage_end["sys_s"] - process_usage_start["sys_s"]
+        profile["cpu_pct"] = 100.0 * (profile["user_s"] + profile["sys_s"]) / profile["stage_wall_seconds"]
+        profile["peak_rss_bytes"] = process_usage_end["peak_rss_bytes"]
     profile["peak_rss_gib"] = _peak_rss_gib()
     profile["columnar_peak_disk_bytes"] = sum(
         path.stat().st_size for path in columnar_root.rglob("*") if path.is_file()
+    )
+    profile["checkpoint_bytes_before_cleanup"] = sum(
+        path.stat().st_size
+        for root in (matched_root, labeled_root)
+        for path in root.rglob("*")
+        if path.is_file()
+    )
+    profile["temp_peak_disk_bytes"] = max(
+        int(profile.get("sort", {}).get("temp_peak_disk_bytes") or 0),
+        int(profile.get("stage_id_reorder", {}).get("temp_peak_disk_bytes") or 0),
     )
     profile_path = output_dir / "columnar_profile.json"
     profile_path.write_text(json.dumps(json_safe(profile), indent=2), encoding="utf-8")

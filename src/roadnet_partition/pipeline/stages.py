@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
-from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 from typing import Any, Callable, Mapping
 
 from roadnet_partition.config import ConfigError, ResolvedStageConfig, apply_stage_overrides, stable_value
@@ -18,6 +18,7 @@ from roadnet_partition.io.manifests import (
     atomic_write_json,
     begin_stage,
     complete_stage,
+    collect_runtime_info,
     end_stage_with_status,
     evaluate_resume,
     file_record,
@@ -60,6 +61,68 @@ class ResumeConflictError(RunConflictError):
 
 class StageContractError(RuntimeError):
     pass
+
+
+def _validate_columnar_resume_binding(
+    config: ResolvedStageConfig,
+    stage_dir: Path,
+    inputs_fingerprint: str,
+) -> None:
+    if config.values.get("order_staging_backend") != "parquet_duckdb_v2":
+        return
+    import duckdb
+
+    from roadnet_partition.downstream.order_checkpoints import (
+        LABELED_ORDER_CHECKPOINT,
+        MATCHED_ORDER_CHECKPOINT,
+        checkpoint_schema_fingerprint,
+        load_checkpoint_manifest,
+        runtime_fingerprint,
+    )
+
+    runtime = collect_runtime_info()
+    runtime["duckdb"] = duckdb.__version__
+    runtime_fp = runtime_fingerprint(runtime)
+    matched_path = stage_dir / "columnar" / "matched" / "checkpoint_manifest.json"
+    labeled_path = stage_dir / "columnar" / "labeled" / "checkpoint_manifest.json"
+    matched = load_checkpoint_manifest(
+        matched_path,
+        expected_kind=MATCHED_ORDER_CHECKPOINT,
+        expected_source_fingerprint=inputs_fingerprint,
+        expected_config_fingerprint=config.fingerprint,
+        expected_runtime_fingerprint=runtime_fp,
+        expected_duckdb_version=duckdb.__version__,
+    )
+    labeled = load_checkpoint_manifest(
+        labeled_path,
+        expected_kind=LABELED_ORDER_CHECKPOINT,
+        expected_source_fingerprint=inputs_fingerprint,
+        expected_config_fingerprint=config.fingerprint,
+        expected_runtime_fingerprint=runtime_fp,
+        expected_duckdb_version=duckdb.__version__,
+    )
+    if matched["backend"] != "parquet_duckdb_v2" or labeled["backend"] != "parquet_duckdb_v2":
+        raise ValueError("checkpoint backend differs")
+    if matched["arrow_schema_fingerprint"] != checkpoint_schema_fingerprint(MATCHED_ORDER_CHECKPOINT):
+        raise ValueError("matched checkpoint schema fingerprint differs")
+    if labeled["arrow_schema_fingerprint"] != checkpoint_schema_fingerprint(LABELED_ORDER_CHECKPOINT):
+        raise ValueError("labeled checkpoint schema fingerprint differs")
+    expected_source_manifest = file_record(matched_path)["sha256"]
+    if labeled["stage_id_validation_source_fingerprint"] != expected_source_manifest:
+        raise ValueError("labeled checkpoint source manifest fingerprint differs")
+
+
+def _cleanup_columnar_temp(stage_dir: Path) -> None:
+    root = stage_dir / "columnar"
+    if not root.is_dir():
+        return
+    for path in root.glob("duckdb-temp-*"):
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+    for path in root.rglob("*.partial"):
+        path.unlink(missing_ok=True)
 
 
 def default_run_id(config: ResolvedStageConfig) -> str:
@@ -649,6 +712,10 @@ def execute_stage(
         )
         if not decision.reusable:
             raise ResumeConflictError("resume rejected: " + "; ".join(decision.reasons))
+        try:
+            _validate_columnar_resume_binding(config, stage_context.stage_dir, inputs_fingerprint)
+        except (FileNotFoundError, OSError, ValueError) as error:
+            raise ResumeConflictError(f"resume rejected: columnar checkpoint binding differs: {error}") from error
         return _resume_result(stage, context, required_outputs)
 
     if overwrite and nonempty:
@@ -721,6 +788,8 @@ def execute_stage(
         )
         return result
     except KeyboardInterrupt as error:
+        if stage == "demand" and config.values.get("order_staging_backend") == "parquet_duckdb_v2":
+            _cleanup_columnar_temp(stage_context.stage_dir)
         _remove_success_marker(stage_context.stage_dir, error)
         try:
             end_stage_with_status(stage_context, StageStatus.INTERRUPTED)
@@ -728,6 +797,8 @@ def execute_stage(
             error.add_note(f"could not record interrupted stage status: {manifest_error}")
         raise
     except Exception as error:
+        if stage == "demand" and config.values.get("order_staging_backend") == "parquet_duckdb_v2":
+            _cleanup_columnar_temp(stage_context.stage_dir)
         _remove_success_marker(stage_context.stage_dir, error)
         try:
             end_stage_with_status(

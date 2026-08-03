@@ -23,6 +23,7 @@ LABELED_ORDER_CHECKPOINT = "LabeledOrderCheckpointV1"
 CHECKPOINT_MANIFEST_FILENAME = "checkpoint_manifest.json"
 CHECKPOINT_COMPLETE_FILENAME = "_CHECKPOINT_COMPLETE"
 CHECKPOINT_SCHEMA_VERSION = 1
+CHECKPOINT_BACKEND = "parquet_duckdb_v2"
 
 MATCHED_COLUMNS = (
     "stage_id",
@@ -202,11 +203,13 @@ def _manifest_template(
     runtime: Mapping[str, Any],
     duckdb_version: str | None,
     stage_id_validation: str,
+    source_manifest_fingerprint: str | None,
 ) -> dict[str, Any]:
     schema = checkpoint_schema(kind)
     columns = checkpoint_columns(kind)
     return {
         "contract": kind,
+        "backend": CHECKPOINT_BACKEND,
         "schema_version": CHECKPOINT_SCHEMA_VERSION,
         "checkpoint_kind": kind,
         "columns": [
@@ -222,6 +225,7 @@ def _manifest_template(
         "stage_id_validation_source": (
             MATCHED_ORDER_CHECKPOINT if stage_id_validation == "inherited_source" else None
         ),
+        "stage_id_validation_source_fingerprint": source_manifest_fingerprint,
         "min_sort_key": None,
         "max_sort_key": None,
         "min_stage_id": None,
@@ -251,9 +255,9 @@ def validate_checkpoint_manifest(
     if not isinstance(manifest, dict):
         raise ValueError("checkpoint manifest must be an object")
     required = {
-        "contract", "schema_version", "checkpoint_kind", "columns", "nullable_policy", "row_count",
+        "contract", "backend", "schema_version", "checkpoint_kind", "columns", "nullable_policy", "row_count",
         "global_ordinal_range", "sort_key", "stage_id_unique", "shards", "source_fingerprint",
-        "stage_id_validation", "stage_id_validation_source",
+        "stage_id_validation", "stage_id_validation_source", "stage_id_validation_source_fingerprint",
         "config_fingerprint", "runtime", "runtime_fingerprint", "duckdb_version",
         "arrow_schema_fingerprint", "parquet_schema_fingerprint", "completed_marker", "completed",
         "atomic_publish", "status",
@@ -268,6 +272,8 @@ def validate_checkpoint_manifest(
         raise ValueError(f"checkpoint kind differs: {kind!r} != {expected_kind!r}")
     if manifest["contract"] != kind or manifest["schema_version"] != CHECKPOINT_SCHEMA_VERSION:
         raise ValueError("checkpoint contract/version differs")
+    if manifest["backend"] != CHECKPOINT_BACKEND:
+        raise ValueError("checkpoint backend differs")
     if tuple(item.get("name") for item in manifest["columns"]) != checkpoint_columns(kind):
         raise ValueError("checkpoint columns differ")
     expected_schema_fp = checkpoint_schema_fingerprint(kind)
@@ -284,6 +290,12 @@ def validate_checkpoint_manifest(
         raise ValueError("checkpoint stage_id validation mode differs")
     if stage_id_validation == "inherited_source" and manifest["stage_id_validation_source"] != MATCHED_ORDER_CHECKPOINT:
         raise ValueError("checkpoint inherited stage_id source differs")
+    source_manifest_fingerprint = manifest["stage_id_validation_source_fingerprint"]
+    if stage_id_validation == "inherited_source":
+        if not isinstance(source_manifest_fingerprint, str) or not source_manifest_fingerprint:
+            raise ValueError("checkpoint inherited stage_id source fingerprint is missing")
+    elif source_manifest_fingerprint is not None:
+        raise ValueError("checkpoint sequential stage_id source fingerprint is unexpected")
     if not isinstance(manifest["shards"], list) or int(manifest["row_count"]) < 0:
         raise ValueError("checkpoint row/shard metadata is invalid")
     if manifest["completed"]:
@@ -353,6 +365,7 @@ class ParquetCheckpointWriter:
         duckdb_version: str | None,
         target_rows: int = 500_000,
         stage_id_validation: str = "unchecked",
+        source_manifest_fingerprint: str | None = None,
     ) -> None:
         if target_rows <= 0:
             raise ValueError("target_rows must be positive")
@@ -370,6 +383,7 @@ class ParquetCheckpointWriter:
             runtime=runtime,
             duckdb_version=duckdb_version,
             stage_id_validation=stage_id_validation,
+            source_manifest_fingerprint=source_manifest_fingerprint,
         )
         atomic_write_json(self._manifest_path, self._manifest)
         self._row_count = 0
@@ -497,10 +511,27 @@ class DriverBoundaryCheckpointWriter(ParquetCheckpointWriter):
         return super().finish()
 
 
-def load_checkpoint_manifest(path: str | Path, *, expected_kind: str | None = None) -> dict[str, Any]:
+def load_checkpoint_manifest(
+    path: str | Path,
+    *,
+    expected_kind: str | None = None,
+    expected_source_fingerprint: str | None = None,
+    expected_config_fingerprint: str | None = None,
+    expected_runtime_fingerprint: str | None = None,
+    expected_duckdb_version: str | None = None,
+) -> dict[str, Any]:
     manifest_path = Path(path).resolve()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     validate_checkpoint_manifest(manifest, root=manifest_path.parent, expected_kind=expected_kind)
+    expected = {
+        "source_fingerprint": expected_source_fingerprint,
+        "config_fingerprint": expected_config_fingerprint,
+        "runtime_fingerprint": expected_runtime_fingerprint,
+        "duckdb_version": expected_duckdb_version,
+    }
+    for field, value in expected.items():
+        if value is not None and manifest.get(field) != value:
+            raise ValueError(f"checkpoint {field} differs")
     return manifest
 
 
@@ -556,6 +587,20 @@ def _sorted_checkpoint_batches(
     root = Path(manifest_path).resolve().parent
     paths = [str((root / shard["path"]).resolve()) for shard in manifest["shards"]]
     import duckdb
+
+    if not paths:
+        empty_metrics = {
+            "duckdb_version": duckdb.__version__,
+            "memory_limit": memory_limit,
+            "threads": int(threads),
+            "temp_directory": temp_directory.as_posix(),
+            "sort_key": list(order_key),
+            "sort_wall_seconds": 0.0,
+            "temp_spill_bytes": _directory_size(temp_directory),
+            "temp_peak_disk_bytes": _directory_size(temp_directory),
+        }
+        yield iter(()), empty_metrics
+        return
 
     connection = duckdb.connect(database=":memory:")
     peak_temp = _directory_size(temp_directory)
@@ -648,6 +693,7 @@ def sorted_labeled_checkpoint_batches(
 
 __all__ = [
     "CHECKPOINT_COMPLETE_FILENAME",
+    "CHECKPOINT_BACKEND",
     "CHECKPOINT_MANIFEST_FILENAME",
     "CHECKPOINT_SCHEMA_VERSION",
     "DriverBoundaryCheckpointWriter",
