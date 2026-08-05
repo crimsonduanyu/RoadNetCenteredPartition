@@ -129,9 +129,18 @@ project tree.
 Generate PNG and PDF figures directly from the new run. Outputs default to
 `outputs/figures/` and remain reproducible/ignored runtime products.
 
+The study-area boundary is an explicit input: pass `--boundary <path>`, or
+`--boundary-from-manifest` to use the boundary the run itself recorded as its
+`preparation.boundary` input (size and SHA-256 re-verified). No directory is
+searched and no default boundary is applied, so a run always renders against
+its own study area. See
+[docs/security/boundary-artifact-v1.md](docs/security/boundary-artifact-v1.md)
+for the full contract.
+
 ```bash
 conda run --prefix ./.conda/dydl python scripts/figures/best_partition_maps.py \
-  --run outputs/runs/raw-only-reproduction
+  --run outputs/runs/raw-only-reproduction \
+  --boundary-from-manifest
 conda run --prefix ./.conda/dydl python scripts/figures/raw_order_trip_time_distribution.py
 ```
 
