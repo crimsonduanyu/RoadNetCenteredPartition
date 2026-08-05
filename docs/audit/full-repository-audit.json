@@ -1,0 +1,335 @@
+{
+  "schema_version": "1.0",
+  "audit": {
+    "date": "2026-08-04",
+    "head": "5956ddf883bc355ef09c354acec3cb9c3b985ac1",
+    "kind": "full-repository-snapshot",
+    "scope_command": "git ls-files"
+  },
+  "scope": {
+    "tracked_files": 159,
+    "tracked_python_files": 106,
+    "tracked_python_lines_approx": 23724,
+    "classes": {
+      "production_package": 55,
+      "tests": 43,
+      "analysis_scripts": 6,
+      "figure_scripts": 3,
+      "active_configs": 11,
+      "legacy_configs": 2,
+      "documentation": 30,
+      "packaging_and_repository_metadata": 9
+    }
+  },
+  "repository_map": {
+    "entrypoints": [
+      "python -m roadnet_partition",
+      "roadnet-partition",
+      "scripts/figures/*.py",
+      "scripts/analysis/*.py"
+    ],
+    "cli_commands": [
+      "check-raw",
+      "run",
+      "validate",
+      "publish",
+      "export-reproduction",
+      "partition",
+      "demand",
+      "supply",
+      "tte"
+    ],
+    "execution_flow": [
+      "raw data",
+      "preparation",
+      "partition",
+      "demand",
+      "supply",
+      "tte",
+      "validation",
+      "publish or reproduction export"
+    ],
+    "modules": {
+      "cli_and_config": [
+        "src/roadnet_partition/cli.py",
+        "src/roadnet_partition/config.py"
+      ],
+      "orchestration": [
+        "src/roadnet_partition/pipeline/runner.py",
+        "src/roadnet_partition/pipeline/worker.py",
+        "src/roadnet_partition/pipeline/stages.py",
+        "src/roadnet_partition/pipeline/preparation.py"
+      ],
+      "algorithms": [
+        "src/roadnet_partition/roads",
+        "src/roadnet_partition/graphs",
+        "src/roadnet_partition/zoning"
+      ],
+      "downstream": [
+        "src/roadnet_partition/downstream/demand.py",
+        "src/roadnet_partition/downstream/supply.py",
+        "src/roadnet_partition/downstream/tte.py",
+        "src/roadnet_partition/downstream/*_contracts.py",
+        "src/roadnet_partition/downstream/order_checkpoints.py"
+      ],
+      "safety_and_provenance": [
+        "src/roadnet_partition/io",
+        "src/roadnet_partition/pipeline/validation.py",
+        "src/roadnet_partition/pipeline/publishing.py",
+        "src/roadnet_partition/releases"
+      ],
+      "reporting": [
+        "src/roadnet_partition/reporting",
+        "scripts/figures"
+      ]
+    },
+    "build": "setuptools via pyproject.toml; Python 3.11 Conda environment.yml; editable install",
+    "tests": "pytest, testpaths=tests, pythonpath=src",
+    "generated_or_historical": {
+      "generated": "outputs/** is ignored and not tracked",
+      "legacy": "configs/legacy/** and historical audit/performance documents are non-runtime",
+      "migrations": "no active one-time migration entrypoint; migration documents/tests describe prior architecture work"
+    }
+  },
+  "validations": [
+    {
+      "command": "conda run --prefix ./.conda/dydl python -m pytest",
+      "status": "passed",
+      "result": "288 passed, 77 warnings in 61.80 s",
+      "classification": "repository test suite",
+      "confidence_impact": "positive; boundary gaps remain"
+    },
+    {
+      "command": "conda run --prefix ./.conda/dydl python -m roadnet_partition --help",
+      "status": "passed",
+      "result": "help rendered; exit 0",
+      "classification": "side-effect-free CLI smoke test",
+      "confidence_impact": "module entrypoint verified"
+    },
+    {
+      "command": "conda run --prefix ./.conda/dydl roadnet-partition --help",
+      "status": "passed",
+      "result": "help rendered; exit 0",
+      "classification": "side-effect-free installed CLI smoke test",
+      "confidence_impact": "existing console entrypoint verified"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "result": "no errors",
+      "classification": "documented repository check",
+      "confidence_impact": "no whitespace/error markers"
+    },
+    {
+      "command": "conda run --prefix ./.conda/dydl pip install -e . --no-deps",
+      "status": "not_runnable",
+      "result": "exit 126; pip shebang points to missing /home/dy/jupyter/workspace/RoadNetCenteredPartition-cleanroom/.conda/dydl/bin/python3.11",
+      "classification": "environment limitation",
+      "confidence_impact": "clean install/build not verified; not evidence of a repository code failure"
+    }
+  ],
+  "summary": {
+    "counts": {
+      "P0": 1,
+      "P1": 2,
+      "P2": 4,
+      "P3": 0,
+      "total": 7
+    },
+    "stop_recommendation": "Freeze export-reproduction --overwrite and canonical publication activity until AUD-001 is fixed. Unrelated development need not stop. Resolve AUD-002 and AUD-003 before accepting canonical experiment results.",
+    "top_three": [
+      "AUD-001",
+      "AUD-002",
+      "AUD-003"
+    ]
+  },
+  "findings": [
+    {
+      "id": "AUD-001",
+      "severity": "P0",
+      "confidence": "high",
+      "title": "Destructive export accepts project ancestors and publish staging can escape its owned root",
+      "locations": [
+        {"path": "src/roadnet_partition/releases/reproduction.py", "lines": "30-47"},
+        {"path": "src/roadnet_partition/releases/reproduction.py", "lines": "243-245"},
+        {"path": "src/roadnet_partition/releases/reproduction.py", "lines": "278-290"},
+        {"path": "src/roadnet_partition/io/paths.py", "lines": "92-152"},
+        {"path": "src/roadnet_partition/config.py", "lines": "555"},
+        {"path": "src/roadnet_partition/pipeline/runner.py", "lines": "88"},
+        {"path": "src/roadnet_partition/pipeline/publishing.py", "lines": "275-323"}
+      ],
+      "trigger": "Export an eligible completed run with --output set to a writable project ancestor and --overwrite; or publish a matching dataset/pipeline scope containing traversal or an absolute path.",
+      "impact": "Export moves the ancestor aside, installs the release, then recursively deletes the backup, destroying project and unrelated content. Crafted publish scopes can create populated staging trees outside data/processed and leak private derived products, although the tested scopes are rejected before the final swap.",
+      "why_tests_missed": "Release tests use only child destinations; swap tests have no allowed-root concept; scope is not covered by the existing output-identifier validation tests.",
+      "evidence": "A disposable reproduction showed _safe_destination(workspace, run_dir, project_root) was accepted; after transactional_scope_swap(..., overwrite=True), old_unrelated_survived=False and replacement_present=True. Publish copies inventory before its later sibling/prefix rejection.",
+      "recommended_fix": "Validate scope as a single safe identifier, assert publish target and staging are direct children of the exact processed root before writes, constrain release output to an explicit release root or reject all protected ancestor/equal/descendant relations, and give the shared swap helper an allowed-parent invariant.",
+      "regression_test": "Test absolute/traversal/empty scope and every protected destination relationship; assert rejection occurs before mkdir/copy and marker files survive, while preserving rollback tests."
+    },
+    {
+      "id": "AUD-002",
+      "severity": "P1",
+      "confidence": "high",
+      "title": "Preparation resume silently reuses outputs after config or input identity changes",
+      "locations": [
+        {"path": "src/roadnet_partition/pipeline/runner.py", "lines": "112-128"},
+        {"path": "src/roadnet_partition/pipeline/runner.py", "lines": "150-163"},
+        {"path": "src/roadnet_partition/pipeline/preparation.py", "lines": "372-397"}
+      ],
+      "trigger": "Complete preparation, modify a preparation parameter or input at the same path, then resume the run while old preparation outputs and manifest remain.",
+      "impact": "Old preprocessing products are silently reused by Partition and downstream stages; recorded config/input provenance can disagree with the data that produced experimental results.",
+      "why_tests_missed": "Resume tests do not mutate preparation YAML content or preparation input hashes between invocations.",
+      "evidence": "After changing connector_rules.max_connector_length_m in a temporary setup, the config SHA changed but preparation.run printed 'preparation: reused' and returned unchanged outputs. The reuse predicate compares only old output names and hashes.",
+      "recommended_fix": "Include preparation config content and input records in the run fingerprint, compare current config/input records before reuse, and invalidate preparation plus all dependent stages on mismatch.",
+      "regression_test": "Mutate YAML content and each input hash at the same path; require conflict/recompute and downstream invalidation. Unchanged inputs must still reuse outputs."
+    },
+    {
+      "id": "AUD-003",
+      "severity": "P1",
+      "confidence": "high",
+      "title": "Demand output identifier schema is incompatible with the directly bound Supply reader",
+      "locations": [
+        {"path": "src/roadnet_partition/downstream/demand.py", "lines": "379-384"},
+        {"path": "src/roadnet_partition/downstream/demand.py", "lines": "452-458"},
+        {"path": "src/roadnet_partition/downstream/order_checkpoints.py", "lines": "47-69"},
+        {"path": "src/roadnet_partition/downstream/supply.py", "lines": "54-75"},
+        {"path": "src/roadnet_partition/downstream/supply.py", "lines": "722-738"},
+        {"path": "src/roadnet_partition/pipeline/stages.py", "lines": "39-50"}
+      ],
+      "trigger": "A documented raw order has alphanumeric order_id/driver_id, or an allowed null order_id, and the full pipeline continues from Demand to Supply.",
+      "impact": "Supply forces Demand's string/nullable identifiers to int64 and fails conversion, preventing the normal full pipeline on otherwise valid identifiers.",
+      "why_tests_missed": "Demand fixtures use strings and Supply/file fixtures use numeric IDs; no real cross-stage artifact integration test joins the assumptions.",
+      "evidence": "load_orders on a valid assigned CSV with order_id='o-1' and driver_id='driver-A' raises ValueError: invalid literal for int() with base 10: 'o-1'. The pipeline directly binds Demand orders_region_assigned to Supply orders_path.",
+      "recommended_fix": "Make Supply consume the authoritative Demand checkpoint schema: string identifiers, nullable order_id and non-null trimmed driver_id; convert only genuinely numeric fields.",
+      "regression_test": "Feed the real Supply reader a Demand-format artifact with alphanumeric, leading-zero and null order IDs plus alphanumeric drivers; assert identity and aggregates are preserved."
+    },
+    {
+      "id": "AUD-004",
+      "severity": "P2",
+      "confidence": "high",
+      "title": "Network diameter is an inexact, hash-order-dependent double sweep on cyclic graphs",
+      "locations": [
+        {"path": "src/roadnet_partition/zoning/metrics.py", "lines": "330-358"},
+        {"path": "src/roadnet_partition/zoning/evaluate.py", "lines": "300-345"}
+      ],
+      "trigger": "Evaluate a connected cluster whose induced road graph contains a cyclic counterexample to exact double-sweep diameter.",
+      "impact": "Reported diameter may be too small and vary by Python hash seed; diameter_not_worse may therefore misclassify an evaluation candidate.",
+      "why_tests_missed": "There is no cyclic exact-diameter counterexample or cross-hash-seed test.",
+      "evidence": "For unit lengths and edges 0-1,0-2,0-3,1-2,1-3, exact diameter is 2 but outputs across hash seeds were 2,2,1,1,2,1,1,1.",
+      "recommended_fix": "Compute exact weighted eccentricities for threshold decisions, or explicitly expose a deterministic approximation and do not treat it as exact; sort any approximation start nodes.",
+      "regression_test": "Compare against all-pairs weighted Dijkstra on trees and cyclic counterexamples and repeat under multiple PYTHONHASHSEED values."
+    },
+    {
+      "id": "AUD-005",
+      "severity": "P2",
+      "confidence": "high",
+      "title": "Public artifact paths are loaded with unrestricted pickle deserialization",
+      "locations": [
+        {"path": "src/roadnet_partition/zoning/partition.py", "lines": "85-90"},
+        {"path": "src/roadnet_partition/zoning/evaluate.py", "lines": "38-43"},
+        {"path": "src/roadnet_partition/reporting/best_partition_map.py", "lines": "41-46"}
+      ],
+      "trigger": "Standalone partition/evaluation or figure generation loads a graph artifact supplied by another party or replaced on disk.",
+      "impact": "pickle.load can execute arbitrary code with the invoking user's permissions before graph validation.",
+      "why_tests_missed": "All fixtures create trusted local pickles and validate only the resulting graph.",
+      "evidence": "Each of the three public loaders directly calls pickle.load; pickle executes reducers during deserialization and has no safe validation mode.",
+      "recommended_fix": "Migrate portable artifacts to GraphML or a schema-validated node-link format; if legacy pickle remains, require explicit trusted-only opt-in and exclude it from shareable exports.",
+      "regression_test": "Round-trip the safe format and reject malformed schema, external references and legacy pickle unless an explicit compatibility flag is present."
+    },
+    {
+      "id": "AUD-006",
+      "severity": "P2",
+      "confidence": "high",
+      "title": "Run manifests omit versions of result-determining dependencies and cannot identify untracked code content",
+      "locations": [
+        {"path": "src/roadnet_partition/io/manifests.py", "lines": "28-38"},
+        {"path": "src/roadnet_partition/io/manifests.py", "lines": "112-149"},
+        {"path": "environment.yml", "lines": "1-33"}
+      ],
+      "trigger": "Reproduce with changed omitted geospatial/clustering/I/O dependencies, or allow dirty state with the same untracked path but different bytes.",
+      "impact": "Result differences cannot be traced to the actual runtime, and two different untracked code contents can have the same manifest dirty fingerprint.",
+      "why_tests_missed": "Lifecycle tests assert only NumPy presence and do not mutate untracked content or compare recorded distributions to imports.",
+      "evidence": "The nine-package allowlist omits OSMnx, PyProj, igraph/leidenalg, pymetis, python-louvain, scikit-learn, Fiona/Pyogrio/Rtree and Matplotlib. The Git digest hashes git diff HEAD plus status, but untracked bytes are absent from both.",
+      "recommended_fix": "Record all direct result-affecting distributions and relevant native versions; hash untracked file bytes when dirty runs are allowed or forbid untracked code for publish/export.",
+      "regression_test": "Assert a complete defined provenance set and show that changing bytes of a same-name untracked file changes the dirty fingerprint."
+    },
+    {
+      "id": "AUD-007",
+      "severity": "P2",
+      "confidence": "high",
+      "title": "Figure CLIs always overlay the Fifth Ring boundary regardless of the selected run",
+      "locations": [
+        {"path": "scripts/figures/best_partition_maps.py", "lines": "20-39"},
+        {"path": "scripts/figures/partition_order_panels.py", "lines": "17-30"},
+        {"path": "configs/datasets/fourth_ring.yaml", "lines": "3-49"}
+      ],
+      "trigger": "Pass a completed fourth-ring or other non-fifth-ring run to either unrestricted --run figure CLI.",
+      "impact": "The selected partition is rendered against the wrong study-area boundary or the command fails when the unrelated Fifth Ring file is unavailable, yielding misleading publication output.",
+      "why_tests_missed": "Rendering-helper tests use explicit synthetic paths; figure CLIs are not exercised across dataset scopes.",
+      "evidence": "Both scripts resolve partition and preparation from --run but pass data/raw/beijing_fifth_ring_boundary.gpkg unconditionally; the tracked fourth-ring dataset declares beijing_fourth_ring_boundary.gpkg.",
+      "recommended_fix": "Resolve a run-owned boundary record from manifest/resolved preparation configuration, or explicitly reject non-Fifth-Ring scopes and document that restriction.",
+      "regression_test": "CLI tests for fifth- and fourth-ring synthetic manifests must select their matching boundary; unsupported scopes must fail before output creation."
+    }
+  ],
+  "suspected_risks": [
+    {
+      "id": "SUS-001",
+      "confidence": "low",
+      "title": "Nearest-segment equidistant tie lacks an explicit seg_id tie-break",
+      "locations": [
+        {"path": "src/roadnet_partition/io/geospatial.py", "lines": "336-349"}
+      ],
+      "reason_not_confirmed": "Reversing segment order in the available environment still selected the same segment; actual instability was not reproduced."
+    },
+    {
+      "id": "SUS-002",
+      "confidence": "medium",
+      "title": "Wide Partition grid is accepted by stage config but canonical pipeline requires one output",
+      "locations": [
+        {"path": "src/roadnet_partition/zoning/partition.py", "lines": "175-285"},
+        {"path": "src/roadnet_partition/pipeline/stages.py", "lines": "364-368"}
+      ],
+      "reason_not_confirmed": "The active canonical config explicitly uses a 1x1 grid, and wide grids remain a supported standalone analysis behavior."
+    }
+  ],
+  "non_issues": [
+    "YAML loading uses safe_load or a SafeLoader subclass.",
+    "Subprocess calls use argv lists; no shell=True path was found.",
+    "Publish inventory, ownership, hashes, complete markers and rollback checks are substantive; AUD-001 is a target-root gap.",
+    "The suspected TTE inf-to-int32 support conversion is unreachable on the formal count-path predicate tested.",
+    "The suspected Supply nested-overlap false-idle case is prevented by Demand component labeling and running-max merging.",
+    "Tested malformed publish scopes are rejected before final swap, although their pre-swap staging escape remains AUD-001.",
+    "No tracked secret candidate, symlink, private raw-order artifact or generated figure product was found."
+  ],
+  "coverage_gaps": [
+    "Protected-root and reject-before-write destructive path tests",
+    "Preparation config/input mutation on resume",
+    "Demand artifact to Supply reader schema integration",
+    "Exact cyclic diameter and cross-hash-seed determinism",
+    "Safe graph interchange and untrusted artifact handling",
+    "Complete dependency and untracked-content provenance",
+    "Figure CLI dataset-scope/boundary selection",
+    "Full-scale production data and resource behavior"
+  ],
+  "unverified": [
+    {
+      "area": "clean editable install/build",
+      "reason": "stale local pip shebang",
+      "impact": "moderate packaging-confidence reduction"
+    },
+    {
+      "area": "production Beijing end-to-end run, publish and real export",
+      "reason": "private untracked data, documented time/memory cost and destructive-safety constraint",
+      "impact": "full-scale data/performance behavior not independently verified"
+    },
+    {
+      "area": "lint, type check and CI",
+      "reason": "no official tracked configuration or command",
+      "impact": "manual static audit used instead"
+    }
+  ],
+  "confidence": {
+    "confirmed_findings": "high",
+    "repository_wide_absence_claims": "medium-high",
+    "rationale": "All tracked files were inventoried; all major production, test, config, script and contract boundaries were inspected; P0/P1 candidates received call-site, test, documentation and reproduction checks. Full private-data execution and clean installation were unavailable."
+  }
+}

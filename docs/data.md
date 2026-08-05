@@ -21,6 +21,15 @@ Timestamps use `YYYY-MM-DD HH:MM:SS`. Coordinates use EPSG:4326. Users must
 provide data they are legally permitted to process and update the configuration
 when their column names differ.
 
+The Demand assigned-order checkpoint is the identifier authority consumed by
+Supply. `order_id` is a nullable UTF-8 string; `driver_id` is a trimmed,
+non-null, non-blank UTF-8 string. Leading zeros, alphanumeric and Unicode values,
+and literal text such as `NA`, `N/A`, `null`, and `None` are preserved. An empty
+CSV field represents a null `order_id`; the CSV format cannot distinguish quoted
+from unquoted empty fields. Cluster IDs, timestamps, counts, and other numeric
+fields keep their existing contracts. Supply rejects an invalid driver at its
+input boundary and does not change its public output tables.
+
 POI input requires longitude, latitude and a category column. The defaults are
 `大地X`, `大地Y`, and `类型1`. Road inputs and CRS declarations are defined in
 `configs/datasets/*.yaml`; the Fifth Ring working CRS is EPSG:32650.

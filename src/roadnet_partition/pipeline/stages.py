@@ -10,14 +10,17 @@ import re
 import shutil
 from typing import Any, Callable, Mapping
 
-from roadnet_partition.config import ConfigError, ResolvedStageConfig, apply_stage_overrides, stable_value
+from roadnet_partition.config import ConfigError, ResolvedStageConfig, apply_stage_overrides, config_fingerprint, stable_value
 from roadnet_partition.io.manifests import (
     RUN_MARKER,
+    ProvenanceError,
+    RUN_MANIFEST_SCHEMA_VERSION,
     SUCCESS_MARKER,
     assert_run_fingerprints,
     atomic_write_json,
     begin_stage,
     complete_stage,
+    collect_git_info,
     collect_runtime_info,
     end_stage_with_status,
     evaluate_resume,
@@ -26,6 +29,7 @@ from roadnet_partition.io.manifests import (
     input_fingerprint,
     invalidate_from_stage,
     load_manifest,
+    provenance_mismatch_reasons,
     verify_run_ownership,
 )
 from roadnet_partition.io.paths import assert_safe_run_dir
@@ -617,6 +621,7 @@ def execute_stage(
     prepared_run_context: RunContext | None = None,
     prepared_inputs: Mapping[str, Mapping[str, Any]] | None = None,
     runtime_bindings: list[Mapping[str, Any]] | None = None,
+    allow_dirty: bool = False,
 ) -> StageResult:
     if resume and overwrite:
         raise RunConflictError("--resume and --overwrite are mutually exclusive")
@@ -626,6 +631,22 @@ def execute_stage(
     project_root = config.project_root.resolve()
     if prepared_run_context is not None and (run_dir is not None or run_id is not None or overwrite):
         raise RunConflictError("prepared pipeline execution owns run_dir/run_id/overwrite")
+    runtime_provenance = None
+    git_provenance = None
+    if prepared_run_context is None:
+        runtime_provenance = collect_runtime_info()
+        try:
+            git_provenance = collect_git_info(project_root)
+        except ProvenanceError as error:
+            raise RunConflictError(f"Git provenance rejected before run creation ({error.reason})") from error
+        if git_provenance.get("dirty") is True and not allow_dirty:
+            raise RunConflictError("dirty Git worktree requires --allow-dirty")
+        values = deepcopy(dict(config.values))
+        values["provenance"] = {
+            "runtime_provenance_digest": runtime_provenance["digest"],
+            "git_provenance_digest": git_provenance["digest"],
+        }
+        config = replace(config, values=values, fingerprint=config_fingerprint(values))
     requested_run_id = None if run_id is None else _validate_run_id(run_id)
     generated_run_id = _validate_run_id(requested_run_id or default_run_id(config))
     destination = (
@@ -658,6 +679,20 @@ def execute_stage(
             destination, project_root=project_root, requested_run_id=requested_run_id,
         )
         manifest = verify_run_ownership(context)
+        provenance_decision = provenance_mismatch_reasons(
+            manifest.get("runtime"), runtime_provenance, manifest.get("git"), git_provenance,
+        )
+        if manifest.get("schema_version") != RUN_MANIFEST_SCHEMA_VERSION:
+            provenance_decision = {
+                "runtime": ["runtime_provenance_missing_legacy_manifest"],
+                "git": ["git_provenance_missing_legacy_manifest"],
+                "compatible": False,
+            }
+        if not provenance_decision["compatible"]:
+            raise ResumeConflictError(
+                "run runtime/Git provenance changed: "
+                + ", ".join(provenance_decision["runtime"] + provenance_decision["git"])
+            )
         unexpected_stages = set(manifest["stages"]) - {stage}
         if unexpected_stages:
             raise RunConflictError(f"single-stage run contains other stages: {sorted(unexpected_stages)}")
@@ -693,6 +728,9 @@ def execute_stage(
             config_values=config.values,
             config_fingerprint=config.fingerprint,
             inputs=inputs,
+            runtime=runtime_provenance,
+            git=git_provenance,
+            base_config_fingerprint=config.fingerprint,
         )
         atomic_write_json(destination / RESOLVED_CONFIG_FILENAME, _resolved_document(config))
 

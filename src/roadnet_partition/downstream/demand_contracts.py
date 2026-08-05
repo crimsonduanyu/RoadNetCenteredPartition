@@ -8,6 +8,13 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
+from roadnet_partition.downstream.order_checkpoints import (
+    identifier_csv_options,
+    invalid_driver_identifiers,
+    normalize_driver_identifiers,
+    normalize_order_identifiers,
+)
+
 
 ASSIGNED_COLUMNS = [
     "stage_id", "source_file", "source_row", "order_id", "driver_id",
@@ -72,14 +79,20 @@ def validate_assigned_orders(
     previous_stage = 0
     min_departure = None
     max_departure = None
-    for chunk in pd.read_csv(
-        path,
-        chunksize=chunksize,
-        dtype={"origin_cluster_id": str, "destination_cluster_id": str, "service_type": str},
-    ):
+    options = identifier_csv_options()
+    options["dtype"].update({
+        "origin_cluster_id": str,
+        "destination_cluster_id": str,
+        "service_type": str,
+    })
+    for chunk in pd.read_csv(path, chunksize=chunksize, **options):
         if list(chunk.columns) != ASSIGNED_COLUMNS:
             raise ValueError(f"assigned-order schema differs: {list(chunk.columns)}")
-        if chunk[["stage_id", "driver_id", "origin_cluster_id", "destination_cluster_id", "service_type"]].isna().any().any():
+        chunk["order_id"] = normalize_order_identifiers(chunk["order_id"])
+        chunk["driver_id"] = normalize_driver_identifiers(chunk["driver_id"])
+        if invalid_driver_identifiers(chunk["driver_id"]).any():
+            raise ValueError("assigned orders contain null or blank driver_id values")
+        if chunk[["stage_id", "origin_cluster_id", "destination_cluster_id", "service_type"]].isna().any().any():
             raise ValueError("assigned orders contain null required values")
         stages = chunk["stage_id"].astype(np.int64)
         if stages.duplicated().any() or (not stages.empty and int(stages.iloc[0]) <= previous_stage):

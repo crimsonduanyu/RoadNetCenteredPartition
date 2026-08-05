@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 import math
 from pathlib import Path
 import pickle
+import shutil
 from typing import Any
 
 import geopandas as gpd
@@ -32,7 +33,7 @@ from roadnet_partition.io.geospatial import (
     road_name_matches,
     validate_boundary_polygon,
 )
-from roadnet_partition.io.manifests import atomic_write_json, file_record
+from roadnet_partition.io.manifests import atomic_write_json, file_record, input_fingerprint
 from roadnet_partition.zoning.algorithms.leiden import run_leiden
 
 
@@ -49,6 +50,15 @@ OUTPUT_NAMES = {
     "graph": "segment_relation_graph_road_poi_order.gpickle",
     "baseline_leiden": "segment_clusters_road_poi_order_leiden_res0p6.gpkg",
 }
+PREPARATION_MANIFEST_SCHEMA_VERSION = 2
+
+
+class PreparationIdentityError(ValueError):
+    def __init__(self, reason: str, logical_name: str | None = None) -> None:
+        self.reason = reason
+        self.logical_name = logical_name
+        suffix = "" if logical_name is None else f": {logical_name}"
+        super().__init__(f"{reason}{suffix}")
 
 
 def load_config(path: Path, project_root: Path) -> dict[str, Any]:
@@ -64,16 +74,115 @@ def load_config(path: Path, project_root: Path) -> dict[str, Any]:
     }
     dataset_path = (path.parent / raw["dataset_config"]).resolve()
     dataset = yaml.safe_load(dataset_path.read_text(encoding="utf-8"))
+    config["dataset_path"] = dataset_path
     config["crs"] = dataset["crs"]
     config["study_area"] = dataset["study_area"]
     for name, value in config["inputs"].items():
         if not value.is_file():
-            raise FileNotFoundError(f"preparation input {name} is missing: {value}")
+            raise PreparationIdentityError("preparation_input_missing", f"preparation.{name}")
     return config
 
 
 def input_records(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {f"preparation.{name}": file_record(path) for name, path in config["inputs"].items()}
+    return {
+        "preparation.dataset_config": file_record(config["dataset_path"]),
+        **{f"preparation.{name}": file_record(path) for name, path in config["inputs"].items()},
+    }
+
+
+def preparation_identity(config_path: Path, project_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the loaded config and its content-addressed external-input identity."""
+    config = load_config(config_path, project_root)
+    config_record = file_record(config_path)
+    records = input_records(config)
+    identity = {
+        "schema_version": 1,
+        "config": config_record,
+        "inputs": records,
+    }
+    identity["digest"] = input_fingerprint(identity)
+    return config, identity
+
+
+def identity_mismatch_reason(stored: Any, current: dict[str, Any]) -> str:
+    if not isinstance(stored, dict) or not {"config", "inputs", "digest"}.issubset(stored):
+        return "preparation_identity_missing_legacy_manifest"
+    if stored.get("config") != current["config"]:
+        return "preparation_config_changed"
+    stored_inputs = stored.get("inputs")
+    if not isinstance(stored_inputs, dict):
+        return "preparation_identity_missing_legacy_manifest"
+    if stored_inputs != current["inputs"]:
+        names = sorted(set(stored_inputs) | set(current["inputs"]))
+        changed = next(
+            (name for name in names if stored_inputs.get(name) != current["inputs"].get(name)),
+            "unknown",
+        )
+        return f"preparation_input_changed: {changed}"
+    if stored.get("digest") != current["digest"]:
+        return "preparation_manifest_incomplete"
+    return "preparation_identity_match"
+
+
+def inspect_resume(
+    config_path: Path,
+    project_root: Path,
+    output_dir: Path,
+    *,
+    identity_state: tuple[dict[str, Any], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Evaluate Preparation reuse without writing to the run."""
+    config, current = identity_state or preparation_identity(config_path, project_root)
+    manifest_path = output_dir / "manifest.json"
+    has_state = output_dir.exists()
+    if not manifest_path.is_file():
+        return {
+            "reusable": False, "reason": "preparation_manifest_incomplete",
+            "has_state": has_state, "config": config, "current_identity": current,
+            "stored_identity": None,
+        }
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        manifest = None
+    if not isinstance(manifest, dict):
+        reason = "preparation_manifest_incomplete"
+        stored = None
+    else:
+        stored = manifest.get("identity")
+        if manifest.get("schema_version") == 1 or stored is None:
+            reason = "preparation_identity_missing_legacy_manifest"
+        elif manifest.get("schema_version") != PREPARATION_MANIFEST_SCHEMA_VERSION or manifest.get("status") != "complete":
+            reason = "preparation_manifest_incomplete"
+        else:
+            reason = identity_mismatch_reason(stored, current)
+            if reason == "preparation_identity_match":
+                expected = output_paths(output_dir)
+                recorded = manifest.get("outputs")
+                if not isinstance(recorded, dict) or set(recorded) != set(expected):
+                    reason = "preparation_manifest_incomplete"
+                else:
+                    missing = [name for name, path in expected.items() if not path.is_file()]
+                    if missing:
+                        reason = f"preparation_output_missing: {sorted(missing)[0]}"
+                    else:
+                        changed = [
+                            name for name, path in expected.items()
+                            if recorded.get(name) != file_record(path)
+                        ]
+                        allowed = {"manifest.json", *(path.name for path in expected.values())}
+                        unexpected = sorted(path.name for path in output_dir.iterdir() if path.name not in allowed)
+                        if changed or unexpected:
+                            logical = sorted(changed)[0] if changed else unexpected[0]
+                            reason = f"preparation_output_changed: {logical}"
+    return {
+        "reusable": reason == "preparation_identity_match",
+        "reason": reason,
+        "has_state": has_state,
+        "config": config,
+        "current_identity": current,
+        "stored_identity": stored,
+    }
 
 
 def check_raw(config_path: Path, project_root: Path) -> dict[str, dict[str, Any]]:
@@ -369,16 +478,31 @@ def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordina
     return graph
 
 
-def run(config_path: Path, project_root: Path, output_dir: Path) -> dict[str, Path]:
-    config = load_config(config_path, project_root)
+def run(
+    config_path: Path,
+    project_root: Path,
+    output_dir: Path,
+    *,
+    inspection: dict[str, Any] | None = None,
+) -> dict[str, Path]:
+    inspection = inspection or inspect_resume(config_path, project_root, output_dir)
+    config = inspection["config"]
     paths = output_paths(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.json"
-    if manifest_path.is_file():
-        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-        if isinstance(manifest, dict) and all(paths[name].is_file() and file_record(paths[name])["sha256"] == record["sha256"] for name, record in manifest.get("outputs", {}).items() if name in paths) and set(manifest.get("outputs", {})) == set(paths):
-            print("preparation: reused", flush=True)
-            return paths
+    if inspection["reusable"]:
+        print("preparation: reused", flush=True)
+        return paths
+    if inspection["has_state"]:
+        print(f"preparation: invalidated ({inspection['reason']})", flush=True)
+    print("preparation: recomputing", flush=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    allowed = {"manifest.json", *(path.name for path in paths.values())}
+    for path in output_dir.iterdir():
+        if path.name not in allowed:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
     edges = _preprocess_roads(config, paths)
     ordinary = edges.loc[edges["segment_role"] == "ordinary"].copy()
     connectors = edges.loc[edges["segment_role"] == "connector"].copy()
@@ -390,9 +514,11 @@ def run(config_path: Path, project_root: Path, output_dir: Path) -> dict[str, Pa
     clusters["cluster_id"] = clusters["seg_id"].map(baseline)
     make_gpkg_safe(clusters).to_file(paths["baseline_leiden"], driver="GPKG")
     atomic_write_json(manifest_path, {
-        "schema_version": 1,
-        "config": file_record(config_path),
-        "inputs": input_records(config),
+        "schema_version": PREPARATION_MANIFEST_SCHEMA_VERSION,
+        "status": "complete",
+        "identity": inspection["current_identity"],
+        "config": inspection["current_identity"]["config"],
+        "inputs": inspection["current_identity"]["inputs"],
         "outputs": {name: file_record(path) for name, path in paths.items()},
     })
     print("preparation: complete", flush=True)

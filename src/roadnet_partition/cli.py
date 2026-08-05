@@ -40,6 +40,7 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--resume", action="store_true", help="Reuse an exactly matching complete stage, or continue a failed/interrupted stage.")
     mode.add_argument("--overwrite", action="store_true", help="Replace only this owned stage; the run root is retained and manifest backed up.")
+    parser.add_argument("--allow-dirty", action="store_true", help="Bind tracked and untracked Git bytes into this run identity.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_mode = pipeline_parser.add_mutually_exclusive_group()
     pipeline_mode.add_argument("--resume", action="store_true")
     pipeline_mode.add_argument("--overwrite", action="store_true")
+    pipeline_parser.add_argument("--allow-dirty", action="store_true", help="Bind tracked and untracked Git bytes into this run identity.")
     pipeline_parser.add_argument(
         "--isolate-stages", action=argparse.BooleanOptionalAction, default=None,
         help="Run each stage in an internal child process (default comes from pipeline config).",
@@ -73,14 +75,26 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("--report", type=Path)
     publish_parser = subparsers.add_parser("publish", help="Publish a validated run as one processed scope.")
     publish_parser.add_argument("--run", type=Path, required=True)
-    publish_parser.add_argument("--scope", required=True)
+    publish_parser.add_argument(
+        "--scope",
+        required=True,
+        help="One safe dataset identifier, not a path; it must match the run manifest scope.",
+    )
     publish_parser.add_argument("--overwrite", action="store_true")
     publish_parser.add_argument("--allow-dirty", action="store_true")
     publish_parser.add_argument("--dry-run", action="store_true")
     publish_parser.add_argument("--baseline-decision", type=Path)
     export_parser = subparsers.add_parser("export-reproduction", help="Export a fixed-profile reproduction package.")
     export_parser.add_argument("--run", type=Path, required=True)
-    export_parser.add_argument("--output", type=Path, required=True)
+    export_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help=(
+            "One release directory directly under the controlled external "
+            "<project-name>-releases root; relative names resolve under that root."
+        ),
+    )
     export_parser.add_argument("--overwrite", action="store_true")
     export_parser.add_argument("--allow-dirty", action="store_true")
     export_parser.add_argument("--profile", choices=("minimal", "full"), default="minimal")
@@ -182,6 +196,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 resume=parsed.resume,
                 overwrite=parsed.overwrite,
                 isolate_stages=parsed.isolate_stages,
+                allow_dirty=parsed.allow_dirty,
             )
             print(
                 f"pipeline: complete through {result.completed_through}; "
@@ -200,6 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             resume=parsed.resume,
             overwrite=parsed.overwrite,
             overrides=overrides,
+            allow_dirty=parsed.allow_dirty,
         )
     except (ConfigError, UnsafePathError) as error:
         print(f"configuration error: {error}", file=sys.stderr)

@@ -34,8 +34,12 @@ from roadnet_partition.downstream.order_checkpoints import (
     MATCHED_ORDER_CHECKPOINT,
     ParquetCheckpointWriter,
     deterministic_shard_id,
+    identifier_csv_options,
+    invalid_driver_identifiers,
     iter_checkpoint_batches,
     load_checkpoint_manifest,
+    normalize_driver_identifiers,
+    normalize_order_identifiers,
     sorted_labeled_checkpoint_batches,
     sorted_labeled_od_batches,
     sorted_checkpoint_batches,
@@ -380,7 +384,7 @@ def stage_order_assignments(
             order_path,
             usecols=usecols,
             chunksize=chunksize,
-            dtype={order_id_col: "string", driver_col: "string"},
+            **identifier_csv_options(order_id_col, driver_col),
         )
         chunk_index = 0
         while True:
@@ -407,8 +411,9 @@ def stage_order_assignments(
             work["_departure"] = departure.loc[in_window]
             work["_finish"] = finish.loc[in_window]
 
-            driver = work[driver_col].astype("string")
-            valid_driver = driver.notna() & driver.str.strip().ne("")
+            work[order_id_col] = normalize_order_identifiers(work[order_id_col])
+            work[driver_col] = normalize_driver_identifiers(work[driver_col])
+            valid_driver = ~invalid_driver_identifiers(work[driver_col])
             stats["invalid_driver_rows"] += int((~valid_driver).sum())
 
             for column in [pickup_lon, pickup_lat, dropoff_lon, dropoff_lat]:
@@ -453,8 +458,8 @@ def stage_order_assignments(
                 {
                     "source_file": str(order_path.relative_to(PROJECT_ROOT) if order_path.is_relative_to(PROJECT_ROOT) else order_path),
                     "source_row": assigned["source_row"].astype("int64"),
-                    "order_id": assigned[order_id_col].astype("string"),
-                    "driver_id": assigned[driver_col].astype("string").str.strip(),
+                    "order_id": normalize_order_identifiers(assigned[order_id_col]),
+                    "driver_id": normalize_driver_identifiers(assigned[driver_col]),
                     "departure_time_ns": departure_ns,
                     "finish_time_ns": finish_ns,
                     "slot_start_ns": slot_start_ns,

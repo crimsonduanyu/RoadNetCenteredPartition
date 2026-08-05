@@ -40,6 +40,9 @@ The Fifth Ring configuration requires:
 Order CSVs use EPSG:4326 coordinates and the columns `order_id`, `driver_id`,
 `service_type`, `starting_lng`, `starting_lat`, `dest_lng`, `dest_lat`,
 `departure_time`, and `finish_time`; timestamps use `YYYY-MM-DD HH:MM:SS`.
+Order identifiers are nullable text and driver identifiers are non-blank text;
+alphanumeric, Unicode, and leading-zero values are preserved through Demand and
+Supply.
 See [docs/data.md](docs/data.md) for schemas, provenance, and privacy rules.
 
 Check file presence, hashes, CRS metadata, and preparation CSV columns without
@@ -72,6 +75,21 @@ conda run --prefix ./.conda/dydl roadnet-partition run \
   --resume
 ```
 
+Resume reuses Preparation only when its YAML bytes, resolved dataset/raw input
+path-size-SHA records, manifest, and complete output inventory are unchanged.
+Any mismatch invalidates Preparation and all four dependent stages. Runs with
+an older Preparation manifest lacking this identity perform one intentional
+recomputation on first resume; formal stage artifact formats are unchanged.
+
+Run identity also binds `RuntimeProvenanceV1` and `GitProvenanceV2`. The
+runtime digest records Python/platform, result-affecting distribution versions,
+and available native-library versions. The Git digest records the commit,
+binary-safe staged/unstaged tracked diff, and size/mode/SHA-256 for every
+Git-visible untracked regular file. Dirty execution requires `--allow-dirty`;
+ignored files do not participate, and Git-visible untracked symlinks/special
+files are rejected before run creation. Runtime or Git changes invalidate the
+complete formal computation.
+
 Validate the completed run without a Golden payload:
 
 ```bash
@@ -89,9 +107,16 @@ Maintainers can inspect a privacy-filtered export without writing it:
 ```bash
 conda run --prefix ./.conda/dydl roadnet-partition export-reproduction \
   --run outputs/runs/raw-only-reproduction \
-  --output outputs/releases/reproduction/raw-only \
+  --output raw-only \
   --profile minimal --dry-run
 ```
+
+Reproduction packages are restricted to direct children of the controlled
+external release root next to the project, named
+`<project-directory-name>-releases/`. Relative `--output` values resolve under
+that root. An existing release root must contain the exporter ownership marker;
+the exporter will not adopt an unrelated directory or write releases inside the
+project tree.
 
 ## Publication figures
 

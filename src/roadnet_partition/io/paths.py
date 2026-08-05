@@ -93,19 +93,30 @@ def transactional_scope_swap(
     target: Path,
     staging: Path,
     *,
+    allowed_parent: Path,
     validate: Callable[[Path], bool | None],
     overwrite: bool = False,
     _step_hook: Callable[[str], None] | None = None,
 ) -> None:
-    """Atomically switch one complete sibling staging directory into place."""
+    """Atomically switch sibling directories inside one explicit allowed parent."""
     raw_target = Path(target).expanduser()
     raw_staging = Path(staging).expanduser()
+    raw_parent = Path(allowed_parent).expanduser()
+    if any(".." in path.parts for path in (raw_target, raw_staging, raw_parent)):
+        raise UnsafePathError("scope swap paths may not contain parent traversal")
+    for path in (raw_target, raw_staging, raw_parent):
+        absolute = path.absolute()
+        if any(current.is_symlink() for current in (absolute, *absolute.parents)):
+            raise UnsafePathError("scope swap path contains a symbolic link")
     if not raw_target.name or raw_target.is_symlink() or raw_staging.is_symlink():
         raise UnsafePathError("scope target and staging must be ordinary named paths")
+    parent_path = raw_parent.resolve()
+    if parent_path == Path("/") or not parent_path.is_dir():
+        raise UnsafePathError("scope swap requires a narrow existing allowed parent")
     target_path = raw_target.resolve()
     staging_path = raw_staging.resolve()
-    if target_path.parent != staging_path.parent:
-        raise UnsafePathError("scope staging directory must be a sibling of the target")
+    if target_path.parent != parent_path or staging_path.parent != parent_path:
+        raise UnsafePathError("scope target and staging must be direct children of the allowed parent")
     expected_prefix = f".{target_path.name}.staging-"
     if not staging_path.name.startswith(expected_prefix):
         raise UnsafePathError(f"staging directory must start with {expected_prefix!r}")

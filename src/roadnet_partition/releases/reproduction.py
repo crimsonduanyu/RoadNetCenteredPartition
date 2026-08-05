@@ -25,26 +25,84 @@ class ExportError(RuntimeError):
 
 _PROFILE = re.compile(r"^(minimal|full)$")
 _PRIVATE = {"private", "restricted", "unknown"}
+_RELEASE_ROOT_MARKER = ".roadnet-release-root"
+_RELEASE_ROOT_MARKER_CONTENT = "roadnet-partition release root v1\n"
 
 
-def _safe_destination(output: str | Path, run_dir: Path, project_root: Path) -> Path:
-    raw = Path(output).expanduser().absolute()
-    for current in (raw, *raw.parents):
-        if current.exists() and current.is_symlink():
-            raise ExportError(f"release path contains a symbolic link: {current}")
-    destination = raw.resolve()
-    forbidden = {
-        Path("/").resolve(),
-        Path.home().resolve(),
-        run_dir.resolve(),
-        project_root.resolve(),
-        (project_root / "data").resolve(),
-    }
-    if destination in forbidden or destination.is_relative_to(run_dir.resolve()):
-        raise ExportError(f"unsafe release destination: {destination}")
-    if not destination.name or destination.name in {".", ".."}:
-        raise ExportError("release destination must have a safe final name")
-    return destination
+def _ownership_error(reason: str) -> ExportError:
+    return ExportError(f"release destination is outside the allowed release ownership boundary: {reason}")
+
+
+def _resolve_without_symlinks(path: Path) -> Path:
+    if ".." in path.parts:
+        raise _ownership_error("parent traversal is not allowed")
+    absolute = path.absolute()
+    for current in (absolute, *absolute.parents):
+        if current.is_symlink():
+            raise _ownership_error("symbolic-link path components are not allowed")
+        if current != absolute and current.exists() and not current.is_dir():
+            raise _ownership_error("a path component is not a directory")
+    return absolute.resolve()
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left.is_relative_to(right) or right.is_relative_to(left)
+
+
+def _release_root(project_root: Path) -> Path:
+    project = Path(project_root).expanduser().resolve()
+    return project.parent / f"{project.name}-releases"
+
+
+def _safe_destination(
+    output: str | Path,
+    run_dir: Path,
+    project_root: Path,
+) -> tuple[Path, Path, bool]:
+    project = Path(project_root).expanduser().resolve()
+    run = Path(run_dir).expanduser().resolve()
+    release_root = _resolve_without_symlinks(_release_root(project))
+    raw_output = Path(output).expanduser()
+    destination = _resolve_without_symlinks(
+        raw_output if raw_output.is_absolute() else release_root / raw_output,
+    )
+    protected = (project, run, (project / "data").resolve())
+    if release_root == Path("/") or any(_paths_overlap(release_root, root) for root in protected):
+        raise _ownership_error("a distinct release root cannot be established")
+    if destination == Path("/") or any(_paths_overlap(destination, root) for root in protected):
+        raise _ownership_error("the target overlaps a protected root")
+    if destination.parent != release_root or not destination.name or destination.name in {".", ".."}:
+        raise _ownership_error("the target must be a direct child of the release root")
+    if destination.exists() and not destination.is_dir():
+        raise _ownership_error("an existing target is not an ordinary directory")
+
+    root_exists = release_root.exists()
+    if root_exists:
+        if not release_root.is_dir():
+            raise _ownership_error("the release root is not an ordinary directory")
+        marker = release_root / _RELEASE_ROOT_MARKER
+        try:
+            marker_valid = (
+                not marker.is_symlink()
+                and marker.is_file()
+                and marker.read_text(encoding="utf-8") == _RELEASE_ROOT_MARKER_CONTENT
+            )
+        except (OSError, UnicodeError):
+            marker_valid = False
+        if not marker_valid:
+            raise _ownership_error("the release root is not owned by this exporter")
+    return destination, release_root, root_exists
+
+
+def _create_release_root(release_root: Path) -> None:
+    try:
+        release_root.mkdir()
+        (release_root / _RELEASE_ROOT_MARKER).write_text(
+            _RELEASE_ROOT_MARKER_CONTENT,
+            encoding="utf-8",
+        )
+    except OSError as error:
+        raise _ownership_error("the release root could not be created safely") from error
 
 
 def _classification(stage: str, key: str, scope: str) -> str:
@@ -240,7 +298,7 @@ def export_reproduction(
         raise ExportError("current run validation failed")
     manifest = load_manifest(run_dir)
     project_root = Path(manifest["config"]["resolved"]["project_root"]).resolve()
-    destination = _safe_destination(output, run_dir, project_root)
+    destination, release_root, release_root_exists = _safe_destination(output, run_dir, project_root)
     if destination.exists() and not overwrite:
         raise FileExistsError(f"release already exists; use --overwrite: {destination}")
     git = _dirty_git(manifest, project_root, allow_dirty)
@@ -275,8 +333,10 @@ def export_reproduction(
         return result
     if blocked:
         raise ExportError(f"reproduction export contains blocked classifications: {blocked}")
-    staging = destination.parent / f".{destination.name}.staging-{manifest['run_id']}-{uuid.uuid4().hex[:8]}"
-    staging.mkdir(parents=True)
+    if not release_root_exists:
+        _create_release_root(release_root)
+    staging = release_root / f".{destination.name}.staging-{manifest['run_id']}-{uuid.uuid4().hex[:8]}"
+    staging.mkdir()
     _write_payload(staging, run_dir, manifest, validation, profile, selected, git)
 
     def transaction_hook(step: str) -> None:
@@ -286,7 +346,8 @@ def export_reproduction(
             _step_hook(step)
 
     transactional_scope_swap(
-        destination, staging, validate=_validate_release, overwrite=overwrite, _step_hook=transaction_hook,
+        destination, staging, allowed_parent=release_root, validate=_validate_release,
+        overwrite=overwrite, _step_hook=transaction_hook,
     )
     return result
 

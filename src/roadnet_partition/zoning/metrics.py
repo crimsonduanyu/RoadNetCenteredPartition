@@ -18,6 +18,9 @@ from roadnet_partition.io.geospatial import PROJECT_ROOT, project_gdf
 
 
 EPS = 1e-9
+NETWORK_DIAMETER_METRIC_VERSION = 2
+NETWORK_DIAMETER_ALGORITHM = "exact_weighted_all_pairs_dijkstra"
+NETWORK_DIAMETER_WEIGHT_SEMANTICS = "max((length_u + length_v) / 2, 1e-9)"
 
 
 @dataclass(frozen=True)
@@ -327,49 +330,107 @@ def shape_metrics(clusters: gpd.GeoDataFrame, thresholds: MetricThresholds) -> d
     }
 
 
+def _canonical_node_key(node: Any) -> tuple[str, str]:
+    return (f"{type(node).__module__}.{type(node).__qualname__}", str(node))
+
+
+def _validated_segment_lengths(clusters: pd.DataFrame) -> dict[Any, float]:
+    missing = [column for column in ("seg_id", "length") if column not in clusters.columns]
+    if missing:
+        raise ValueError(f"network diameter clusters are missing required columns: {missing}")
+    if clusters["seg_id"].duplicated().any():
+        raise ValueError("network diameter clusters contain duplicate seg_id values")
+    numeric = pd.to_numeric(clusters["length"], errors="coerce")
+    invalid = numeric.isna() | ~np.isfinite(numeric) | numeric.lt(0.0)
+    if invalid.any():
+        first = int(np.flatnonzero(invalid.to_numpy())[0])
+        raise ValueError(
+            "network diameter length must be finite and non-negative; "
+            f"invalid_count={int(invalid.sum())}, first_row={first}"
+        )
+    return dict(zip(clusters["seg_id"], numeric.astype(float)))
+
+
+def exact_network_diameter(graph: nx.Graph, lengths: dict[Any, float]) -> float:
+    """Return the exact finite weighted diameter, maximized across components.
+
+    Edge cost is the existing mean endpoint segment length with an ``EPS`` floor.
+    A graph node absent from ``lengths`` retains the former zero-length fallback
+    and therefore contributes ``EPS`` at an edge. Directed graphs and invalid
+    supplied lengths are rejected explicitly.
+    """
+    if graph.is_directed():
+        raise ValueError("network diameter requires an undirected graph")
+    normalized: dict[Any, float] = {}
+    for node, value in lengths.items():
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as error:
+            raise ValueError("network diameter length must be numeric") from error
+        if not math.isfinite(number) or number < 0.0:
+            raise ValueError("network diameter length must be finite and non-negative")
+        normalized[node] = number
+
+    def edge_distance(u: Any, v: Any, attrs: dict[str, Any]) -> float:
+        return max((normalized.get(u, 0.0) + normalized.get(v, 0.0)) / 2.0, EPS)
+
+    diameter = 0.0
+    components = sorted(
+        nx.connected_components(graph),
+        key=lambda component: min(_canonical_node_key(node) for node in component),
+    )
+    for component in components:
+        subgraph = graph.subgraph(component)
+        for source in sorted(component, key=_canonical_node_key):
+            distances = nx.single_source_dijkstra_path_length(
+                subgraph,
+                source,
+                weight=edge_distance,
+            )
+            if distances:
+                diameter = max(diameter, max(float(value) for value in distances.values()))
+    return diameter
+
+
 def network_diameter_metrics(
     graph: nx.Graph,
     clusters: gpd.GeoDataFrame,
     partition: dict[str, Any],
     thresholds: MetricThresholds,
-) -> dict[str, float]:
-    lengths = clusters.set_index("seg_id")["length"].astype(float).to_dict()
-    cluster_to_nodes: dict[Any, list[str]] = {}
+) -> dict[str, Any]:
+    if graph.is_directed():
+        raise ValueError("network diameter requires an undirected graph")
+    lengths = _validated_segment_lengths(clusters)
+    cluster_to_nodes: dict[Any, list[Any]] = {}
     for node, cluster_id in partition.items():
         cluster_to_nodes.setdefault(cluster_id, []).append(node)
 
-    def edge_distance(u: str, v: str, attrs: dict[str, Any]) -> float:
-        return max((float(lengths.get(u, 0.0)) + float(lengths.get(v, 0.0))) / 2.0, EPS)
-
-    diameters = []
-    for nodes in cluster_to_nodes.values():
-        subgraph = graph.subgraph(nodes)
-        component_diameters = []
-        for component in nx.connected_components(subgraph):
-            component_nodes = list(component)
-            if len(component_nodes) <= 1:
-                component_diameters.append(0.0)
-                continue
-            start = component_nodes[0]
-            first_lengths = nx.single_source_dijkstra_path_length(subgraph, start, weight=edge_distance)
-            farthest = max(first_lengths, key=first_lengths.get)
-            second_lengths = nx.single_source_dijkstra_path_length(subgraph, farthest, weight=edge_distance)
-            component_diameters.append(float(max(second_lengths.values())))
-        diameters.append(max(component_diameters) if component_diameters else 0.0)
+    diameters: list[float] = []
+    for cluster_id in sorted(cluster_to_nodes, key=_canonical_node_key):
+        nodes = cluster_to_nodes[cluster_id]
+        cluster_lengths = {node: lengths[node] for node in nodes if node in lengths}
+        diameters.append(exact_network_diameter(graph.subgraph(nodes), cluster_lengths))
 
     series = pd.Series(diameters, dtype=float)
+    metadata: dict[str, Any] = {
+        "network_diameter_metric_version": NETWORK_DIAMETER_METRIC_VERSION,
+        "network_diameter_algorithm": NETWORK_DIAMETER_ALGORITHM,
+        "network_diameter_weight_semantics": NETWORK_DIAMETER_WEIGHT_SEMANTICS,
+    }
     if series.empty:
         return {
             "mean_network_diameter_m": float("nan"),
             "median_network_diameter_m": float("nan"),
             "max_network_diameter_m": float("nan"),
             "large_diameter_cluster_ratio": float("nan"),
+            **metadata,
         }
     return {
         "mean_network_diameter_m": float(series.mean()),
         "median_network_diameter_m": float(series.median()),
         "max_network_diameter_m": float(series.max()),
         "large_diameter_cluster_ratio": float((series > thresholds.large_diameter_threshold_m).mean()),
+        **metadata,
     }
 
 

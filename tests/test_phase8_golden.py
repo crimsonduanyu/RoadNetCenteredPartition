@@ -91,7 +91,7 @@ def test_production_full_config_resolves_and_external_inventory_exists() -> None
     assert first.scope == "fifth_ring"
     inventory = _external_inputs(first)
     assert set(inventory) == {
-        "preparation.raw_edges", "preparation.boundary", "preparation.ring_segments",
+        "preparation.dataset_config", "preparation.raw_edges", "preparation.boundary", "preparation.ring_segments",
         "preparation.poi", "preparation.zoning_orders", "demand.orders.0",
         "demand.poi", "tte.graphml",
     }

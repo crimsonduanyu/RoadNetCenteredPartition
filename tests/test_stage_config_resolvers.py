@@ -17,6 +17,7 @@ from roadnet_partition.config import (
     resolve_partition_config,
     resolve_supply_config,
     resolve_tte_config,
+    validate_output_identifier,
 )
 
 
@@ -169,7 +170,75 @@ def _production_copy(tmp_path: Path, stage: str) -> tuple[Callable[[Path], Resol
     return resolver, destination, values
 
 
-def test_scope_mismatch_reports_both_configs(tmp_path: Path) -> None:
+INVALID_SCOPES = [
+    "",
+    "   ",
+    ".",
+    "..",
+    "../victim",
+    "../../victim",
+    "a/b",
+    r"a\b",
+    "/tmp/victim",
+    r"C:\victim",
+    "C:/victim",
+    r"\\server\share",
+    "drive:relative",
+    "/leading",
+    "trailing/",
+    "a/b/c",
+]
+
+
+@pytest.mark.parametrize("value", INVALID_SCOPES)
+def test_shared_output_identifier_rejects_path_expressions(value: str, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="safe single-component identifier"):
+        validate_output_identifier(value, source=tmp_path / "config.yaml", field="scope")
+
+
+@pytest.mark.parametrize("value", ["tiny", "fifth_ring", "北京五环", "café-2"])
+def test_shared_output_identifier_accepts_safe_ascii_and_unicode(value: str, tmp_path: Path) -> None:
+    assert validate_output_identifier(value, source=tmp_path / "config.yaml", field="scope") == value
+
+
+@pytest.mark.parametrize("value", ["../victim", r"C:\victim", "   "])
+def test_dataset_scope_is_validated_at_dataset_boundary(value: str, tmp_path: Path) -> None:
+    resolver, stage_path, stage = _production_copy(tmp_path, "supply")
+    dataset = yaml.safe_load(DATASET.read_text(encoding="utf-8"))
+    dataset["scope"] = value
+    dataset_path = tmp_path / "dataset.yaml"
+    dataset_path.write_text(yaml.safe_dump(dataset), encoding="utf-8")
+    stage["dataset_config"] = str(dataset_path)
+    stage_path.write_text(yaml.safe_dump(stage), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="dataset scope"):
+        resolver(stage_path)
+
+
+@pytest.mark.parametrize("value", ["../victim", r"C:\victim", "   "])
+def test_stage_scope_is_validated_before_dataset_mismatch(value: str, tmp_path: Path) -> None:
+    resolver, stage_path, stage = _production_copy(tmp_path, "supply")
+    stage["scope"] = value
+    stage_path.write_text(yaml.safe_dump(stage), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="stage scope"):
+        resolver(stage_path)
+
+
+def test_dataset_and_stage_accept_matching_unicode_scope(tmp_path: Path) -> None:
+    resolver, stage_path, stage = _production_copy(tmp_path, "supply")
+    dataset = yaml.safe_load(DATASET.read_text(encoding="utf-8"))
+    dataset["scope"] = "北京五环"
+    dataset_path = tmp_path / "dataset.yaml"
+    dataset_path.write_text(yaml.safe_dump(dataset, allow_unicode=True), encoding="utf-8")
+    stage["dataset_config"] = str(dataset_path)
+    stage["scope"] = "北京五环"
+    stage_path.write_text(yaml.safe_dump(stage, allow_unicode=True), encoding="utf-8")
+
+    assert resolver(stage_path).scope == "北京五环"
+
+
+def test_scope_mismatch_reports_both_config_locations(tmp_path: Path) -> None:
     resolver, path, values = _production_copy(tmp_path, "supply")
     values["scope"] = "fourth_ring"
     path.write_text(yaml.safe_dump(values), encoding="utf-8")
@@ -179,7 +248,7 @@ def test_scope_mismatch_reports_both_configs(tmp_path: Path) -> None:
     message = str(caught.value)
     assert str(path) in message
     assert str(DATASET) in message
-    assert "fourth_ring" in message and "fifth_ring" in message
+    assert "stage scope conflicts" in message
 
 
 @pytest.mark.parametrize(
@@ -302,4 +371,3 @@ def test_supply_n_blocks_override_is_resolved_fingerprinted_and_allowlisted() ->
     assert overridden.fingerprint != original.fingerprint
     with pytest.raises(ConfigError, match="unsupported supply CLI overrides"):
         apply_stage_overrides(original, {"workers": 2})
-

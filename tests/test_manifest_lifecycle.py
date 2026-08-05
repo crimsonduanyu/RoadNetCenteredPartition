@@ -123,7 +123,7 @@ def test_atomic_json_and_yaml_are_reloaded_and_leave_no_temp_files(tmp_path: Pat
 def test_runtime_uses_dependency_allowlist_without_environment(tmp_path: Path) -> None:
     runtime = collect_runtime_info()
     assert runtime["roadnet_partition"]
-    assert "numpy" in runtime["dependencies"]
+    assert "numpy" in {record["normalized_name"] for record in runtime["distributions"]}
     assert "environment" not in runtime
 
 
