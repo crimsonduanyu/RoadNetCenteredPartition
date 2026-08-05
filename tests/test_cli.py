@@ -91,12 +91,13 @@ def test_console_help_lists_only_phase6a_commands_outside_repository(tmp_path: P
     assert "usage: roadnet-partition" in result.stdout
     if stage is None:
         assert (
-            "{check-raw,run,validate,publish,export-reproduction,"
-            "migrate-legacy-graph,partition,demand,supply,tte}"
+            "{check-raw,run,validate,publish,export-reproduction,partition,demand,supply,tte}"
         ) in result.stdout
+        # R5.2 retired the pickle conversion command; help must not advertise it.
+        assert "migrate-legacy-graph" not in result.stdout
     else:
         for option in ["--config", "--run-id", "--run-dir", "--resume", "--overwrite"]:
             assert option in result.stdout
         assert ("--n-blocks" in result.stdout) is (stage == "supply")
-        # Opting in to pickle deserialization must never ride along with a stage.
-        assert "--allow-trusted-legacy-graph-pickle" not in result.stdout
+    # No surface may offer to deserialize a pickle.
+    assert "--allow-trusted-legacy-graph-pickle" not in result.stdout

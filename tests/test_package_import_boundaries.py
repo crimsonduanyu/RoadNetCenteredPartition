@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import ast
 import importlib
 from pathlib import Path
@@ -8,9 +9,126 @@ import re
 import subprocess
 import sys
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = PROJECT_ROOT / "src/roadnet_partition"
+SCRIPTS_ROOT = PROJECT_ROOT / "scripts"
+
+#: Modules that turn bytes on disk into live Python objects.
+EXECUTABLE_DESERIALIZERS = {"pickle", "marshal", "shelve", "dill", "cloudpickle", "joblib"}
+
+
+def _shipped_sources() -> list[Path]:
+    """Every Python file we ship: the package plus the operator scripts."""
+
+    return sorted(PACKAGE_ROOT.rglob("*.py")) + sorted(SCRIPTS_ROOT.rglob("*.py"))
+
+
+def test_shipped_code_never_imports_an_executable_deserializer() -> None:
+    """AUD-005 / R5.2: no import of pickle & friends anywhere we ship.
+
+    R5.1 allowed exactly one module to import ``pickle`` for trusted-only
+    conversion. R5.2 deleted it, so the allowance is gone too — there is no
+    skip list here on purpose. An import is the cheapest way this could
+    regress, so it is the thing to pin.
+    """
+
+    offenders = []
+    for path in _shipped_sources():
+        relative = path.relative_to(PROJECT_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name.split(".")[0] in EXECUTABLE_DESERIALIZERS for alias in node.names):
+                    offenders.append(f"{relative}:{node.lineno}")
+            elif isinstance(node, ast.ImportFrom):
+                if (node.module or "").split(".")[0] in EXECUTABLE_DESERIALIZERS:
+                    offenders.append(f"{relative}:{node.lineno}")
+    assert not offenders, sorted(set(offenders))
+
+
+#: Dynamic imports whose module name is not a literal, reviewed once.
+#: ``manifests._native_source`` probes native library versions and every one of
+#: its call sites passes a hard-coded name (duckdb, fiona, shapely, ...), so it
+#: cannot reach a deserializer. A new entry here needs the same argument.
+REVIEWED_DYNAMIC_IMPORTS = {"src/roadnet_partition/io/manifests.py:178"}
+
+
+def test_shipped_code_cannot_reach_a_deserializer_dynamically() -> None:
+    """A static import scan is worthless if ``__import__("pickle")`` still works."""
+
+    offenders = []
+    for path in _shipped_sources():
+        relative = path.relative_to(PROJECT_ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if ast.unparse(node.func) not in {"__import__", "importlib.import_module", "import_module"}:
+                continue
+            site = f"{relative}:{node.lineno}"
+            if node.args and isinstance(node.args[0], ast.Constant):
+                if str(node.args[0].value).split(".")[0] in EXECUTABLE_DESERIALIZERS:
+                    offenders.append(site)
+            elif site not in REVIEWED_DYNAMIC_IMPORTS:
+                offenders.append(f"{site} (unreviewed non-literal dynamic import)")
+    assert not offenders, sorted(set(offenders))
+
+
+def test_shipped_code_contains_no_deserialization_call_or_legacy_symbol() -> None:
+    """Text-level backstop for the R5.1 surface and for pickle call sites."""
+
+    forbidden = (
+        "pickle.load",
+        "pickle.loads",
+        "pickle.dump",
+        "pickle.dumps",
+        "pickle.Unpickler",
+        "read_gpickle",
+        "write_gpickle",
+        "marshal.load",
+        "trusted_legacy_graph_pickle",
+        "LegacyGraphDeclaration",
+        "allow-trusted-legacy",
+        "allow_trusted_legacy",
+        "migrate-legacy-graph",
+    )
+    offenders = []
+    for path in _shipped_sources():
+        relative = path.relative_to(PROJECT_ROOT).as_posix()
+        source = path.read_text(encoding="utf-8")
+        offenders.extend(f"{relative}: {token}" for token in forbidden if token in source)
+    assert not offenders, sorted(offenders)
+
+
+def test_no_legacy_opt_in_survives_on_any_cli_subcommand() -> None:
+    """The R5.1 opt-in must be gone, not merely hidden from one subcommand."""
+
+    from roadnet_partition import cli
+
+    parser = cli.build_parser()
+    assert "allow_trusted_legacy_graph_pickle" not in {action.dest for action in parser._actions}
+
+    registered = set(next(
+        action.choices for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+    ))
+    assert "migrate-legacy-graph" not in registered
+
+    for command, extra in (
+        ("run", ["--config", "c.yaml"]),
+        ("partition", ["--config", "c.yaml"]),
+        ("demand", ["--config", "c.yaml"]),
+        ("supply", ["--config", "c.yaml"]),
+        ("tte", ["--config", "c.yaml"]),
+        ("publish", ["--run", "r", "--scope", "s"]),
+        ("export-reproduction", ["--run", "r", "--output", "o"]),
+    ):
+        namespace = parser.parse_args([command, *extra])
+        assert not hasattr(namespace, "allow_trusted_legacy_graph_pickle"), command
+        with pytest.raises(SystemExit):
+            parser.parse_args([command, *extra, "--allow-trusted-legacy-graph-pickle"])
 
 
 def test_repository_has_no_active_legacy_execution_references() -> None:

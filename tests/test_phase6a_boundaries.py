@@ -11,9 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = PROJECT_ROOT / "src" / "roadnet_partition"
 ALLOWED_STAGES = {"partition", "demand", "supply", "tte"}
 FORBIDDEN_COMMANDS = {"run", "publish", "validate", "export-reproduction"}
-# One-off operator tools that execute no stage. `migrate-legacy-graph` is the
-# single opt-in door to the pre-AUD-005 pickle format (see Gate E).
-MAINTENANCE_COMMANDS = {"migrate-legacy-graph"}
+# R5.2 removed the last maintenance command (`migrate-legacy-graph`, the opt-in
+# door to the pre-AUD-005 pickle format). Keep this empty rather than dropping
+# it: a new one-off tool should have to justify itself here.
+MAINTENANCE_COMMANDS: set[str] = set()
 
 
 def parse(relative: str) -> ast.Module:

@@ -39,6 +39,16 @@ ARTIFACT_SUFFIX = ".graph.json.gz"
 GRAPH_TYPE = "networkx.Graph"
 GZIP_COMPRESS_LEVEL = 6
 GZIP_MAGIC = b"\x1f\x8b"
+PICKLE_MAGIC = b"\x80"
+
+#: Suffixes that make a file executable-on-read. Nothing here is ever loaded.
+EXECUTABLE_SERIALIZATION_SUFFIXES = (".gpickle", ".pkl", ".pickle")
+
+#: Single wording for every legacy refusal, so operators get one instruction.
+LEGACY_UNSUPPORTED_MESSAGE = (
+    "Legacy executable graph serialization is no longer supported. "
+    f"Regenerate the graph with Preparation using {SCHEMA_NAME}."
+)
 
 _SCALAR_TAGS = ("bool", "int", "float", "str")
 _NODE_ID_TAGS = ("int", "str")
@@ -266,6 +276,28 @@ def write_safe_graph(graph: nx.Graph, path: str | Path) -> GraphArtifactMeta:
     )
 
 
+def is_executable_serialization_name(name: str) -> bool:
+    """Whether ``name`` is a filename that would be executable on read.
+
+    Name-only: the caller must be able to refuse a legacy artifact without
+    opening it.
+    """
+
+    return name.endswith(EXECUTABLE_SERIALIZATION_SUFFIXES)
+
+
+def reject_legacy_graph_path(path: str | Path) -> None:
+    """Refuse a legacy graph path by name, before any byte is read.
+
+    Deserializing a pickle executes whatever the file says to execute, so the
+    refusal has to happen on the filename, ahead of opening the file.
+    """
+
+    source = Path(path)
+    if is_executable_serialization_name(source.name):
+        raise SafeGraphArtifactError(f"{source}: {LEGACY_UNSUPPORTED_MESSAGE}")
+
+
 def _reject_constant(name: str) -> Any:
     raise SafeGraphArtifactError(f"artifact contains the non-JSON constant {name}")
 
@@ -280,6 +312,7 @@ def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _read_payload(path: Path) -> dict[str, Any]:
+    reject_legacy_graph_path(path)
     if not path.exists():
         raise SafeGraphArtifactError(
             f"graph artifact not found: {path}. Expected a {SCHEMA_NAME} file ending in {ARTIFACT_SUFFIX}."
@@ -289,9 +322,10 @@ def _read_payload(path: Path) -> dict[str, Any]:
     with path.open("rb") as handle:
         prefix = handle.read(2)
     if prefix != GZIP_MAGIC:
-        if prefix[:1] == b"\x80":
+        if prefix[:1] == PICKLE_MAGIC:
             raise SafeGraphArtifactError(
-                f"{path} is a Python pickle, not a {SCHEMA_NAME} artifact; refusing to deserialize executable data"
+                f"{path} is a Python pickle, not a {SCHEMA_NAME} artifact; "
+                f"refusing to deserialize executable data. {LEGACY_UNSUPPORTED_MESSAGE}"
             )
         raise SafeGraphArtifactError(f"{path} is not a gzip-compressed {SCHEMA_NAME} artifact")
     try:
@@ -522,21 +556,18 @@ def artifact_record(path: str | Path, meta: GraphArtifactMeta) -> dict[str, Any]
     return {**file_record(path), **meta.as_dict()}
 
 
-#: Suffixes that make a file executable-on-read. Bundles must carry none (AUD-005).
-EXECUTABLE_SERIALIZATION_SUFFIXES = (".gpickle", ".pkl", ".pickle")
-
-
 def executable_serialization_files(root: str | Path) -> list[str]:
     """Relative paths under ``root`` that are Python pickles.
 
     Publication and reproduction bundles must never ship executable
     serialization: a downstream reader that trusts the bundle would be handed
-    arbitrary code. Callers raise their own error type on a non-empty result.
+    arbitrary code. Matching is by name only — nothing here is ever opened.
+    Callers raise their own error type on a non-empty result.
     """
 
     base = Path(root)
     return sorted(
         path.relative_to(base).as_posix()
         for path in base.rglob("*")
-        if path.is_file() and path.name.endswith(EXECUTABLE_SERIALIZATION_SUFFIXES)
+        if path.is_file() and is_executable_serialization_name(path.name)
     )
