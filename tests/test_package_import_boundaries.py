@@ -49,11 +49,25 @@ def test_shipped_code_never_imports_an_executable_deserializer() -> None:
     assert not offenders, sorted(set(offenders))
 
 
-#: Dynamic imports whose module name is not a literal, reviewed once.
+#: Dynamic imports whose module name is not a literal, reviewed once. Keyed by
+#: enclosing function rather than line number so an unrelated edit above it
+#: cannot silently move the exemption onto a different call.
 #: ``manifests._native_source`` probes native library versions and every one of
 #: its call sites passes a hard-coded name (duckdb, fiona, shapely, ...), so it
 #: cannot reach a deserializer. A new entry here needs the same argument.
-REVIEWED_DYNAMIC_IMPORTS = {"src/roadnet_partition/io/manifests.py:178"}
+REVIEWED_DYNAMIC_IMPORTS = {"src/roadnet_partition/io/manifests.py::_native_source"}
+
+
+def _enclosing_function(tree: ast.Module) -> dict[int, str]:
+    """Map every line inside a function body to that function's name."""
+
+    scopes: dict[int, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for line in range(node.lineno, (node.end_lineno or node.lineno) + 1):
+            scopes[line] = node.name
+    return scopes
 
 
 def test_shipped_code_cannot_reach_a_deserializer_dynamically() -> None:
@@ -63,6 +77,7 @@ def test_shipped_code_cannot_reach_a_deserializer_dynamically() -> None:
     for path in _shipped_sources():
         relative = path.relative_to(PROJECT_ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        scopes = _enclosing_function(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -72,7 +87,7 @@ def test_shipped_code_cannot_reach_a_deserializer_dynamically() -> None:
             if node.args and isinstance(node.args[0], ast.Constant):
                 if str(node.args[0].value).split(".")[0] in EXECUTABLE_DESERIALIZERS:
                     offenders.append(site)
-            elif site not in REVIEWED_DYNAMIC_IMPORTS:
+            elif f"{relative}::{scopes.get(node.lineno, '<module>')}" not in REVIEWED_DYNAMIC_IMPORTS:
                 offenders.append(f"{site} (unreviewed non-literal dynamic import)")
     assert not offenders, sorted(set(offenders))
 
