@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pickle
 from typing import Any
 
 import geopandas as gpd
@@ -12,6 +11,7 @@ import pandas as pd
 import yaml
 
 from roadnet_partition.io.geospatial import PROJECT_ROOT
+from roadnet_partition.io.safe_graph import read_safe_graph
 from roadnet_partition.zoning.metrics import MetricThresholds, compute_benchmark_metrics
 from roadnet_partition.zoning.regularized.selection import baseline_for_algorithm
 
@@ -36,8 +36,7 @@ def load_optional_csv(path_value: str | Path | None) -> pd.DataFrame | None:
 
 
 def load_graph(path: Path) -> nx.Graph:
-    with path.open("rb") as handle:
-        graph = pickle.load(handle)
+    graph = read_safe_graph(path)
     if any(not isinstance(node, str) for node in graph.nodes):
         graph = nx.relabel_nodes(graph, {node: str(node) for node in graph.nodes})
     return graph

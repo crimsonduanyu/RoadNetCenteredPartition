@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import colorsys
 from pathlib import Path
-import pickle
 from typing import Any, Iterable
 
 import geopandas as gpd
@@ -20,6 +19,7 @@ import pandas as pd
 from PIL import Image, ImageDraw
 from shapely.geometry import LineString, MultiLineString
 
+from roadnet_partition.io.safe_graph import read_safe_graph
 from roadnet_partition.zoning.contracts import partition_mapping
 from roadnet_partition.zoning.metrics import cluster_mean_origin_orders_per_slot
 
@@ -39,8 +39,7 @@ BLUE_MONO_COLORS = [
 
 
 def load_graph(path: Path) -> nx.Graph:
-    with path.open("rb") as handle:
-        graph = pickle.load(handle)
+    graph = read_safe_graph(path)
     if any(not isinstance(node, str) for node in graph.nodes):
         graph = nx.relabel_nodes(graph, {node: str(node) for node in graph.nodes})
     return graph

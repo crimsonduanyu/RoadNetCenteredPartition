@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+from roadnet_partition.pipeline.preparation import output_paths as preparation_output_paths
 from roadnet_partition.pipeline.stages import canonical_partition_output_key
 from roadnet_partition.reporting.best_partition_map import (
     render_partition_maps,
@@ -22,12 +23,13 @@ def main() -> None:
     partition_outputs = manifest["stages"]["partition"]["outputs"]
     partition = Path(partition_outputs[canonical_partition_output_key(partition_outputs)]["path"])
     preparation = run / "preparation"
+    graph = preparation_output_paths(preparation)["graph"]
     output_dir = args.output_dir.resolve()
     render_partition_maps(
         partition,
         preparation / "road_edges_classified.gpkg",
         PROJECT_ROOT / "data/raw/beijing_fifth_ring_boundary.gpkg",
-        preparation / "segment_relation_graph_road_poi_order.gpickle",
+        graph,
         output_dir,
     )
     stem = output_dir / "partition_and_mean_hourly_orders"
@@ -35,7 +37,7 @@ def main() -> None:
         partition,
         preparation / "road_edges_classified.gpkg",
         PROJECT_ROOT / "data/raw/beijing_fifth_ring_boundary.gpkg",
-        preparation / "segment_relation_graph_road_poi_order.gpickle",
+        graph,
         preparation / "segment_order_od_hourly.csv",
         stem.with_suffix(".png"),
         stem.with_suffix(".pdf"),

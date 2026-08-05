@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+from roadnet_partition.pipeline.preparation import output_paths as preparation_output_paths
 from roadnet_partition.pipeline.stages import canonical_partition_output_key
 from roadnet_partition.reporting.best_partition_map import render_partition_order_figure
 
@@ -24,7 +25,7 @@ def main() -> None:
         partition,
         preparation / "road_edges_classified.gpkg",
         PROJECT_ROOT / "data/raw/beijing_fifth_ring_boundary.gpkg",
-        preparation / "segment_relation_graph_road_poi_order.gpickle",
+        preparation_output_paths(preparation)["graph"],
         preparation / "segment_order_od_hourly.csv",
         output.with_suffix(".png"),
         output.with_suffix(".pdf"),
