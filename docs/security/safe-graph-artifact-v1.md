@@ -1,7 +1,14 @@
 # SafeGraphArtifactV1 — Graph Exchange Contract (AUD-005)
 
-Remediation batch **R5.1**. This document is the audit record produced by Gate A
-and the normative contract implemented by Gates B–E.
+Remediation batch **R5.1**, amended by **R5.2**. This document is the audit
+record produced by R5.1 Gate A and the normative contract implemented by its
+Gates B–E.
+
+Sections 1 and 1.1 describe the repository **as it was before R5.1**; they are
+retained as the audit finding, not as a description of current code. Section 4
+was rewritten by R5.2, which deleted the temporary legacy-pickle conversion
+path entirely: the current version cannot read, convert, or execute a graph
+pickle by any route.
 
 ## 1. Problem statement
 
@@ -166,38 +173,43 @@ unknown or missing attribute keys, wrong attribute types, non-`str` node ids,
 edges that reference unknown nodes, self-loops, duplicate edges, and semantic
 digest mismatch. Consumers must fail before writing any output file.
 
-## 4. Legacy compatibility boundary
+## 4. Legacy boundary — no compatibility path (R5.2)
 
-- The old `.gpickle` format remains readable **only** through a single
-  dedicated module, `src/roadnet_partition/io/trusted_legacy_graph_pickle.py`.
-  It is the only place in `src/` that may call `pickle.load`.
-- That path is unreachable by default. It requires **both** an explicit
-  `LegacyGraphDeclaration` built at the call site — naming the `.gpickle`
-  source and a recorded reason for trusting it — **and** the explicit CLI flag
-  `--allow-trusted-legacy-graph-pickle`. Neither gate alone opens the door, and
-  no pipeline subcommand exposes the flag.
-- No stage consumes the legacy format. The only entrypoint is the dedicated
-  `roadnet-partition migrate-legacy-graph` command, which converts a
-  pre-migration pickle into a `SafeGraphArtifactV1` artifact so an operator does
-  not have to re-run Preparation. Conversion is verified by semantic digest, so
-  the graph crosses unchanged.
-- Even with both gates open the read is narrowed: a restricted unpickler
-  resolves only a small graph-shaped allowlist of globals, so a hostile file
-  cannot reach `os.system` or `builtins.eval` through this door. This bounds the
-  blast radius; it does not make an untrusted pickle safe.
-- When used it emits a prominent stderr warning that the input is executable
-  serialization from a trusted local source, and writes
-  `legacy_executable_serialization: true` — with the source digest, the trust
-  reason, and the resulting artifact digest — to a
-  `<artifact>.legacy-provenance.json` record beside the converted artifact.
-  It is deliberately kept out of the run manifest: no run may depend on it, and
-  the digest-sealed runtime provenance record stays untouched.
-- Preparation never writes a pickle again, and never silently produces a
-  `.pkl` companion.
+R5.1 shipped a temporary, dual-gated conversion path for pre-migration
+pickles. **Batch R5.2 removed it.** The current version has no way to read,
+convert, or execute a legacy graph pickle, and this section is normative for
+the current version.
+
+- `SafeGraphArtifactV1` is the only supported graph interchange format. No
+  module in `src/` or `scripts/` imports `pickle`, `marshal`, or `shelve`, and
+  none calls `pickle.load` / `pickle.loads`. This is asserted by static scans
+  in `tests/test_package_import_boundaries.py`, which have no skip list.
+- A legacy artifact is refused **by name**, before the file is opened:
+  `reject_legacy_graph_path` fires on a `.gpickle`, `.pkl`, or `.pickle`
+  filename as the first statement of the reader's payload read. Opening a
+  pickle is itself the dangerous act, so refusal cannot wait for content
+  inspection. A pickle payload smuggled under a `.graph.json.gz` name is
+  refused a second time by the magic-byte check, which raises instead of
+  deserializing.
+- Refusal happens before any side effect: no output directory, CSV, figure,
+  completion marker, or manifest entry is produced for a run whose graph input
+  is legacy.
+- There is **no** migration command, opt-in flag, environment variable, or
+  private helper that re-enables pickle. `migrate-legacy-graph` is not a
+  registered subcommand and `--allow-trusted-legacy-graph-pickle` is not a
+  known option on any subcommand; both are asserted by tests.
+- An operator holding only a pre-migration `.gpickle` must re-run Preparation
+  to produce a `SafeGraphArtifactV1` artifact. If the original bytes must be
+  read for a historical audit, use a checkout of a release that predates R5.2
+  in an isolated environment; the current version will not do it.
+- Preparation never writes a pickle, and never silently produces a `.pkl`
+  companion.
 - Publication and reproduction bundles must contain zero pickle artifacts.
   This is enforced in code, not only by convention: `_validate_staging` and
   `_validate_release` both call `executable_serialization_files` and refuse a
   `.gpickle`, `.pkl`, or `.pickle` file by name before the bundle is sealed.
+- A manifest that declares an executable graph serialization is refused on the
+  same terms as the file itself — by declaration, without reading the payload.
 
 ## 5. Measured cost
 

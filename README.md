@@ -83,9 +83,9 @@ recomputation on first resume; formal stage artifact formats are unchanged.
 
 Preparation's relation graph is a deterministic, schema-validated gzip+JSON
 artifact (`segment_relation_graph_road_poi_order.graph.json.gz`). Partition,
-Evaluation, and the best-partition figure read only that format; a `.gpickle`
-from an older run is refused, and converting one is an explicit opt-in
-(`roadnet-partition migrate-legacy-graph`). See `docs/data.md`.
+Evaluation, and the best-partition figure read only that format. A `.gpickle`
+from an older run is refused by name before it is opened, and no command
+converts one — re-run Preparation instead. See `docs/data.md`.
 
 Run identity also binds `RuntimeProvenanceV1` and `GitProvenanceV2`. The
 runtime digest records Python/platform, result-affecting distribution versions,

@@ -46,19 +46,16 @@ canonical projection, so resume detects a semantically changed graph even when
 the file record looks fresh.
 
 Earlier runs wrote a `.gpickle`. Deserializing a pickle executes whatever the
-file says to execute, so no stage reads that format any more. To reuse a
-pre-migration graph without re-running Preparation, convert it explicitly:
+file says to execute, so the current version reads no pickle at all and offers
+no command to convert one. A `.gpickle`, `.pkl`, or `.pickle` input is refused
+by filename before the file is opened, and a pickle payload hidden under a
+`.graph.json.gz` name is refused by its magic bytes; either way nothing is
+deserialized and no output, marker, or manifest entry is written.
 
-```bash
-roadnet-partition migrate-legacy-graph \
-  --input  outputs/preparation/segment_relation_graph_road_poi_order.gpickle \
-  --output outputs/preparation/segment_relation_graph_road_poi_order.graph.json.gz \
-  --trusted-reason "produced by this project before the safe-artifact migration" \
-  --allow-trusted-legacy-graph-pickle
-```
-
-Without the flag the command refuses. Only point it at a file you produced
-yourself; see `docs/security/safe-graph-artifact-v1.md`.
+To reuse a pre-migration run, re-run Preparation and let it write the safe
+artifact. If you need the original bytes for a historical audit, read them with
+a checkout that predates the removal, in an isolated environment. See
+`docs/security/safe-graph-artifact-v1.md`.
 
 ## Published stage products
 
