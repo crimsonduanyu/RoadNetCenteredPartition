@@ -224,13 +224,18 @@ def plot_partition_pdf(
 def render_partition_maps(
     partition_path: Path,
     classified_edges_path: Path,
-    boundary_path: Path,
+    boundary: gpd.GeoDataFrame,
     graph_path: Path,
     output_dir: Path,
 ) -> None:
+    """Render the partition maps against an already validated ``boundary``.
+
+    The boundary arrives as a GeoDataFrame rather than a path because it must
+    have satisfied ``BoundaryArtifactV1`` before any output can be created; see
+    ``roadnet_partition.reporting.boundary_resolver``.
+    """
     clusters = gpd.read_file(partition_path)
     classified = gpd.read_file(classified_edges_path)
-    boundary = gpd.read_file(boundary_path)
     connectors = classified.loc[classified["segment_role"] == "connector"].copy()
     graph = load_graph(graph_path)
     for stem, palette, halo in (
@@ -291,17 +296,20 @@ def _scale_bar(ax: Any, length: float, label: str = "5 km", loc: tuple[float, fl
 def render_partition_order_figure(
     partition_path: Path,
     classified_edges_path: Path,
-    boundary_path: Path,
+    boundary: gpd.GeoDataFrame,
     graph_path: Path,
     hourly_od_path: Path,
     png_path: Path,
     pdf_path: Path,
     dpi: int = 300,
 ) -> None:
-    """Render the recovered two-panel partition and mean-hourly-order figure."""
+    """Render the recovered two-panel partition and mean-hourly-order figure.
+
+    ``boundary`` is an already validated GeoDataFrame; see
+    ``roadnet_partition.reporting.boundary_resolver``.
+    """
     clusters = gpd.read_file(partition_path)
     classified = gpd.read_file(classified_edges_path)
-    boundary = gpd.read_file(boundary_path)
     connectors = classified.loc[classified["segment_role"] == "connector"].copy()
     graph = load_graph(graph_path)
     partition = partition_mapping(clusters)
