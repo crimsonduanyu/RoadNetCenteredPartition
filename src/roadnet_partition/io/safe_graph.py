@@ -520,3 +520,23 @@ def artifact_record(path: str | Path, meta: GraphArtifactMeta) -> dict[str, Any]
     """Manifest record combining file integrity and graph structure fields."""
 
     return {**file_record(path), **meta.as_dict()}
+
+
+#: Suffixes that make a file executable-on-read. Bundles must carry none (AUD-005).
+EXECUTABLE_SERIALIZATION_SUFFIXES = (".gpickle", ".pkl", ".pickle")
+
+
+def executable_serialization_files(root: str | Path) -> list[str]:
+    """Relative paths under ``root`` that are Python pickles.
+
+    Publication and reproduction bundles must never ship executable
+    serialization: a downstream reader that trusts the bundle would be handed
+    arbitrary code. Callers raise their own error type on a non-empty result.
+    """
+
+    base = Path(root)
+    return sorted(
+        path.relative_to(base).as_posix()
+        for path in base.rglob("*")
+        if path.is_file() and path.name.endswith(EXECUTABLE_SERIALIZATION_SUFFIXES)
+    )

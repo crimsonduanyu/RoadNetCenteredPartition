@@ -22,6 +22,7 @@ from roadnet_partition.io.manifests import (
     validate_manifest,
 )
 from roadnet_partition.io.paths import transactional_scope_swap
+from roadnet_partition.io.safe_graph import executable_serialization_files
 from roadnet_partition.pipeline.results import RunContext
 from roadnet_partition.pipeline.stages import (
     STAGE_ORDER,
@@ -234,6 +235,9 @@ def _validate_staging(staging: Path, run_dir: Path, inventory: list[dict[str, An
         path.relative_to(staging).as_posix()
         for path in staging.rglob("*") if path.is_file()
     }
+    pickles = executable_serialization_files(staging)
+    if pickles:
+        raise PublishError(f"published scope contains executable serialization: {pickles}")
     if actual != expected:
         raise PublishError(f"staging allowlist differs: missing={sorted(expected-actual)}, extra={sorted(actual-expected)}")
     source_manifest = json.loads((staging / "source_manifest.json").read_text(encoding="utf-8"))

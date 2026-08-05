@@ -12,6 +12,7 @@ import yaml
 
 from roadnet_partition.cli import build_parser
 from roadnet_partition.io.manifests import MANIFEST_FILENAME, SUCCESS_MARKER, atomic_write_json, load_manifest, validate_manifest
+from roadnet_partition.io.safe_graph import executable_serialization_files
 from roadnet_partition.pipeline import publishing, validation
 from roadnet_partition.pipeline.publishing import PublishError, build_publish_inventory, publish_scope
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
@@ -307,6 +308,37 @@ def test_minimal_export_checksum_manifest_and_no_run_mutation(tmp_path: Path) ->
     for line in (output / "checksums.sha256").read_text(encoding="utf-8").splitlines():
         digest, relative = line.split("  ", 1)
         assert reproduction.sha256_file(output / relative) == digest
+
+
+def test_published_and_exported_bundles_carry_no_executable_serialization(tmp_path: Path) -> None:
+    """AUD-005: a bundle consumer must never be handed a pickle to deserialize."""
+    project, run_dir = complete_run(tmp_path)
+    publish_scope(run_dir, scope="tiny")
+    target = project / "data/processed/tiny"
+    export_reproduction(run_dir, output="minimal-v1", profile="minimal")
+    output = release_output(project, "minimal-v1")
+
+    for bundle in (target, output):
+        assert not executable_serialization_files(bundle)
+        for suffix in (".gpickle", ".pkl", ".pickle"):
+            assert not list(bundle.rglob(f"*{suffix}"))
+
+
+def test_a_pickle_in_a_bundle_is_refused_by_name(tmp_path: Path) -> None:
+    """The guard must fire with its own message, not a generic allowlist diff."""
+    project, run_dir = complete_run(tmp_path)
+    publish_scope(run_dir, scope="tiny")
+    target = project / "data/processed/tiny"
+    export_reproduction(run_dir, output="minimal-v1", profile="minimal")
+    output = release_output(project, "minimal-v1")
+
+    (target / "smuggled.pkl").write_bytes(b"\x80\x05payload")
+    with pytest.raises(PublishError, match="executable serialization"):
+        publishing._validate_staging(target, run_dir, build_publish_inventory(run_dir))
+
+    (output / "smuggled.gpickle").write_bytes(b"\x80\x05payload")
+    with pytest.raises(ExportError, match="executable serialization"):
+        reproduction._validate_release(output)
 
 
 def test_export_profiles_dry_run_privacy_overwrite_and_rollback(tmp_path: Path) -> None:

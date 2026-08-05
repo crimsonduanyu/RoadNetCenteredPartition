@@ -34,6 +34,32 @@ POI input requires longitude, latitude and a category column. The defaults are
 `大地X`, `大地Y`, and `类型1`. Road inputs and CRS declarations are defined in
 `configs/datasets/*.yaml`; the Fifth Ring working CRS is EPSG:32650.
 
+## Preparation relation graph
+
+Preparation writes the segment relation graph as
+`segment_relation_graph_road_poi_order.graph.json.gz`, a deterministic,
+schema-validated gzip+JSON artifact (`SafeGraphArtifactV1`). Partition,
+Evaluation, and the best-partition figure read only this format and refuse
+anything else, a Python pickle included. The manifest records the artifact's
+size, SHA-256, node and edge counts, and a semantic digest over the graph's
+canonical projection, so resume detects a semantically changed graph even when
+the file record looks fresh.
+
+Earlier runs wrote a `.gpickle`. Deserializing a pickle executes whatever the
+file says to execute, so no stage reads that format any more. To reuse a
+pre-migration graph without re-running Preparation, convert it explicitly:
+
+```bash
+roadnet-partition migrate-legacy-graph \
+  --input  outputs/preparation/segment_relation_graph_road_poi_order.gpickle \
+  --output outputs/preparation/segment_relation_graph_road_poi_order.graph.json.gz \
+  --trusted-reason "produced by this project before the safe-artifact migration" \
+  --allow-trusted-legacy-graph-pickle
+```
+
+Without the flag the command refuses. Only point it at a file you produced
+yourself; see `docs/security/safe-graph-artifact-v1.md`.
+
 ## Published stage products
 
 - Partition: a GeoPackage and CSV containing `seg_id`, `cluster_id`, geometry,

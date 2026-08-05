@@ -15,6 +15,7 @@ from roadnet_partition.io.manifests import (
     utc_now,
 )
 from roadnet_partition.io.paths import transactional_scope_swap
+from roadnet_partition.io.safe_graph import executable_serialization_files
 from roadnet_partition.pipeline.publishing import _dirty_git, build_publish_inventory
 from roadnet_partition.pipeline.validation import _markdown, validate_run
 
@@ -267,6 +268,9 @@ def _validate_release(path: Path) -> bool:
     manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1:
         raise ExportError("release manifest schema differs")
+    pickles = executable_serialization_files(path)
+    if pickles:
+        raise ExportError(f"reproduction bundle contains executable serialization: {pickles}")
     checksum_lines = (path / "checksums.sha256").read_text(encoding="utf-8").splitlines()
     for line in checksum_lines:
         digest, relative = line.split("  ", 1)

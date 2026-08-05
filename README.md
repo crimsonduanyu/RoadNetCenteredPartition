@@ -81,6 +81,12 @@ Any mismatch invalidates Preparation and all four dependent stages. Runs with
 an older Preparation manifest lacking this identity perform one intentional
 recomputation on first resume; formal stage artifact formats are unchanged.
 
+Preparation's relation graph is a deterministic, schema-validated gzip+JSON
+artifact (`segment_relation_graph_road_poi_order.graph.json.gz`). Partition,
+Evaluation, and the best-partition figure read only that format; a `.gpickle`
+from an older run is refused, and converting one is an explicit opt-in
+(`roadnet-partition migrate-legacy-graph`). See `docs/data.md`.
+
 Run identity also binds `RuntimeProvenanceV1` and `GitProvenanceV2`. The
 runtime digest records Python/platform, result-affecting distribution versions,
 and available native-library versions. The Git digest records the commit,

@@ -51,6 +51,11 @@ bytes cannot be backfilled from the current machine. They must be recomputed
 before publish/export. This changes manifest/resume eligibility only; formal
 artifact formats and canonical data contracts are unchanged.
 
+Published scopes and reproduction bundles carry no executable serialization:
+publish and export both refuse a `.gpickle`, `.pkl`, or `.pickle` file by name,
+so a bundle consumer is never handed code to deserialize. The Preparation
+relation graph is a schema-validated gzip+JSON artifact; see `docs/data.md`.
+
 Long-lived assets are checksum-managed:
 
 ```bash

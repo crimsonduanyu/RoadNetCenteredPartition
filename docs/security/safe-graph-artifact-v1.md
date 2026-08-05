@@ -195,8 +195,31 @@ digest mismatch. Consumers must fail before writing any output file.
 - Preparation never writes a pickle again, and never silently produces a
   `.pkl` companion.
 - Publication and reproduction bundles must contain zero pickle artifacts.
+  This is enforced in code, not only by convention: `_validate_staging` and
+  `_validate_release` both call `executable_serialization_files` and refuse a
+  `.gpickle`, `.pkl`, or `.pickle` file by name before the bundle is sealed.
 
-## 5. Non-goals for this batch
+## 5. Measured cost
+
+Synthetic graphs matching the real contract and density (3.86 edges/node),
+one process per size, warm-up write+read then 5 timed runs, on the project
+environment. `deterministic`, `order-independent`, and `round-trip digest`
+were true at every size.
+
+| Nodes | Edges | Bytes | Write median / p95 (s) | Read+validate median / p95 (s) | Peak RSS (MiB) |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 3,862 | 241,390 | 0.108 / 0.111 | 0.163 / 0.170 | 68.4 |
+| 10,000 | 38,622 | 2,403,614 | 1.233 / 1.297 | 1.976 / 2.005 | 312.9 |
+| 59,096 | 228,243 | 14,200,577 | 7.688 / 7.751 | 12.197 / 12.410 | 1,557.4 |
+| 100,000 | 386,224 | 24,030,786 | 13.198 / 13.435 | 20.865 / 21.385 | 2,595.5 |
+
+Cost is linear in graph size (~240 bytes/node across all four sizes). At the
+production size (59,096 nodes) Preparation pays ~7.7 s to write once and each
+consumer ~12.2 s to read *and fully validate* — a one-off cost against stage
+runtimes measured in minutes. The read figure includes schema validation and
+digest recomputation, work the pickle path did not do at all.
+
+## 6. Non-goals for this batch
 
 Batch R5.1 does not implement R5.2, R6.1, or figure boundary selection, and
 does not change graph structure, graph attributes, the Partition algorithm, or
