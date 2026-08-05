@@ -52,9 +52,13 @@ before publish/export. This changes manifest/resume eligibility only; formal
 artifact formats and canonical data contracts are unchanged.
 
 Published scopes and reproduction bundles carry no executable serialization:
-publish and export both refuse a `.gpickle`, `.pkl`, or `.pickle` file by name,
-so a bundle consumer is never handed code to deserialize. The Preparation
-relation graph is a schema-validated gzip+JSON artifact; see `docs/data.md`.
+publish and export refuse a `.gpickle`, `.pkl`, or `.pickle` file by name, and
+refuse a run whose manifest declares one before the staging directory or
+release root is created — so a refused run leaves no partial bundle behind and
+a bundle consumer is never handed code to deserialize. The Preparation relation
+graph is a schema-validated gzip+JSON artifact (`SafeGraphArtifactV1`), the only
+supported graph format; there is no command that converts a legacy pickle. A
+pre-migration run must re-run Preparation. See `docs/data.md`.
 
 Long-lived assets are checksum-managed:
 

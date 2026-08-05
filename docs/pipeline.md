@@ -51,6 +51,14 @@ invalidation/recomputation, and publish/export reject incomplete provenance.
 Standalone commands are available for `partition`, `demand`, `supply`, and
 `tte`; each requires its split YAML configuration.
 
+Preparation's relation graph travels between stages as `SafeGraphArtifactV1`
+(`.graph.json.gz`), the only supported graph interchange format. Partition and
+Evaluation refuse a `.gpickle`, `.pkl`, or `.pickle` input by name before they
+create an output directory, and a manifest that declares one is refused before
+resume, publish, or export touches anything — so a legacy run leaves no partial
+output, marker, or bundle. Nothing converts a legacy artifact; re-run
+Preparation. See `docs/data.md`.
+
 Pipeline and standalone Supply use the same file adapter for Demand's
 `orders_region_assigned.csv.gz`. Textual `order_id`/`driver_id` values are not
 coerced to integers, so legacy numeric identifiers remain accepted as text and
