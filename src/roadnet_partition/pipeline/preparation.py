@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 import math
 from pathlib import Path
-import pickle
 import shutil
 from typing import Any
 
@@ -34,6 +33,14 @@ from roadnet_partition.io.geospatial import (
     validate_boundary_polygon,
 )
 from roadnet_partition.io.manifests import atomic_write_json, file_record, input_fingerprint
+from roadnet_partition.io.safe_graph import (
+    ARTIFACT_SUFFIX,
+    GraphArtifactMeta,
+    SafeGraphArtifactError,
+    artifact_record,
+    read_safe_graph_with_meta,
+    write_safe_graph,
+)
 from roadnet_partition.zoning.algorithms.leiden import run_leiden
 
 
@@ -47,10 +54,11 @@ OUTPUT_NAMES = {
     "order_od_pairs": "segment_order_od_pairs.csv",
     "hourly_od": "segment_order_od_hourly.csv",
     "relation_edges": "segment_relation_edges_road_poi_order.csv",
-    "graph": "segment_relation_graph_road_poi_order.gpickle",
+    "graph": f"segment_relation_graph_road_poi_order{ARTIFACT_SUFFIX}",
     "baseline_leiden": "segment_clusters_road_poi_order_leiden_res0p6.gpkg",
 }
-PREPARATION_MANIFEST_SCHEMA_VERSION = 2
+GRAPH_OUTPUT_NAME = "graph"
+PREPARATION_MANIFEST_SCHEMA_VERSION = 3
 
 
 class PreparationIdentityError(ValueError):
@@ -168,7 +176,7 @@ def inspect_resume(
                     else:
                         changed = [
                             name for name, path in expected.items()
-                            if recorded.get(name) != file_record(path)
+                            if recorded.get(name) != output_record(name, path)
                         ]
                         allowed = {"manifest.json", *(path.name for path in expected.values())}
                         unexpected = sorted(path.name for path in output_dir.iterdir() if path.name not in allowed)
@@ -209,6 +217,24 @@ def check_raw(config_path: Path, project_root: Path) -> dict[str, dict[str, Any]
 
 def output_paths(output_dir: Path) -> dict[str, Path]:
     return {name: output_dir / filename for name, filename in OUTPUT_NAMES.items()}
+
+
+def output_record(name: str, path: Path, *, meta: GraphArtifactMeta | None = None) -> dict[str, Any] | None:
+    """Manifest record for one Preparation output.
+
+    The relation graph additionally carries its ``SafeGraphArtifactV1``
+    structure fields. ``None`` means the artifact on disk is not a readable
+    safe graph, which must never be reused.
+    """
+
+    if name != GRAPH_OUTPUT_NAME:
+        return file_record(path)
+    if meta is None:
+        try:
+            _, meta = read_safe_graph_with_meta(path)
+        except SafeGraphArtifactError:
+            return None
+    return artifact_record(path, meta)
 
 
 def _string(value: Any) -> str | None:
@@ -388,7 +414,7 @@ def _cosine(left: np.ndarray, right: np.ndarray) -> float:
     return 0.0 if denominator == 0 else float(np.dot(left, right) / denominator)
 
 
-def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordinary: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame, poi_features: pd.DataFrame | None = None, order_features: pd.DataFrame | None = None) -> nx.Graph:
+def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordinary: gpd.GeoDataFrame, connectors: gpd.GeoDataFrame, poi_features: pd.DataFrame | None = None, order_features: pd.DataFrame | None = None) -> tuple[nx.Graph, GraphArtifactMeta]:
     ordinary = ordinary.copy()
     ordinary["bearing"] = ordinary.geometry.map(compute_bearing)
     records = ordinary.drop(columns="geometry").to_dict("records")
@@ -473,9 +499,7 @@ def _build_relation_graph(config: dict[str, Any], paths: dict[str, Path], ordina
     for record in relation_edges.to_dict("records"):
         left, right = record.pop("seg_id_a"), record.pop("seg_id_b")
         graph.add_edge(left, right, **record)
-    with paths["graph"].open("wb") as handle:
-        pickle.dump(graph, handle)
-    return graph
+    return graph, write_safe_graph(graph, paths["graph"])
 
 
 def run(
@@ -508,7 +532,7 @@ def run(
     connectors = edges.loc[edges["segment_role"] == "connector"].copy()
     poi_features = _build_poi_features(config, paths, ordinary)
     order_features = _build_order_features(config, paths, ordinary)
-    graph = _build_relation_graph(config, paths, ordinary, connectors, poi_features, order_features)
+    graph, graph_artifact = _build_relation_graph(config, paths, ordinary, connectors, poi_features, order_features)
     baseline = run_leiden(graph, {"clustering": config["baseline"]})
     clusters = ordinary.copy()
     clusters["cluster_id"] = clusters["seg_id"].map(baseline)
@@ -519,7 +543,10 @@ def run(
         "identity": inspection["current_identity"],
         "config": inspection["current_identity"]["config"],
         "inputs": inspection["current_identity"]["inputs"],
-        "outputs": {name: file_record(path) for name, path in paths.items()},
+        "outputs": {
+            name: output_record(name, path, meta=graph_artifact if name == GRAPH_OUTPUT_NAME else None)
+            for name, path in paths.items()
+        },
     })
     print("preparation: complete", flush=True)
     return paths

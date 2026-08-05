@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from contextlib import redirect_stdout
+import gzip
 import io
 from pathlib import Path
-import shutil
 
 import geopandas as gpd
 import networkx as nx
@@ -12,6 +12,14 @@ import pytest
 import yaml
 
 from roadnet_partition.io.manifests import atomic_write_json, file_record, input_fingerprint, load_manifest, validate_manifest
+from roadnet_partition.io.safe_graph import (
+    ARTIFACT_SUFFIX,
+    SCHEMA_NAME,
+    SCHEMA_VERSION,
+    read_safe_graph,
+    semantic_digest,
+    write_safe_graph,
+)
 from roadnet_partition.pipeline import preparation
 from roadnet_partition.pipeline.preparation import PreparationIdentityError
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
@@ -41,19 +49,30 @@ def _write_identity_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     return project, config, tmp_path / "run/preparation"
 
 
+def _tiny_graph() -> nx.Graph:
+    graph = nx.Graph()
+    graph.add_node("s1", length=1.0)
+    graph.add_node("s2", length=2.0)
+    graph.add_edge("s1", "s2", weight=1.0)
+    return graph
+
+
 def _complete_identity_manifest(project: Path, config: Path, output: Path) -> dict:
     _, identity = preparation.preparation_identity(config, project)
     output.mkdir(parents=True)
     paths = preparation.output_paths(output)
     for name, path in paths.items():
-        path.write_bytes(f"output-{name}".encode())
+        if name == preparation.GRAPH_OUTPUT_NAME:
+            write_safe_graph(_tiny_graph(), path)
+        else:
+            path.write_bytes(f"output-{name}".encode())
     manifest = {
         "schema_version": preparation.PREPARATION_MANIFEST_SCHEMA_VERSION,
         "status": "complete",
         "identity": identity,
         "config": identity["config"],
         "inputs": identity["inputs"],
-        "outputs": {name: file_record(path) for name, path in paths.items()},
+        "outputs": {name: preparation.output_record(name, path) for name, path in paths.items()},
     }
     atomic_write_json(output / "manifest.json", manifest)
     return manifest
@@ -220,6 +239,53 @@ def test_output_and_legacy_state_never_reuses(change: str, reason: str, tmp_path
     assert decision["reason"].startswith(reason)
 
 
+def test_graph_output_record_carries_safe_artifact_fields(tmp_path: Path) -> None:
+    project, config, output = _write_identity_fixture(tmp_path)
+    manifest = _complete_identity_manifest(project, config, output)
+
+    record = manifest["outputs"][preparation.GRAPH_OUTPUT_NAME]
+
+    assert record["format"] == SCHEMA_NAME
+    assert record["schema_version"] == SCHEMA_VERSION
+    assert record["graph_type"] == "networkx.Graph"
+    assert record["node_id_type"] == "str"
+    assert (record["node_count"], record["edge_count"]) == (2, 1)
+    assert record["semantic_digest"] == semantic_digest(_tiny_graph())
+    assert record["size"] == preparation.output_paths(output)["graph"].stat().st_size
+    assert preparation.inspect_resume(config, project, output)["reusable"] is True
+
+
+def test_semantically_changed_graph_never_reuses_even_with_a_refreshed_file_record(tmp_path: Path) -> None:
+    project, config, output = _write_identity_fixture(tmp_path)
+    manifest = _complete_identity_manifest(project, config, output)
+    path = preparation.output_paths(output)["graph"]
+    replacement = _tiny_graph()
+    replacement.edges["s1", "s2"]["weight"] = 2.0
+    write_safe_graph(replacement, path)
+    manifest["outputs"]["graph"] = {**manifest["outputs"]["graph"], **file_record(path)}
+    atomic_write_json(output / "manifest.json", manifest)
+
+    decision = preparation.inspect_resume(config, project, output)
+
+    assert decision["reusable"] is False
+    assert decision["reason"] == "preparation_output_changed: graph"
+
+
+def test_unreadable_graph_artifact_never_reuses(tmp_path: Path) -> None:
+    project, config, output = _write_identity_fixture(tmp_path)
+    manifest = _complete_identity_manifest(project, config, output)
+    path = preparation.output_paths(output)["graph"]
+    path.write_bytes(gzip.compress(b'{"schema": "SafeGraphArtifactV1"}'))
+    manifest["outputs"]["graph"] = {**manifest["outputs"]["graph"], **file_record(path)}
+    atomic_write_json(output / "manifest.json", manifest)
+
+    decision = preparation.inspect_resume(config, project, output)
+
+    assert preparation.output_record("graph", path) is None
+    assert decision["reusable"] is False
+    assert decision["reason"] == "preparation_output_changed: graph"
+
+
 def test_missing_or_malformed_preparation_manifest_never_reuses(tmp_path: Path) -> None:
     project, config, output = _write_identity_fixture(tmp_path)
     _complete_identity_manifest(project, config, output)
@@ -228,6 +294,27 @@ def test_missing_or_malformed_preparation_manifest_never_reuses(tmp_path: Path) 
     assert preparation.inspect_resume(config, project, output)["reason"] == "preparation_manifest_incomplete"
     manifest.write_text("[\n", encoding="utf-8")
     assert preparation.inspect_resume(config, project, output)["reason"] == "preparation_manifest_incomplete"
+
+
+def test_preparation_run_emits_only_a_safe_graph_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    pipeline_path = write_full_fixture(project)
+    config_path = _add_preparation_config(project, pipeline_path)
+    _fake_preparation_algorithms(monkeypatch)
+    output = tmp_path / "preparation"
+
+    paths = preparation.run(config_path, project, output)
+
+    assert paths["graph"].name == f"segment_relation_graph_road_poi_order{ARTIFACT_SUFFIX}"
+    assert paths["graph"].read_bytes()[:2] == b"\x1f\x8b"
+    assert not list(output.rglob("*.gpickle")) and not list(output.rglob("*.pkl"))
+    manifest = yaml.safe_load((output / "manifest.json").read_text(encoding="utf-8"))
+    record = manifest["outputs"]["graph"]
+    assert record["format"] == SCHEMA_NAME
+    assert record["semantic_digest"] == semantic_digest(read_safe_graph(paths["graph"]))
+    assert preparation.inspect_resume(config_path, project, output)["reusable"] is True
 
 
 def test_recomputation_removes_unexpected_owned_artifact(
@@ -297,11 +384,8 @@ def _fake_preparation_algorithms(monkeypatch: pytest.MonkeyPatch) -> None:
         relations = pd.read_csv(config["inputs"]["zoning_orders"].parent / "relations.csv")
         relations["base_weight"] = 1.0
         relations.to_csv(paths["relation_edges"], index=False)
-        source = config["inputs"]["raw_edges"].parent / "graph.gpickle"
-        shutil.copy2(source, paths["graph"])
-        with source.open("rb") as handle:
-            import pickle
-            return pickle.load(handle)
+        source = read_safe_graph(config["inputs"]["raw_edges"].parent / f"graph{ARTIFACT_SUFFIX}")
+        return source, write_safe_graph(source, paths["graph"])
 
     monkeypatch.setattr(preparation, "_preprocess_roads", roads)
     monkeypatch.setattr(preparation, "_build_poi_features", poi)

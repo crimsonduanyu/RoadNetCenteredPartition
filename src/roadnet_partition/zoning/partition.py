@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pickle
 from typing import Any
 
 import geopandas as gpd
@@ -12,6 +11,7 @@ import yaml
 
 from roadnet_partition.config import ResolvedStageConfig, stable_value
 from roadnet_partition.io.geospatial import PROJECT_ROOT, display_path, project_path
+from roadnet_partition.io.safe_graph import read_safe_graph
 from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 from roadnet_partition.zoning.contracts import save_partition
 from roadnet_partition.zoning.regularized.objective import EPS, ObjectiveParams, build_context
@@ -83,8 +83,7 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("search.grid.merge_split_enabled must be a non-empty list when provided.")
 
 def load_graph(path: Path) -> nx.Graph:
-    with path.open("rb") as handle:
-        graph = pickle.load(handle)
+    graph = read_safe_graph(path)
     if any(not isinstance(node, str) for node in graph.nodes):
         graph = nx.relabel_nodes(graph, {node: str(node) for node in graph.nodes})
     return graph

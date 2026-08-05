@@ -4,7 +4,6 @@ from copy import deepcopy
 import json
 import io
 from pathlib import Path
-import pickle
 import shutil
 import subprocess
 
@@ -20,6 +19,7 @@ from roadnet_partition.downstream.supply import load_orders
 from roadnet_partition.io.manifests import SUCCESS_MARKER, load_manifest, sha256_file
 from roadnet_partition.io import manifests as manifests_module
 from roadnet_partition.io.manifests import MANIFEST_FILENAME, atomic_write_json, validate_manifest
+from roadnet_partition.io.safe_graph import ARTIFACT_SUFFIX, write_safe_graph
 from roadnet_partition.pipeline import runner as runner_module
 from roadnet_partition.pipeline import stages as stages_module
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
@@ -54,8 +54,7 @@ def write_full_fixture(project: Path) -> Path:
     root.mkdir(parents=True)
     graph = nx.Graph()
     graph.add_edge("s1", "s2", weight=1.0, continuity_weight=1.0, connector_weight=1.0)
-    with (root / "graph.gpickle").open("wb") as handle:
-        pickle.dump(graph, handle)
+    write_safe_graph(graph, root / f"graph{ARTIFACT_SUFFIX}")
     demand_partition.to_file(root / "segments.gpkg", driver="GPKG")
     demand_partition.to_file(root / "baseline.gpkg", driver="GPKG")
     pd.DataFrame({"seg_id": ["s1", "s2"], "order_total": [1, 1]}).to_csv(root / "orders.csv", index=False)
@@ -71,7 +70,7 @@ def write_full_fixture(project: Path) -> Path:
             "regularized": {
                 "initialization": "leiden",
                 "inputs": {
-                    "graph": "../../inputs/partition/graph.gpickle",
+                    "graph": f"../../inputs/partition/graph{ARTIFACT_SUFFIX}",
                     "relation_edges": "../../inputs/partition/relations.csv",
                     "classified_edges": "../../inputs/partition/segments.gpkg",
                     "boundary": "../../inputs/partition/segments.gpkg",
