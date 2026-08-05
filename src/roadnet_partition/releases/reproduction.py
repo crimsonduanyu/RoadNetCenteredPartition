@@ -15,7 +15,13 @@ from roadnet_partition.io.manifests import (
     utc_now,
 )
 from roadnet_partition.io.paths import transactional_scope_swap
-from roadnet_partition.io.safe_graph import executable_serialization_files
+from roadnet_partition.io.serialization_policy import (
+    ExecutableSerializationRefused,
+    LEGACY_UNSUPPORTED_MESSAGE,
+    is_legacy_evidence_name,
+    legacy_evidence_files,
+    reject_legacy_declarations,
+)
 from roadnet_partition.pipeline.publishing import _dirty_git, build_publish_inventory
 from roadnet_partition.pipeline.validation import _markdown, validate_run
 
@@ -264,11 +270,38 @@ def _write_payload(
     atomic_write_text(staging / "checksums.sha256", checksums)
 
 
+def _reject_legacy_selection(
+    manifest: Mapping[str, Any], run_dir: Path, selected: list[dict[str, Any]]
+) -> None:
+    """Refuse a legacy graph before the release root or bundle is created.
+
+    ``_validate_release`` runs only after the whole bundle has been written, so
+    a refusal there would still have materialised the pickle in the release
+    tree. Checking the selection and the run's declarations here keeps the
+    filesystem untouched. Matching is by name; no selected file is opened.
+    """
+
+    offenders = sorted(
+        item["logical_key"]
+        for item in selected
+        if is_legacy_evidence_name(Path(item["release_path"]).name)
+        or is_legacy_evidence_name(Path(item["run_source_path"]).name)
+    )
+    if offenders:
+        raise ExportError(
+            f"run declares legacy executable graph serialization: {offenders}. {LEGACY_UNSUPPORTED_MESSAGE}"
+        )
+    try:
+        reject_legacy_declarations(manifest, subject=f"{run_dir}")
+    except ExecutableSerializationRefused as error:
+        raise ExportError(str(error)) from error
+
+
 def _validate_release(path: Path) -> bool:
     manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1:
         raise ExportError("release manifest schema differs")
-    pickles = executable_serialization_files(path)
+    pickles = legacy_evidence_files(path)
     if pickles:
         raise ExportError(f"reproduction bundle contains executable serialization: {pickles}")
     checksum_lines = (path / "checksums.sha256").read_text(encoding="utf-8").splitlines()
@@ -307,6 +340,7 @@ def export_reproduction(
         raise FileExistsError(f"release already exists; use --overwrite: {destination}")
     git = _dirty_git(manifest, project_root, allow_dirty)
     selected = _selected_stage_files(run_dir, profile, str(manifest["scope"]))
+    _reject_legacy_selection(manifest, run_dir, selected)
     blocked = sorted({item["classification"] for item in selected} & _PRIVATE)
     result = {
         "schema_version": 1,

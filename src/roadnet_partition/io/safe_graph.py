@@ -31,24 +31,20 @@ import zlib
 import networkx as nx
 
 from roadnet_partition.io.manifests import file_record
+from roadnet_partition.io.serialization_policy import (
+    LEGACY_UNSUPPORTED_MESSAGE,
+    SUPPORTED_GRAPH_FORMAT,
+    is_executable_serialization_name,
+)
 
 
-SCHEMA_NAME = "SafeGraphArtifactV1"
+SCHEMA_NAME = SUPPORTED_GRAPH_FORMAT
 SCHEMA_VERSION = 1
 ARTIFACT_SUFFIX = ".graph.json.gz"
 GRAPH_TYPE = "networkx.Graph"
 GZIP_COMPRESS_LEVEL = 6
 GZIP_MAGIC = b"\x1f\x8b"
 PICKLE_MAGIC = b"\x80"
-
-#: Suffixes that make a file executable-on-read. Nothing here is ever loaded.
-EXECUTABLE_SERIALIZATION_SUFFIXES = (".gpickle", ".pkl", ".pickle")
-
-#: Single wording for every legacy refusal, so operators get one instruction.
-LEGACY_UNSUPPORTED_MESSAGE = (
-    "Legacy executable graph serialization is no longer supported. "
-    f"Regenerate the graph with Preparation using {SCHEMA_NAME}."
-)
 
 _SCALAR_TAGS = ("bool", "int", "float", "str")
 _NODE_ID_TAGS = ("int", "str")
@@ -274,16 +270,6 @@ def write_safe_graph(graph: nx.Graph, path: str | Path) -> GraphArtifactMeta:
         edge_count=payload["edge_count"],
         semantic_digest=digest,
     )
-
-
-def is_executable_serialization_name(name: str) -> bool:
-    """Whether ``name`` is a filename that would be executable on read.
-
-    Name-only: the caller must be able to refuse a legacy artifact without
-    opening it.
-    """
-
-    return name.endswith(EXECUTABLE_SERIALIZATION_SUFFIXES)
 
 
 def reject_legacy_graph_path(path: str | Path) -> None:
@@ -554,20 +540,3 @@ def artifact_record(path: str | Path, meta: GraphArtifactMeta) -> dict[str, Any]
     """Manifest record combining file integrity and graph structure fields."""
 
     return {**file_record(path), **meta.as_dict()}
-
-
-def executable_serialization_files(root: str | Path) -> list[str]:
-    """Relative paths under ``root`` that are Python pickles.
-
-    Publication and reproduction bundles must never ship executable
-    serialization: a downstream reader that trusts the bundle would be handed
-    arbitrary code. Matching is by name only — nothing here is ever opened.
-    Callers raise their own error type on a non-empty result.
-    """
-
-    base = Path(root)
-    return sorted(
-        path.relative_to(base).as_posix()
-        for path in base.rglob("*")
-        if path.is_file() and is_executable_serialization_name(path.name)
-    )

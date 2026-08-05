@@ -41,6 +41,7 @@ from roadnet_partition.io.safe_graph import (
     read_safe_graph_with_meta,
     write_safe_graph,
 )
+from roadnet_partition.io.serialization_policy import reject_legacy_declarations
 from roadnet_partition.zoning.algorithms.leiden import run_leiden
 
 
@@ -157,6 +158,11 @@ def inspect_resume(
         reason = "preparation_manifest_incomplete"
         stored = None
     else:
+        # A Preparation manifest that still declares a pickle graph is refused
+        # outright rather than downgraded to a recompute: the run directory
+        # holds executable serialization, and no later step may treat it as an
+        # ordinary stale output. Nothing the manifest names is opened.
+        reject_legacy_declarations(manifest, subject=f"{manifest_path}")
         stored = manifest.get("identity")
         if manifest.get("schema_version") == 1 or stored is None:
             reason = "preparation_identity_missing_legacy_manifest"

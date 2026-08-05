@@ -22,6 +22,12 @@ import yaml
 from roadnet_partition import __version__
 from roadnet_partition.config import config_fingerprint as calculate_config_fingerprint, stable_value
 from roadnet_partition.io.paths import assert_owned_path, assert_safe_run_dir
+from roadnet_partition.io.serialization_policy import (
+    ExecutableSerializationRefused,
+    LEGACY_UNSUPPORTED_MESSAGE,
+    is_legacy_evidence_name,
+    reject_legacy_declarations,
+)
 from roadnet_partition.pipeline.results import ResumeDecision, RunContext, StageResult, StageStatus
 
 
@@ -119,6 +125,12 @@ def atomic_write_json(
 ) -> None:
     destination = Path(path)
     payload = stable_value(value)
+    if validator is not None:
+        # Validate before writing as well as after. The round-trip check below
+        # is what proves the bytes on disk are valid, but a rejected payload
+        # must not reach the filesystem at all — a refused manifest that is
+        # nevertheless written is a manifest some later reader can trip over.
+        validator(payload)
     _atomic_write(destination, json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     loaded = json.loads(destination.read_text(encoding="utf-8"))
     if validator is not None:
@@ -368,6 +380,10 @@ def collect_git_info(project_root: str | Path) -> dict[str, Any]:
 
 def file_record(path: str | Path) -> dict[str, Any]:
     source = Path(path).resolve()
+    if is_legacy_evidence_name(source.name):
+        # Refuse on the name, before stat/hash open the file: no manifest may
+        # record an artifact whose only supported reader is a deserializer.
+        raise ExecutableSerializationRefused(f"{source}: {LEGACY_UNSUPPORTED_MESSAGE}")
     return {"path": source.as_posix(), "size": source.stat().st_size, "sha256": sha256_file(source)}
 
 
@@ -594,6 +610,10 @@ def validate_manifest(manifest: Any) -> None:
     for stage, record in manifest["stages"].items():
         if record.get("status") not in {status.value for status in StageStatus}:
             raise ValueError(f"invalid status for stage {stage!r}")
+    # Both the reader and every writer go through here, so a manifest that
+    # declares a legacy graph can neither be produced nor resumed from. The
+    # declaration alone is enough; nothing it points at is opened.
+    reject_legacy_declarations(manifest, subject="run manifest")
 
 
 def new_manifest(

@@ -12,7 +12,7 @@ import yaml
 
 from roadnet_partition.cli import build_parser
 from roadnet_partition.io.manifests import MANIFEST_FILENAME, SUCCESS_MARKER, atomic_write_json, load_manifest, validate_manifest
-from roadnet_partition.io.safe_graph import executable_serialization_files
+from roadnet_partition.io.serialization_policy import executable_serialization_files
 from roadnet_partition.pipeline import publishing, validation
 from roadnet_partition.pipeline.publishing import PublishError, build_publish_inventory, publish_scope
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline

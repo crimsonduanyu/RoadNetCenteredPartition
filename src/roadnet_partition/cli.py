@@ -15,6 +15,7 @@ from roadnet_partition.config import (
 )
 from roadnet_partition.io.paths import UnsafePathError
 from roadnet_partition.io.safe_graph import SafeGraphArtifactError
+from roadnet_partition.io.serialization_policy import ExecutableSerializationRefused
 from roadnet_partition.pipeline.publishing import PublishError
 from roadnet_partition.pipeline.validation import ValidationError
 from roadnet_partition.pipeline.stages import (
@@ -221,7 +222,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ConfigError, UnsafePathError) as error:
         print(f"configuration error: {error}", file=sys.stderr)
         return 2
-    except SafeGraphArtifactError as error:
+    except (SafeGraphArtifactError, ExecutableSerializationRefused) as error:
         print(f"refused: {error}", file=sys.stderr)
         return 2
     except StageContractError as error:

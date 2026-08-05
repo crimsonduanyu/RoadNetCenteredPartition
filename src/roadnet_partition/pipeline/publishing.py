@@ -22,7 +22,13 @@ from roadnet_partition.io.manifests import (
     validate_manifest,
 )
 from roadnet_partition.io.paths import transactional_scope_swap
-from roadnet_partition.io.safe_graph import executable_serialization_files
+from roadnet_partition.io.serialization_policy import (
+    ExecutableSerializationRefused,
+    LEGACY_UNSUPPORTED_MESSAGE,
+    is_legacy_evidence_name,
+    legacy_evidence_files,
+    reject_legacy_declarations,
+)
 from roadnet_partition.pipeline.results import RunContext
 from roadnet_partition.pipeline.stages import (
     STAGE_ORDER,
@@ -229,13 +235,39 @@ def _contract_config(stage: str, config, manifest: Mapping[str, Any]):
         raise PublishError(str(error)) from error
 
 
+def _reject_legacy_inventory(run_dir: Path, inventory: list[dict[str, Any]]) -> None:
+    """Refuse a legacy graph before the staging directory exists.
+
+    ``_validate_staging`` is the last line of defence, but it only runs once
+    every file has already been copied. Publication must not create or touch
+    anything on behalf of a run that declares executable serialization, so the
+    inventory and the run's own declarations are checked here, by name, while
+    nothing has been written yet.
+    """
+
+    offenders = sorted(
+        item["logical_key"]
+        for item in inventory
+        if is_legacy_evidence_name(Path(item["run_source_path"]).name)
+        or is_legacy_evidence_name(Path(item["formal_relative_path"]).name)
+    )
+    if offenders:
+        raise PublishError(
+            f"run declares legacy executable graph serialization: {offenders}. {LEGACY_UNSUPPORTED_MESSAGE}"
+        )
+    try:
+        reject_legacy_declarations(load_manifest(run_dir), subject=f"{run_dir}")
+    except ExecutableSerializationRefused as error:
+        raise PublishError(str(error)) from error
+
+
 def _validate_staging(staging: Path, run_dir: Path, inventory: list[dict[str, Any]]) -> bool:
     expected = {item["formal_relative_path"] for item in inventory} | {"source_manifest.json"}
     actual = {
         path.relative_to(staging).as_posix()
         for path in staging.rglob("*") if path.is_file()
     }
-    pickles = executable_serialization_files(staging)
+    pickles = legacy_evidence_files(staging)
     if pickles:
         raise PublishError(f"published scope contains executable serialization: {pickles}")
     if actual != expected:
@@ -365,6 +397,7 @@ def publish_scope(
         raise FileExistsError(f"published scope already exists; use --overwrite: {target}")
     git = _dirty_git(manifest, context.project_root, allow_dirty)
     inventory = build_publish_inventory(run_dir)
+    _reject_legacy_inventory(run_dir, inventory)
     total_size = sum(item["size"] for item in inventory)
     transaction = {
         "mode": "overwrite" if target.exists() else "create",
