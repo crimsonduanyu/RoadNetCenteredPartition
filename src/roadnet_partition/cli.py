@@ -14,6 +14,7 @@ from roadnet_partition.config import (
     resolve_tte_config,
 )
 from roadnet_partition.io.paths import UnsafePathError
+from roadnet_partition.io.trusted_legacy_graph_pickle import TrustedLegacyGraphPickleError
 from roadnet_partition.pipeline.publishing import PublishError
 from roadnet_partition.pipeline.validation import ValidationError
 from roadnet_partition.pipeline.stages import (
@@ -31,6 +32,8 @@ RESOLVERS = {
     "supply": resolve_supply_config,
     "tte": resolve_tte_config,
 }
+
+TRUSTED_LEGACY_FLAG = "--allow-trusted-legacy-graph-pickle"
 
 
 def _add_run_options(parser: argparse.ArgumentParser) -> None:
@@ -51,7 +54,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(
         dest="command",
-        metavar="{check-raw,run,validate,publish,export-reproduction,partition,demand,supply,tte}",
+        metavar=(
+            "{check-raw,run,validate,publish,export-reproduction,"
+            "migrate-legacy-graph,partition,demand,supply,tte}"
+        ),
     )
     check_parser = subparsers.add_parser("check-raw", help="Check required raw files and schemas without generating outputs.")
     check_parser.add_argument("--config", type=Path, required=True, help="Full pipeline YAML configuration.")
@@ -99,6 +105,28 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--allow-dirty", action="store_true")
     export_parser.add_argument("--profile", choices=("minimal", "full"), default="minimal")
     export_parser.add_argument("--dry-run", action="store_true")
+    migrate_parser = subparsers.add_parser(
+        "migrate-legacy-graph",
+        help="Convert a pre-migration .gpickle relation graph into the safe artifact format.",
+        description=(
+            "Reads a legacy pickle relation graph and writes the equivalent "
+            "SafeGraphArtifactV1 artifact. Loading a pickle executes code, so this "
+            "is refused unless you explicitly opt in for a file you produced yourself. "
+            "No pipeline stage reads the legacy format."
+        ),
+    )
+    migrate_parser.add_argument("--input", type=Path, required=True, help="Legacy .gpickle relation graph.")
+    migrate_parser.add_argument("--output", type=Path, required=True, help="Destination safe graph artifact.")
+    migrate_parser.add_argument(
+        "--trusted-reason",
+        required=True,
+        help="Why this executable serialization is trusted; recorded in the conversion provenance.",
+    )
+    migrate_parser.add_argument(
+        TRUSTED_LEGACY_FLAG,
+        action="store_true",
+        help="Opt in to pickle deserialization for this one trusted local file.",
+    )
     for name in ("partition", "demand", "supply", "tte"):
         stage_parser = subparsers.add_parser(name, help=f"Run the {name} stage only.")
         _add_run_options(stage_parser)
@@ -182,6 +210,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"blocked classifications: {result['blocked_classifications']}", file=sys.stderr)
                 print(result["blocking_reason"], file=sys.stderr)
             return 0
+        if parsed.command == "migrate-legacy-graph":
+            import json
+
+            from roadnet_partition.io.trusted_legacy_graph_pickle import (
+                convert_trusted_legacy_graph,
+                declare_legacy_source,
+            )
+
+            declaration = declare_legacy_source(parsed.input, parsed.trusted_reason)
+            meta, provenance = convert_trusted_legacy_graph(
+                declaration,
+                parsed.output,
+                allow_trusted_legacy_graph_pickle=parsed.allow_trusted_legacy_graph_pickle,
+            )
+            record_path = parsed.output.with_name(f"{parsed.output.name}.legacy-provenance.json")
+            record_path.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(
+                f"migrate-legacy-graph: {parsed.output} "
+                f"({meta.node_count} nodes, {meta.edge_count} edges, digest {meta.semantic_digest})"
+            )
+            print(f"provenance: {record_path}")
+            return 0
         if parsed.command == "run":
             from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
 
@@ -219,6 +269,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except (ConfigError, UnsafePathError) as error:
         print(f"configuration error: {error}", file=sys.stderr)
+        return 2
+    except TrustedLegacyGraphPickleError as error:
+        print(f"refused: {error}", file=sys.stderr)
         return 2
     except StageContractError as error:
         print(str(error), file=sys.stderr)

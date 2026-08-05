@@ -11,6 +11,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = PROJECT_ROOT / "src" / "roadnet_partition"
 ALLOWED_STAGES = {"partition", "demand", "supply", "tte"}
 FORBIDDEN_COMMANDS = {"run", "publish", "validate", "export-reproduction"}
+# One-off operator tools that execute no stage. `migrate-legacy-graph` is the
+# single opt-in door to the pre-AUD-005 pickle format (see Gate E).
+MAINTENANCE_COMMANDS = {"migrate-legacy-graph"}
 
 
 def parse(relative: str) -> ast.Module:
@@ -87,7 +90,7 @@ def test_public_cli_registers_phase6a_stages_and_phase6b_run() -> None:
     )
     registered = set(subparsers.choices)
 
-    assert registered == ALLOWED_STAGES | FORBIDDEN_COMMANDS | {"check-raw"}
+    assert registered == ALLOWED_STAGES | FORBIDDEN_COMMANDS | MAINTENANCE_COMMANDS | {"check-raw"}
 
 
 def test_stage_executor_has_dispatch_but_no_subprocess_or_stage_sequence() -> None:

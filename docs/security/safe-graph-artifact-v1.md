@@ -170,13 +170,28 @@ digest mismatch. Consumers must fail before writing any output file.
 
 - The old `.gpickle` format remains readable **only** through a single
   dedicated module, `src/roadnet_partition/io/trusted_legacy_graph_pickle.py`.
-  After Gate E it is the only place in `src/` that may call `pickle.load`.
-- That path is unreachable by default. It requires **both** an explicit legacy
-  declaration in the run manifest / configuration **and** the explicit CLI flag
-  `--allow-trusted-legacy-graph-pickle`.
-- When used it emits a prominent warning that the input is executable
-  serialization from a trusted local source, and records
-  `legacy_executable_serialization: true` in the run provenance.
+  It is the only place in `src/` that may call `pickle.load`.
+- That path is unreachable by default. It requires **both** an explicit
+  `LegacyGraphDeclaration` built at the call site — naming the `.gpickle`
+  source and a recorded reason for trusting it — **and** the explicit CLI flag
+  `--allow-trusted-legacy-graph-pickle`. Neither gate alone opens the door, and
+  no pipeline subcommand exposes the flag.
+- No stage consumes the legacy format. The only entrypoint is the dedicated
+  `roadnet-partition migrate-legacy-graph` command, which converts a
+  pre-migration pickle into a `SafeGraphArtifactV1` artifact so an operator does
+  not have to re-run Preparation. Conversion is verified by semantic digest, so
+  the graph crosses unchanged.
+- Even with both gates open the read is narrowed: a restricted unpickler
+  resolves only a small graph-shaped allowlist of globals, so a hostile file
+  cannot reach `os.system` or `builtins.eval` through this door. This bounds the
+  blast radius; it does not make an untrusted pickle safe.
+- When used it emits a prominent stderr warning that the input is executable
+  serialization from a trusted local source, and writes
+  `legacy_executable_serialization: true` — with the source digest, the trust
+  reason, and the resulting artifact digest — to a
+  `<artifact>.legacy-provenance.json` record beside the converted artifact.
+  It is deliberately kept out of the run manifest: no run may depend on it, and
+  the digest-sealed runtime provenance record stays untouched.
 - Preparation never writes a pickle again, and never silently produces a
   `.pkl` companion.
 - Publication and reproduction bundles must contain zero pickle artifacts.
