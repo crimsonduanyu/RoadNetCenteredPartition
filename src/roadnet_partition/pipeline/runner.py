@@ -26,14 +26,19 @@ from roadnet_partition.config import (
 )
 from roadnet_partition.io.manifests import (
     MANIFEST_FILENAME,
+    ProvenanceError,
+    RUN_MANIFEST_SCHEMA_VERSION,
     atomic_write_json,
     atomic_write_yaml,
+    collect_git_info,
+    collect_runtime_info,
     evaluate_resume,
     file_record,
     initialize_run,
     input_fingerprint,
     invalidate_from_stage,
     load_manifest,
+    provenance_mismatch_reasons,
     utc_now,
     validate_manifest,
     verify_run_ownership,
@@ -85,7 +90,9 @@ def resolve_pipeline_config(path: str | Path) -> ResolvedPipelineConfig:
         run_root = resolve_path(raw["run"]["root"], base_dir=source.parent)
     except (KeyError, ValueError) as error:
         raise ConfigError(f"{source}: invalid pipeline path: {error}") from error
-    scope = str(raw.get("scope", ""))
+    scope = config_module.validate_output_identifier(
+        raw.get("scope"), source=source, field="pipeline scope",
+    )
     isolation = raw.get("run", {}).get("isolate_stages")
     if not isinstance(isolation, bool):
         raise ConfigError(f"{source}: run.isolate_stages must be boolean")
@@ -100,7 +107,7 @@ def resolve_pipeline_config(path: str | Path) -> ResolvedPipelineConfig:
             raise ConfigError(f"{source}: stages.{stage}.config does not exist: {config_path}")
         resolved = _RESOLVERS[stage](config_path)
         if resolved.scope != scope:
-            raise ConfigError(f"{source}: pipeline scope {scope!r} conflicts with {stage} scope {resolved.scope!r}")
+            raise ConfigError(f"{source}: pipeline scope conflicts with {stage} scope")
         if resolved.project_root != project_root:
             raise ConfigError(f"{source}: pipeline project_root conflicts with {stage} project_root")
         stages[stage] = resolved
@@ -129,11 +136,11 @@ def resolve_pipeline_config(path: str | Path) -> ResolvedPipelineConfig:
     )
 
 
-def default_pipeline_run_id(config: ResolvedPipelineConfig) -> str:
+def default_pipeline_run_id(config: ResolvedPipelineConfig, fingerprint: str | None = None) -> str:
     from datetime import datetime, timezone
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return f"{timestamp}-{config.scope}-full-{config.fingerprint[:8]}"
+    return f"{timestamp}-{config.scope}-full-{(fingerprint or config.fingerprint)[:8]}"
 
 
 def _validate_stage_range(from_stage: str, to_stage: str) -> tuple[int, int]:
@@ -147,19 +154,28 @@ def _validate_stage_range(from_stage: str, to_stage: str) -> tuple[int, int]:
     return start, stop
 
 
-def _external_inputs(config: ResolvedPipelineConfig) -> dict[str, Mapping[str, Any]]:
+def _external_inputs(
+    config: ResolvedPipelineConfig,
+    preparation_inputs: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Mapping[str, Any]]:
     preparation = config.values.get("preparation")
     if preparation:
         from roadnet_partition.pipeline.preparation import input_records, load_config
 
-        records = input_records(load_config(Path(preparation["config"]), config.project_root))
+        records = dict(preparation_inputs) if preparation_inputs is not None else input_records(
+            load_config(Path(preparation["config"]), config.project_root),
+        )
         demand = config.stages["demand"].values["order_pipeline"]["inputs"]
         records.update({
             **{f"demand.orders.{index}": file_record(path) for index, path in enumerate(demand["order_datasets"])},
             "demand.poi": file_record(demand["poi_path"]),
         })
-        distance = config.stages["tte"].values["stage4_tte"]["distance"]
-        records["tte.graphml"] = file_record(distance["graphml_path"])
+        tte = config.stages["tte"].values["stage4_tte"]
+        if tte["inputs"].get("network_distance_path"):
+            records["tte.network_distance"] = file_record(tte["inputs"]["network_distance_path"])
+            records["tte.representative_nodes"] = file_record(tte["inputs"]["representative_nodes_path"])
+        else:
+            records["tte.graphml"] = file_record(tte["distance"]["graphml_path"])
         return records
     records = {f"partition.{name}": record for name, record in collect_stage_inputs("partition", config.stages["partition"]).items()}
     demand = config.stages["demand"].values["order_pipeline"]["inputs"]
@@ -176,6 +192,39 @@ def _external_inputs(config: ResolvedPipelineConfig) -> dict[str, Mapping[str, A
         records["tte.distance.graphml_path"] = file_record(tte["distance"]["graphml_path"])
         records["tte.distance.classified_edges_path"] = file_record(tte["distance"]["classified_edges_path"])
     return records
+
+
+def _pipeline_values(
+    config: ResolvedPipelineConfig,
+    preparation_identity: Mapping[str, Any] | None,
+    runtime: Mapping[str, Any] | None = None,
+    git: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    values = deepcopy(dict(config.values))
+    if preparation_identity is not None:
+        values["preparation"] = {
+            **dict(values["preparation"]),
+            "identity": stable_value(preparation_identity),
+        }
+    if runtime is not None and git is not None:
+        values["provenance"] = {
+            "runtime_provenance_digest": runtime["digest"],
+            "git_provenance_digest": git["digest"],
+        }
+    return values
+
+
+def _pipeline_fingerprint(
+    config: ResolvedPipelineConfig,
+    preparation_identity: Mapping[str, Any] | None,
+    runtime: Mapping[str, Any] | None = None,
+    git: Mapping[str, Any] | None = None,
+) -> str:
+    return config_fingerprint(_pipeline_values(config, preparation_identity, runtime, git))
+
+
+def _without_preparation_inputs(inputs: Mapping[str, Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
+    return {name: record for name, record in inputs.items() if not name.startswith("preparation.")}
 
 
 def _with_preparation_outputs(
@@ -531,6 +580,7 @@ def run_pipeline(
     resume: bool = False,
     overwrite: bool = False,
     isolate_stages: bool | None = None,
+    allow_dirty: bool = False,
 ) -> PipelineResult:
     if resume and overwrite:
         raise RunConflictError("--resume and --overwrite are mutually exclusive")
@@ -538,7 +588,27 @@ def run_pipeline(
     if run_id is not None and (not RUN_ID.fullmatch(run_id) or run_id in {".", ".."}):
         raise ConfigError(f"invalid run ID: {run_id!r}")
     selected_isolation = config.isolate_stages if isolate_stages is None else isolate_stages
-    generated_id = run_id or default_pipeline_run_id(config)
+    preparation = config.values.get("preparation")
+    preparation_inspection = None
+    preparation_identity = None
+    preparation_identity_state = None
+    if preparation:
+        from roadnet_partition.pipeline.preparation import preparation_identity as calculate_preparation_identity
+
+        preparation_identity_state = calculate_preparation_identity(
+            Path(preparation["config"]), config.project_root,
+        )
+        _, preparation_identity = preparation_identity_state
+    runtime_provenance = collect_runtime_info()
+    try:
+        git_provenance = collect_git_info(config.project_root)
+    except ProvenanceError as error:
+        raise RunConflictError(f"Git provenance rejected before run creation ({error.reason})") from error
+    if git_provenance.get("dirty") is True and not allow_dirty:
+        raise RunConflictError("dirty Git worktree requires --allow-dirty")
+    pipeline_fingerprint = _pipeline_fingerprint(config, preparation_identity, runtime_provenance, git_provenance)
+    pipeline_values = _pipeline_values(config, preparation_identity, runtime_provenance, git_provenance)
+    generated_id = run_id or default_pipeline_run_id(config, pipeline_fingerprint)
     destination = Path(run_dir) if run_dir is not None else config.run_root / generated_id
     protected_roots = {
         Path(value)
@@ -551,8 +621,24 @@ def run_pipeline(
         additional_project_roots=(_SOURCE_PROJECT_ROOT,),
         protected_roots=protected_roots,
     )
+    if preparation:
+        from roadnet_partition.pipeline.preparation import inspect_resume
+
+        preparation_inspection = inspect_resume(
+            Path(preparation["config"]), config.project_root, destination / "preparation",
+            identity_state=preparation_identity_state,
+        )
+        preparation_identity = preparation_inspection["current_identity"]
+        pipeline_fingerprint = _pipeline_fingerprint(config, preparation_identity, runtime_provenance, git_provenance)
+        pipeline_values = _pipeline_values(config, preparation_identity, runtime_provenance, git_provenance)
     existed = destination.exists() and any(destination.iterdir())
-    external_inputs = _external_inputs(config)
+    external_inputs = _external_inputs(
+        config,
+        None if preparation_identity is None else preparation_identity["inputs"],
+    )
+    execution_start = start
+    preparation_reason = None if preparation_inspection is None else preparation_inspection["reason"]
+    invalidated_stages: list[str] = []
     if not existed:
         if resume or overwrite:
             raise ResumeConflictError(f"cannot resume/overwrite a missing pipeline run: {destination}")
@@ -560,15 +646,19 @@ def run_pipeline(
             raise RunConflictError("a new pipeline run must start from partition")
         context = initialize_run(
             destination, run_id=generated_id, scope=config.scope, project_root=config.project_root,
-            config_source=config.source_path, config_values=config.values,
-            config_fingerprint=config.fingerprint, inputs=external_inputs,
+            config_source=config.source_path, config_values=pipeline_values,
+            config_fingerprint=pipeline_fingerprint, inputs=external_inputs,
+            runtime=runtime_provenance, git=git_provenance,
+            base_config_fingerprint=config.fingerprint,
+            preparation_identity_digest=None if preparation_identity is None else preparation_identity["digest"],
         )
         manifest = load_manifest(destination)
         manifest.update({
             "run_kind": "pipeline",
             "pipeline": {
                 "config_source": config.source_path.as_posix(),
-                "config_fingerprint": config.fingerprint,
+                "base_config_fingerprint": config.fingerprint,
+                "config_fingerprint": pipeline_fingerprint,
                 "stage_order": list(STAGE_ORDER),
                 "stage_config_sources": {stage: config.stages[stage].source_path.as_posix() for stage in STAGE_ORDER},
                 "requested_from": from_stage,
@@ -577,6 +667,17 @@ def run_pipeline(
                 "completed_through": None,
                 "all_required_stages_complete": False,
                 "invocation_history": [],
+                "preparation": None if preparation_inspection is None else {
+                    "identity": preparation_identity,
+                    "last_decision": {
+                        "reason": preparation_reason,
+                        "stored_identity": preparation_inspection["stored_identity"],
+                        "current_identity": preparation_identity,
+                        "invalidated_stages": [],
+                        "recomputation_required": not preparation_inspection["reusable"],
+                        "recomputation_performed": False,
+                    },
+                },
             },
         })
         manifest["stages"] = {stage: {"status": "not_started", "directory": stage} for stage in STAGE_ORDER}
@@ -591,12 +692,110 @@ def run_pipeline(
         manifest = verify_run_ownership(context)
         if manifest.get("run_kind") != "pipeline":
             raise RunConflictError("existing run is not a pipeline run")
-        if manifest["config"]["fingerprint"] != config.fingerprint:
+        stored_base_fingerprint = manifest["pipeline"].get(
+            "base_config_fingerprint", manifest["config"]["fingerprint"],
+        )
+        if stored_base_fingerprint != config.fingerprint:
             raise ResumeConflictError("pipeline config fingerprint changed; use a new run ID")
-        if manifest["inputs"]["fingerprint"] != input_fingerprint(external_inputs):
+        stored_inputs = manifest.get("inputs", {}).get("files", {})
+        if not isinstance(stored_inputs, Mapping) or _without_preparation_inputs(stored_inputs) != _without_preparation_inputs(external_inputs):
             raise ResumeConflictError("pipeline external input fingerprint changed; use a new run ID")
-        if overwrite:
+        provenance_decision = provenance_mismatch_reasons(
+            manifest.get("runtime"), runtime_provenance, manifest.get("git"), git_provenance,
+        )
+        if manifest.get("schema_version") != RUN_MANIFEST_SCHEMA_VERSION:
+            provenance_decision = {
+                "runtime": ["runtime_provenance_missing_legacy_manifest"],
+                "git": ["git_provenance_missing_legacy_manifest"],
+                "compatible": False,
+            }
+        provenance_decision.update({
+            "stored": {
+                "runtime_provenance_digest": manifest.get("runtime", {}).get("digest"),
+                "git_provenance_digest": manifest.get("git", {}).get("digest"),
+            },
+            "current": {
+                "runtime_provenance_digest": runtime_provenance["digest"],
+                "git_provenance_digest": git_provenance["digest"],
+            },
+            "invalidated_stages": [] if provenance_decision["compatible"] else list(STAGE_ORDER),
+            "recomputation_required": not provenance_decision["compatible"],
+            "recomputation_performed": False,
+        })
+        if not provenance_decision["compatible"]:
+            invalidated_stages = list(STAGE_ORDER)
+            invalidate_from_stage(context, ordered_stages=list(STAGE_ORDER), from_stage="partition")
+            execution_start = 0
+            if preparation_inspection is not None:
+                preparation_inspection = {
+                    **preparation_inspection,
+                    "reusable": False,
+                    "reason": next(
+                        reason for reason in provenance_decision["runtime"] + provenance_decision["git"]
+                        if not reason.endswith("_match")
+                    ),
+                    "has_state": True,
+                }
+                preparation_reason = preparation_inspection["reason"]
+        if preparation_inspection is not None:
+            from roadnet_partition.pipeline.preparation import identity_mismatch_reason
+
+            stored_preparation = manifest["pipeline"].get("preparation")
+            stored_identity = stored_preparation.get("identity") if isinstance(stored_preparation, dict) else None
+            parent_reason = identity_mismatch_reason(stored_identity, preparation_identity)
+            if parent_reason != "preparation_identity_match":
+                preparation_reason = parent_reason
+                preparation_inspection = {
+                    **preparation_inspection,
+                    "reusable": False,
+                    "reason": parent_reason,
+                    "has_state": True,
+                    "stored_identity": stored_identity,
+                }
+            if not preparation_inspection["reusable"] and not invalidated_stages:
+                invalidated_stages = list(STAGE_ORDER)
+                invalidate_from_stage(context, ordered_stages=list(STAGE_ORDER), from_stage="partition")
+                execution_start = 0
+        if overwrite and not invalidated_stages:
             invalidate_from_stage(context, ordered_stages=list(STAGE_ORDER), from_stage=from_stage)
+        manifest = verify_run_ownership(context)
+        manifest["schema_version"] = RUN_MANIFEST_SCHEMA_VERSION
+        manifest["runtime"] = stable_value(runtime_provenance)
+        manifest["git"] = stable_value(git_provenance)
+        manifest["runtime_provenance_complete"] = True
+        manifest["git_provenance_complete"] = bool(git_provenance.get("complete"))
+        manifest["experiment"] = {
+            "schema_version": 1,
+            "base_config_fingerprint": config.fingerprint,
+            "preparation_identity_digest": None if preparation_identity is None else preparation_identity["digest"],
+            "runtime_provenance_digest": runtime_provenance["digest"],
+            "git_provenance_digest": git_provenance["digest"],
+            "fingerprint": pipeline_fingerprint,
+        }
+        manifest["config"]["fingerprint"] = pipeline_fingerprint
+        manifest["config"]["resolved"] = stable_value(pipeline_values)
+        manifest["inputs"] = {
+            "fingerprint": input_fingerprint(external_inputs),
+            "files": stable_value(external_inputs),
+        }
+        manifest["pipeline"].update({
+            "base_config_fingerprint": config.fingerprint,
+            "config_fingerprint": pipeline_fingerprint,
+            "last_provenance_decision": provenance_decision,
+        })
+        if preparation_inspection is not None:
+            manifest["pipeline"]["preparation"] = {
+                "identity": preparation_identity,
+                "last_decision": {
+                    "reason": preparation_reason,
+                    "stored_identity": preparation_inspection["stored_identity"],
+                    "current_identity": preparation_identity,
+                    "invalidated_stages": invalidated_stages,
+                    "recomputation_required": not preparation_inspection["reusable"],
+                    "recomputation_performed": False,
+                },
+            }
+        _write_manifest(context, manifest)
     manifest = verify_run_ownership(context)
     invocation = {
         "started_at": utc_now(), "requested_from": from_stage, "requested_to": to_stage,
@@ -607,9 +806,9 @@ def run_pipeline(
     _write_manifest(context, manifest)
     atomic_write_yaml(destination / "resolved_config.yaml", {
         "schema_version": 1, "source_path": config.source_path.as_posix(),
-        "fingerprint": config.fingerprint, "requested_from": from_stage,
+        "fingerprint": pipeline_fingerprint, "requested_from": from_stage,
         "requested_to": to_stage, "isolate_stages": selected_isolation,
-        "resolved": config.values,
+        "resolved": pipeline_values,
     })
     (destination / "resolved_configs").mkdir(exist_ok=True)
     (destination / "requests").mkdir(exist_ok=True)
@@ -617,18 +816,25 @@ def run_pipeline(
     active_stage: str | None = None
     try:
         runtime_config = config
-        preparation = config.values.get("preparation")
         if preparation:
             from roadnet_partition.pipeline.preparation import run as run_preparation
 
+            if not preparation_inspection["reusable"]:
+                manifest = verify_run_ownership(context)
+                manifest["pipeline"]["preparation"]["last_decision"]["recomputation_performed"] = True
+                _write_manifest(context, manifest)
             prepared_outputs = run_preparation(
                 Path(preparation["config"]), config.project_root, destination / "preparation",
+                inspection=preparation_inspection,
             )
             runtime_config = _with_preparation_outputs(config, prepared_outputs)
-        for upstream in STAGE_ORDER[:start]:
+            manifest = verify_run_ownership(context)
+            manifest["pipeline"]["preparation"]["identity"] = preparation_identity
+            _write_manifest(context, manifest)
+        for upstream in STAGE_ORDER[:execution_start]:
             upstream_config, upstream_inputs, _ = _prepare_stage(runtime_config, context, upstream)
             _validate_completed_stage(context, upstream, upstream_config, upstream_inputs)
-        for stage in STAGE_ORDER[start:stop + 1]:
+        for stage in STAGE_ORDER[execution_start:stop + 1]:
             active_stage = stage
             resolved, inputs, bindings = _prepare_stage(runtime_config, context, stage)
             snapshot_path = assert_owned_path(destination / "resolved_configs" / f"{stage}.yaml", destination)
@@ -661,6 +867,9 @@ def run_pipeline(
                 _record_execution(context, stage, 0, stdout_path, stderr_path, "direct")
             print(f"{stage}: complete", flush=True)
         manifest = verify_run_ownership(context)
+        decision = manifest["pipeline"].get("last_provenance_decision")
+        if isinstance(decision, dict) and decision.get("recomputation_required"):
+            decision["recomputation_performed"] = True
         completed, all_required = _pipeline_completion(
             manifest, {stage: bool(config.values["stages"][stage]["required"]) for stage in STAGE_ORDER},
         )

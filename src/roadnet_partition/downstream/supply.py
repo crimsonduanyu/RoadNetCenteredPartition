@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -11,6 +12,12 @@ import numpy as np
 import pandas as pd
 
 from roadnet_partition.config import ResolvedStageConfig
+from roadnet_partition.downstream.order_checkpoints import (
+    identifier_csv_options,
+    invalid_driver_identifiers,
+    normalize_driver_identifiers,
+    normalize_order_identifiers,
+)
 from roadnet_partition.io.paths import resolve_path
 from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 
@@ -61,18 +68,49 @@ def load_orders(path: str | Path = ORDERS_PATH) -> pd.DataFrame:
     explicit format to keep the parse-time peak low. This is an I/O-footprint
     change only; the resulting values are identical to before.
     """
-    dtypes = {
-        "order_id": "int64",
-        "driver_id": "int64",
-        "origin_cluster_id": "int32",
-        "destination_cluster_id": "int32",
-        "service_type": "category",
+    columns = list(pd.read_csv(path, nrows=0, keep_default_na=False).columns)
+    missing = [column for column in ORDER_USE_COLUMNS if column not in columns]
+    if missing:
+        raise ValueError(f"Supply orders are missing required columns: {missing}")
+    options = identifier_csv_options()
+    options["dtype"].update({
+        "origin_cluster_id": "string",
+        "destination_cluster_id": "string",
+        "service_type": "string",
         "departure_time": "string",
         "finish_time": "string",
-    }
-    orders = pd.read_csv(path, usecols=ORDER_USE_COLUMNS, dtype=dtypes)
+    })
+    orders = pd.read_csv(
+        path,
+        usecols=ORDER_USE_COLUMNS,
+        **options,
+    )
+    orders["order_id"] = normalize_order_identifiers(orders["order_id"])
+    orders["driver_id"] = normalize_driver_identifiers(orders["driver_id"])
+    invalid_driver = invalid_driver_identifiers(orders["driver_id"])
+    if invalid_driver.any():
+        first = int(np.flatnonzero(invalid_driver.to_numpy())[0]) + 2
+        raise ValueError(
+            f"Supply driver_id contains {int(invalid_driver.sum())} null or blank value(s); first at CSV row {first}"
+        )
+    invalid_service = ~orders["service_type"].isin({"exclusive", "carpool"})
+    if invalid_service.any():
+        first = int(np.flatnonzero(invalid_service.to_numpy())[0]) + 2
+        raise ValueError(
+            f"Supply service_type contains {int(invalid_service.sum())} invalid value(s); first at CSV row {first}"
+        )
+    for column in ("origin_cluster_id", "destination_cluster_id"):
+        numeric = pd.to_numeric(orders[column], errors="coerce")
+        valid = numeric.notna() & np.isfinite(numeric) & numeric.eq(np.floor(numeric))
+        valid &= numeric.between(np.iinfo(np.int32).min, np.iinfo(np.int32).max)
+        if not valid.all():
+            first = int(np.flatnonzero((~valid).to_numpy())[0]) + 2
+            raise ValueError(f"Supply {column} contains an invalid integer; first at CSV row {first}")
+        orders[column] = numeric.astype("int32")
     for column in ("departure_time", "finish_time"):
         orders[column] = pd.to_datetime(orders[column], format="%Y-%m-%d %H:%M:%S", errors="coerce")
+    orders["service_type"] = orders["service_type"].astype("category")
+    orders["_input_ordinal"] = np.arange(len(orders), dtype=np.int64)
     return orders
 
 
@@ -122,9 +160,12 @@ def resolve_carpool_trip_groups(
     if carpool.empty:
         return pd.DataFrame(columns=TRIP_SEGMENT_COLUMNS)
 
+    if "_input_ordinal" not in carpool:
+        carpool["_input_ordinal"] = np.arange(len(carpool), dtype=np.int64)
     carpool = carpool.sort_values(
-        ["driver_id", "departure_time", "finish_time", "order_id"],
+        ["driver_id", "departure_time", "finish_time", "order_id", "_input_ordinal"],
         kind="mergesort",
+        na_position="last",
     ).reset_index(drop=True)
     running_end = carpool.groupby("driver_id")["finish_time"].cummax()
     prev_running_end = running_end.groupby(carpool["driver_id"]).shift()
@@ -174,8 +215,14 @@ def build_exclusive_trip_segments(orders: pd.DataFrame) -> pd.DataFrame:
     if exclusive.empty:
         return pd.DataFrame(columns=TRIP_SEGMENT_COLUMNS)
 
+    if "_input_ordinal" not in exclusive:
+        exclusive["_input_ordinal"] = np.arange(len(exclusive), dtype=np.int64)
+    segment_ids = [
+        f"order:null:{ordinal}" if pd.isna(order_id) else f"order:text:{len(str(order_id))}:{order_id}"
+        for order_id, ordinal in zip(exclusive["order_id"], exclusive["_input_ordinal"])
+    ]
     exclusive = exclusive.assign(
-        segment_id="order_" + exclusive["order_id"].astype(str),
+        segment_id=segment_ids,
         trip_start=exclusive["departure_time"],
         trip_end=exclusive["finish_time"],
         order_ids=exclusive["order_id"].map(lambda order_id: [order_id]),
@@ -634,6 +681,7 @@ def run_pipeline(
 ) -> dict[str, object]:
     """Run the supply-side reconstruction (per-driver-chunked) and write all outputs."""
     output_dir = Path(output_dir)
+    orders = load_orders(orders_path)
     configure_file_logging(output_dir)
     config_used = {
         "orders_path": str(orders_path),
@@ -647,8 +695,8 @@ def run_pipeline(
         "n_blocks": n_blocks,
     }
     write_json(config_used, output_dir / "config_used.json")
-    return run_chunked_pipeline(
-        orders_path=orders_path,
+    return _run_chunked_pipeline(
+        orders=orders,
         output_dir=output_dir,
         max_gap_minutes=max_gap_minutes,
         carpool_merge_gap_s=carpool_merge_gap_s,
@@ -680,7 +728,15 @@ def driver_block_id(driver_ids: "np.ndarray | pd.Series", n_blocks: int) -> np.n
     """Sole block-assignment function (invariant 1). Uniform 64-bit hash of the
     driver id, modulo n_blocks -- never a bare ``driver_id % n`` (those ids cluster
     in low bits: an earlier probe showed ``%16`` captured 21.6% instead of 6.25%)."""
-    return (pd.util.hash_array(np.asarray(driver_ids)) % n_blocks).astype("int64")
+    if n_blocks <= 0:
+        raise ValueError("n_blocks must be positive")
+    values = np.asarray(driver_ids)
+    unique = pd.unique(values)
+    blocks = {
+        value: int.from_bytes(hashlib.sha256(str(value).encode("utf-8")).digest()[:8], "big") % n_blocks
+        for value in unique
+    }
+    return np.fromiter((blocks[value] for value in values), dtype=np.int64, count=len(values))
 
 
 def build_global_slot_index(orders: pd.DataFrame, slot_duration_min: int) -> pd.DatetimeIndex:
@@ -730,9 +786,34 @@ def run_chunked_pipeline(
     demand_table: str = DEMAND_TABLE,
     tau_idle_minutes: int = TAU_IDLE_MINUTES,
 ) -> dict[str, object]:
-    """Per-driver-chunked supply reconstruction; dense block-summed aggregation."""
+    """Validate Demand's artifact, then run driver-chunked Supply."""
+    return _run_chunked_pipeline(
+        orders=load_orders(orders_path),
+        output_dir=output_dir,
+        max_gap_minutes=max_gap_minutes,
+        carpool_merge_gap_s=carpool_merge_gap_s,
+        slot_duration_min=slot_duration_min,
+        n_blocks=n_blocks,
+        merge_demand=merge_demand,
+        demand_table=demand_table,
+        tau_idle_minutes=tau_idle_minutes,
+    )
+
+
+def _run_chunked_pipeline(
+    *,
+    orders: pd.DataFrame,
+    output_dir: str | Path,
+    max_gap_minutes: int,
+    carpool_merge_gap_s: int,
+    slot_duration_min: int,
+    n_blocks: int,
+    merge_demand: bool,
+    demand_table: str,
+    tau_idle_minutes: int,
+) -> dict[str, object]:
+    """Compute Supply from an already validated frame without reloading it."""
     output_dir = Path(output_dir)
-    orders = load_orders(orders_path)
     LOGGER.info("Loaded %d orders for driver-chunked run (%d blocks).", len(orders), n_blocks)
 
     orders["_block"] = driver_block_id(orders["driver_id"], n_blocks)
@@ -889,7 +970,6 @@ def run_supply(config: ResolvedStageConfig, context: RunContext) -> StageResult:
         raise ValueError("configuration must contain a stage3_supply section")
     stage = deepcopy(dict(values["stage3_supply"]))
     output_dir = context.stage_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
     orders_path = resolve_path(stage["orders_path"], base_dir=config.source_path.parent)
     summary = run_pipeline(
         orders_path=orders_path,

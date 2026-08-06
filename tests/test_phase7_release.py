@@ -5,12 +5,14 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
+import subprocess
 
 import pytest
 import yaml
 
 from roadnet_partition.cli import build_parser
 from roadnet_partition.io.manifests import MANIFEST_FILENAME, SUCCESS_MARKER, atomic_write_json, load_manifest, validate_manifest
+from roadnet_partition.io.serialization_policy import executable_serialization_files
 from roadnet_partition.pipeline import publishing, validation
 from roadnet_partition.pipeline.publishing import PublishError, build_publish_inventory, publish_scope
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
@@ -21,12 +23,38 @@ from roadnet_partition.pipeline.stages import StageContractError
 from test_pipeline_runner import write_full_fixture
 
 
-def complete_run(tmp_path: Path, *, to_stage: str = "tte") -> tuple[Path, Path]:
+def complete_run(tmp_path: Path, *, to_stage: str = "tte", dirty_source: bool = False) -> tuple[Path, Path]:
     project = tmp_path / "project"
-    config = resolve_pipeline_config(write_full_fixture(project))
+    pipeline = write_full_fixture(project)
+    (project / ".gitignore").write_text("data/processed/\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=project, check=True)
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
+    if dirty_source:
+        (project / "intentional-untracked.bin").write_bytes(b"dirty source bytes")
+    config = resolve_pipeline_config(pipeline)
     run_dir = tmp_path / "run"
-    run_pipeline(config, run_dir=run_dir, to_stage=to_stage, isolate_stages=False)
+    run_pipeline(
+        config, run_dir=run_dir, to_stage=to_stage, isolate_stages=False,
+        allow_dirty=dirty_source,
+    )
     return project, run_dir
+
+
+def release_output(project: Path, name: str) -> Path:
+    return project.parent / f"{project.name}-releases" / name
+
+
+def mark_release_root(project: Path) -> Path:
+    root = release_output(project, "placeholder").parent
+    root.mkdir()
+    (root / reproduction._RELEASE_ROOT_MARKER).write_text(
+        reproduction._RELEASE_ROOT_MARKER_CONTENT,
+        encoding="utf-8",
+    )
+    return root
 
 
 def semantic_report(report: dict) -> dict:
@@ -246,13 +274,13 @@ def test_publish_staging_and_post_switch_validation_failures_roll_back(
 
 
 def test_publish_dirty_gate_and_run_kind_requirements(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _, run_dir = complete_run(tmp_path)
-    dirty = {"commit": "abc", "dirty": True, "changed_files": ["local.txt"], "diff_sha256": "d" * 64}
-    monkeypatch.setattr(publishing, "collect_git_info", lambda _root: dirty)
+    project, run_dir = complete_run(tmp_path)
+    (project / "local.txt").write_bytes(b"dirty bytes")
     with pytest.raises(PublishError, match="allow-dirty"):
         publish_scope(run_dir, scope="tiny", dry_run=True)
     allowed = publish_scope(run_dir, scope="tiny", allow_dirty=True, dry_run=True)
-    assert allowed["git"]["current"] == dirty
+    assert allowed["git"]["current"]["dirty"] is True
+    assert allowed["git"]["current"]["untracked_files"][0]["path"] == "local.txt"
 
     _, partial = complete_run(tmp_path / "partial", to_stage="partition")
     with pytest.raises(PublishError):
@@ -266,10 +294,10 @@ def test_publish_dirty_gate_and_run_kind_requirements(tmp_path: Path, monkeypatc
 
 
 def test_minimal_export_checksum_manifest_and_no_run_mutation(tmp_path: Path) -> None:
-    _, run_dir = complete_run(tmp_path)
+    project, run_dir = complete_run(tmp_path)
     before = (run_dir / MANIFEST_FILENAME).read_bytes()
-    output = tmp_path / "release/minimal-v1"
-    result = export_reproduction(run_dir, output=output, profile="minimal")
+    output = release_output(project, "minimal-v1")
+    result = export_reproduction(run_dir, output="minimal-v1", profile="minimal")
     assert result["status"] == "exported"
     assert (run_dir / MANIFEST_FILENAME).read_bytes() == before
     assert (output / "README.md").is_file()
@@ -282,16 +310,48 @@ def test_minimal_export_checksum_manifest_and_no_run_mutation(tmp_path: Path) ->
         assert reproduction.sha256_file(output / relative) == digest
 
 
+def test_published_and_exported_bundles_carry_no_executable_serialization(tmp_path: Path) -> None:
+    """AUD-005: a bundle consumer must never be handed a pickle to deserialize."""
+    project, run_dir = complete_run(tmp_path)
+    publish_scope(run_dir, scope="tiny")
+    target = project / "data/processed/tiny"
+    export_reproduction(run_dir, output="minimal-v1", profile="minimal")
+    output = release_output(project, "minimal-v1")
+
+    for bundle in (target, output):
+        assert not executable_serialization_files(bundle)
+        for suffix in (".gpickle", ".pkl", ".pickle"):
+            assert not list(bundle.rglob(f"*{suffix}"))
+
+
+def test_a_pickle_in_a_bundle_is_refused_by_name(tmp_path: Path) -> None:
+    """The guard must fire with its own message, not a generic allowlist diff."""
+    project, run_dir = complete_run(tmp_path)
+    publish_scope(run_dir, scope="tiny")
+    target = project / "data/processed/tiny"
+    export_reproduction(run_dir, output="minimal-v1", profile="minimal")
+    output = release_output(project, "minimal-v1")
+
+    (target / "smuggled.pkl").write_bytes(b"\x80\x05payload")
+    with pytest.raises(PublishError, match="executable serialization"):
+        publishing._validate_staging(target, run_dir, build_publish_inventory(run_dir))
+
+    (output / "smuggled.gpickle").write_bytes(b"\x80\x05payload")
+    with pytest.raises(ExportError, match="executable serialization"):
+        reproduction._validate_release(output)
+
+
 def test_export_profiles_dry_run_privacy_overwrite_and_rollback(tmp_path: Path) -> None:
-    _, run_dir = complete_run(tmp_path)
-    full = export_reproduction(run_dir, output=tmp_path / "full", profile="full", dry_run=True)
+    project, run_dir = complete_run(tmp_path)
+    full_output = release_output(project, "full")
+    full = export_reproduction(run_dir, output=full_output, profile="full", dry_run=True)
     assert full["blocked_classifications"] == ["private", "restricted"]
     assert full["blocking_reason"]
     assert all(set(item) == {"stage", "logical_key", "release_path", "classification", "size"} for item in full["inventory"])
     with pytest.raises(ExportError, match="blocked classifications"):
-        export_reproduction(run_dir, output=tmp_path / "full", profile="full")
+        export_reproduction(run_dir, output=full_output, profile="full")
 
-    output = tmp_path / "minimal"
+    output = release_output(project, "minimal")
     export_reproduction(run_dir, output=output)
     with pytest.raises(FileExistsError):
         export_reproduction(run_dir, output=output)
@@ -305,13 +365,173 @@ def test_export_profiles_dry_run_privacy_overwrite_and_rollback(tmp_path: Path) 
     with pytest.raises(Exception, match="restored"):
         export_reproduction(run_dir, output=output, overwrite=True, _step_hook=fail_after_switch)
     assert old.read_text(encoding="utf-8") == "old"
+    for staging in output.parent.glob(f".{output.name}.staging-*"):
+        shutil.rmtree(staging)
+    export_reproduction(run_dir, output=output, overwrite=True)
+    assert not old.exists()
+    assert (output / "manifest.json").is_file()
 
 
 def test_export_dirty_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _, run_dir = complete_run(tmp_path)
-    dirty = {"commit": "abc", "dirty": True, "changed_files": ["local.txt"], "diff_sha256": "d" * 64}
-    monkeypatch.setattr(publishing, "collect_git_info", lambda _root: dirty)
+    project, run_dir = complete_run(tmp_path)
+    output = release_output(project, "dirty")
+    (project / "local.txt").write_bytes(b"dirty bytes")
     with pytest.raises(PublishError, match="allow-dirty"):
-        export_reproduction(run_dir, output=tmp_path / "release")
-    result = export_reproduction(run_dir, output=tmp_path / "release", allow_dirty=True)
-    assert result["git"]["current"] == dirty
+        export_reproduction(run_dir, output=output)
+    result = export_reproduction(run_dir, output=output, allow_dirty=True)
+    assert result["git"]["current"]["dirty"] is True
+    assert result["git"]["current"]["untracked_files"][0]["path"] == "local.txt"
+
+
+def test_publish_and_export_reject_legacy_incomplete_provenance_before_staging(tmp_path: Path) -> None:
+    project, run_dir = complete_run(tmp_path)
+    manifest = load_manifest(run_dir)
+    manifest["schema_version"] = 1
+    manifest.pop("experiment")
+    manifest["runtime"] = {"python": "legacy-unrecorded"}
+    manifest["git"] = {"commit": manifest["git"]["commit"], "dirty": False}
+    atomic_write_json(run_dir / MANIFEST_FILENAME, manifest, validator=validate_manifest)
+    target = project / "data/processed/tiny"
+    release = release_output(project, "legacy")
+    with pytest.raises(PublishError, match="complete runtime/Git provenance"):
+        publish_scope(run_dir, scope="tiny")
+    with pytest.raises(PublishError, match="complete runtime/Git provenance"):
+        export_reproduction(run_dir, output=release)
+    assert not target.exists()
+    assert not release.exists()
+
+
+def test_provenance_complete_dirty_source_requires_explicit_publish_permission(tmp_path: Path) -> None:
+    _, run_dir = complete_run(tmp_path, dirty_source=True)
+    manifest = load_manifest(run_dir)
+    assert manifest["git"]["dirty"] is True
+    assert manifest["git_provenance_complete"] is True
+    with pytest.raises(PublishError, match="allow-dirty"):
+        publish_scope(run_dir, scope="tiny", dry_run=True)
+    assert publish_scope(run_dir, scope="tiny", allow_dirty=True, dry_run=True)["status"] == "dry_run"
+
+
+def test_tampered_provenance_digest_fails_before_publish_copy(tmp_path: Path) -> None:
+    project, run_dir = complete_run(tmp_path)
+    manifest = load_manifest(run_dir)
+    manifest["git"]["digest"] = "0" * 64
+    (run_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="Git provenance digest differs"):
+        publish_scope(run_dir, scope="tiny")
+    assert not (project / "data/processed/tiny").exists()
+
+
+def test_release_destination_rejects_all_protected_root_relationships(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    project = workspace / "project"
+    data_root = project / "data"
+    run_dir = tmp_path / "runs" / "run-1"
+    data_root.mkdir(parents=True)
+    run_dir.mkdir(parents=True)
+    project_marker = project / "project-marker.bin"
+    unrelated = workspace / "unrelated.bin"
+    project_marker.write_bytes(b"project-marker")
+    unrelated.write_bytes(b"unrelated")
+
+    candidates = {
+        project,
+        project / "child",
+        *project.parents,
+        run_dir,
+        run_dir / "child",
+        *run_dir.parents,
+        data_root,
+        data_root / "child",
+        *data_root.parents,
+        Path("/"),
+    }
+    for candidate in candidates:
+        with pytest.raises(ExportError, match="ownership boundary"):
+            reproduction._safe_destination(candidate, run_dir, project)
+
+    assert project_marker.read_bytes() == b"project-marker"
+    assert unrelated.read_bytes() == b"unrelated"
+    assert not release_output(project, "placeholder").parent.exists()
+    assert not list(tmp_path.rglob("*.staging-*"))
+
+
+def test_release_destination_rejects_symlink_components_and_parent_traversal(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    protected = project / "data"
+    protected.mkdir(parents=True)
+    run_dir.mkdir()
+    root = mark_release_root(project)
+
+    (root / "target-link").symlink_to(protected, target_is_directory=True)
+    with pytest.raises(ExportError, match="ownership boundary"):
+        reproduction._safe_destination(root / "target-link", run_dir, project)
+
+    external = tmp_path / "external"
+    external.mkdir()
+    (root / "component-link").symlink_to(external, target_is_directory=True)
+    with pytest.raises(ExportError, match="ownership boundary"):
+        reproduction._safe_destination(root / "component-link" / "v1", run_dir, project)
+
+    with pytest.raises(ExportError, match="ownership boundary"):
+        reproduction._safe_destination(Path("nested") / ".." / "v1", run_dir, project)
+    assert not list(root.glob("*.staging-*"))
+
+    linked_project = tmp_path / "linked-project"
+    linked_project.mkdir()
+    linked_run = tmp_path / "linked-run"
+    linked_run.mkdir()
+    linked_root = release_output(linked_project, "v1").parent
+    linked_root.symlink_to(external, target_is_directory=True)
+    with pytest.raises(ExportError, match="ownership boundary"):
+        reproduction._safe_destination("v1", linked_run, linked_project)
+
+
+def test_release_destination_requires_marked_external_root_and_direct_child(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    run_dir = tmp_path / "run"
+    project.mkdir()
+    run_dir.mkdir()
+    root = release_output(project, "v1").parent
+
+    destination, actual_root, exists = reproduction._safe_destination("v1", run_dir, project)
+    assert destination == root / "v1"
+    assert actual_root == root
+    assert exists is False
+    assert not root.exists()
+
+    root.mkdir()
+    with pytest.raises(ExportError, match="not owned"):
+        reproduction._safe_destination("v1", run_dir, project)
+    (root / reproduction._RELEASE_ROOT_MARKER).write_text(
+        reproduction._RELEASE_ROOT_MARKER_CONTENT,
+        encoding="utf-8",
+    )
+    assert reproduction._safe_destination(root / "v1", run_dir, project)[0] == root / "v1"
+
+    (root / "v1").mkdir()
+    assert reproduction._safe_destination("v1", run_dir, project)[0] == root / "v1"
+    (root / "file-target").write_text("not a directory", encoding="utf-8")
+    with pytest.raises(ExportError, match="ordinary directory"):
+        reproduction._safe_destination("file-target", run_dir, project)
+    with pytest.raises(ExportError, match="direct child"):
+        reproduction._safe_destination(root / "nested" / "v2", run_dir, project)
+    with pytest.raises(ExportError, match="direct child"):
+        reproduction._safe_destination("nested/v2", run_dir, project)
+
+
+def test_aud_001_workspace_ancestor_is_rejected_before_any_write(tmp_path: Path) -> None:
+    project, run_dir = complete_run(tmp_path)
+    workspace = project.parent
+    project_marker = project / "project-marker.bin"
+    unrelated = workspace / "unrelated.bin"
+    project_marker.write_bytes(b"project-marker")
+    unrelated.write_bytes(b"unrelated")
+
+    with pytest.raises(ExportError, match="ownership boundary"):
+        export_reproduction(run_dir, output=workspace, overwrite=True)
+
+    assert project_marker.read_bytes() == b"project-marker"
+    assert unrelated.read_bytes() == b"unrelated"
+    assert not release_output(project, "placeholder").parent.exists()
+    assert not list(workspace.parent.glob(f".{workspace.name}.staging-*"))

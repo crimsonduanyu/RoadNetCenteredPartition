@@ -12,7 +12,7 @@ stage1_partition:
     initialization: leiden
     inputs:
       # Standalone placeholders. Full runs bind run-owned preparation outputs.
-      graph: ../../outputs/preparation/segment_relation_graph_road_poi_order.gpickle
+      graph: ../../outputs/preparation/segment_relation_graph_road_poi_order.graph.json.gz
       relation_edges: ../../outputs/preparation/segment_relation_edges_road_poi_order.csv
       classified_edges: ../../outputs/preparation/road_edges_classified.gpkg
       boundary: ../../data/raw/beijing_fifth_ring_boundary.gpkg

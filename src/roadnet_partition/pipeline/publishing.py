@@ -8,16 +8,27 @@ import uuid
 
 import yaml
 
+from roadnet_partition.config import ConfigError, validate_output_identifier
 from roadnet_partition.io.manifests import (
     MANIFEST_FILENAME,
+    ProvenanceError,
     atomic_write_json,
     collect_git_info,
     file_record,
     load_manifest,
+    manifest_provenance_complete,
     utc_now,
+    validate_git_provenance,
     validate_manifest,
 )
 from roadnet_partition.io.paths import transactional_scope_swap
+from roadnet_partition.io.serialization_policy import (
+    ExecutableSerializationRefused,
+    LEGACY_UNSUPPORTED_MESSAGE,
+    is_legacy_evidence_name,
+    legacy_evidence_files,
+    reject_legacy_declarations,
+)
 from roadnet_partition.pipeline.results import RunContext
 from roadnet_partition.pipeline.stages import (
     STAGE_ORDER,
@@ -63,7 +74,18 @@ def _context(run_dir: Path, manifest: Mapping[str, Any]) -> RunContext:
 
 
 def _dirty_git(manifest: Mapping[str, Any], project_root: Path, allow_dirty: bool) -> dict[str, Any]:
-    current = collect_git_info(project_root)
+    if not manifest_provenance_complete(manifest):
+        raise PublishError("source run lacks complete runtime/Git provenance")
+    try:
+        current = collect_git_info(project_root)
+    except ProvenanceError as error:
+        raise PublishError(f"current Git provenance is unsafe ({error.reason})") from error
+    try:
+        validate_git_provenance(current)
+    except ValueError as error:
+        raise PublishError("current checkout Git provenance is malformed") from error
+    if not current.get("complete"):
+        raise PublishError("current checkout lacks complete Git provenance")
     source_dirty = manifest.get("git", {}).get("dirty") is True
     current_dirty = current.get("dirty") is True
     if (source_dirty or current_dirty) and not allow_dirty:
@@ -213,12 +235,41 @@ def _contract_config(stage: str, config, manifest: Mapping[str, Any]):
         raise PublishError(str(error)) from error
 
 
+def _reject_legacy_inventory(run_dir: Path, inventory: list[dict[str, Any]]) -> None:
+    """Refuse a legacy graph before the staging directory exists.
+
+    ``_validate_staging`` is the last line of defence, but it only runs once
+    every file has already been copied. Publication must not create or touch
+    anything on behalf of a run that declares executable serialization, so the
+    inventory and the run's own declarations are checked here, by name, while
+    nothing has been written yet.
+    """
+
+    offenders = sorted(
+        item["logical_key"]
+        for item in inventory
+        if is_legacy_evidence_name(Path(item["run_source_path"]).name)
+        or is_legacy_evidence_name(Path(item["formal_relative_path"]).name)
+    )
+    if offenders:
+        raise PublishError(
+            f"run declares legacy executable graph serialization: {offenders}. {LEGACY_UNSUPPORTED_MESSAGE}"
+        )
+    try:
+        reject_legacy_declarations(load_manifest(run_dir), subject=f"{run_dir}")
+    except ExecutableSerializationRefused as error:
+        raise PublishError(str(error)) from error
+
+
 def _validate_staging(staging: Path, run_dir: Path, inventory: list[dict[str, Any]]) -> bool:
     expected = {item["formal_relative_path"] for item in inventory} | {"source_manifest.json"}
     actual = {
         path.relative_to(staging).as_posix()
         for path in staging.rglob("*") if path.is_file()
     }
+    pickles = legacy_evidence_files(staging)
+    if pickles:
+        raise PublishError(f"published scope contains executable serialization: {pickles}")
     if actual != expected:
         raise PublishError(f"staging allowlist differs: missing={sorted(expected-actual)}, extra={sorted(actual-expected)}")
     source_manifest = json.loads((staging / "source_manifest.json").read_text(encoding="utf-8"))
@@ -246,6 +297,74 @@ def _disk_free(path: Path) -> int:
     return shutil.disk_usage(current).free
 
 
+def _validate_runtime_scope(value: Any, field: str) -> str:
+    try:
+        return validate_output_identifier(value, source=Path("<publish>"), field=field)
+    except ConfigError as error:
+        raise PublishError(f"invalid {field}: expected a safe single-component identifier") from error
+
+
+def _resolve_publish_path(path: Path, field: str) -> Path:
+    if ".." in path.parts:
+        raise PublishError(f"{field} escapes the processed ownership boundary")
+    absolute = path.absolute()
+    for current in (absolute, *absolute.parents):
+        if current.is_symlink():
+            raise PublishError(f"{field} path contains a symbolic link")
+        if current != absolute and current.exists() and not current.is_dir():
+            raise PublishError(f"{field} conflicts with the processed ownership boundary")
+    return absolute.resolve()
+
+
+def _paths_overlap(left: Path, right: Path) -> bool:
+    return left == right or left.is_relative_to(right) or right.is_relative_to(left)
+
+
+def _validate_publish_containment(
+    processed_root: Path,
+    target: Path,
+    staging: Path,
+    run_dir: Path,
+) -> tuple[Path, Path, Path]:
+    processed = _resolve_publish_path(processed_root, "processed root")
+    resolved_target = _resolve_publish_path(target, "publish target")
+    resolved_staging = _resolve_publish_path(staging, "publish staging")
+    run = Path(run_dir).expanduser().resolve()
+    if processed.exists() and not processed.is_dir():
+        raise PublishError("processed root conflicts with the processed ownership boundary")
+    if resolved_target == resolved_staging:
+        raise PublishError("publish target and staging must be distinct")
+    if resolved_target.parent != processed:
+        if resolved_target.is_relative_to(processed):
+            raise PublishError("publish target is not a direct child of the processed root")
+        raise PublishError("publish target escapes the processed root")
+    if resolved_staging.parent != processed:
+        if resolved_staging.is_relative_to(processed):
+            raise PublishError("publish staging is not a direct child of the processed root")
+        raise PublishError("publish staging escapes the processed root")
+    if not resolved_staging.name.startswith(f".{resolved_target.name}.staging-"):
+        raise PublishError("publish staging does not match the target ownership boundary")
+    if _paths_overlap(resolved_target, run) or _paths_overlap(resolved_staging, run):
+        raise PublishError("publish paths conflict with the run ownership boundary")
+    if resolved_target.exists() and not resolved_target.is_dir():
+        raise PublishError("publish target is not an ordinary directory")
+    if resolved_staging.exists():
+        raise PublishError("publish staging already exists")
+    return processed, resolved_target, resolved_staging
+
+
+def _publish_paths(
+    project_root: Path,
+    run_dir: Path,
+    scope: str,
+    run_id: Any,
+) -> tuple[Path, Path, Path]:
+    processed_root = Path(project_root) / "data" / "processed"
+    target = processed_root / scope
+    staging = processed_root / f".{scope}.staging-{run_id}-{uuid.uuid4().hex[:8]}"
+    return _validate_publish_containment(processed_root, target, staging, run_dir)
+
+
 def publish_scope(
     run: str | Path,
     *,
@@ -258,6 +377,14 @@ def publish_scope(
 ) -> dict[str, Any]:
     run_dir = Path(run).expanduser().resolve()
     manifest = load_manifest(run_dir)
+    scope = _validate_runtime_scope(scope, "publish scope")
+    manifest_scope = _validate_runtime_scope(manifest.get("scope"), "run manifest scope")
+    if scope != manifest_scope:
+        raise PublishError("publish scope differs from run manifest scope")
+    context = _context(run_dir, manifest)
+    processed_root, target, staging = _publish_paths(
+        context.project_root, run_dir, scope, manifest.get("run_id"),
+    )
     decision = _baseline_decision(
         baseline_decision, run_dir=run_dir, manifest=manifest, scope=scope,
     )
@@ -266,18 +393,12 @@ def publish_scope(
         raise PublishError("current run validation failed")
     if manifest.get("run_kind") != "pipeline" or manifest["pipeline"].get("all_required_stages_complete") is not True:
         raise PublishError("publish requires a complete pipeline run")
-    if scope != manifest.get("scope"):
-        raise PublishError(f"publish scope {scope!r} differs from run scope {manifest.get('scope')!r}")
-    context = _context(run_dir, manifest)
-    git = _dirty_git(manifest, context.project_root, allow_dirty)
-    inventory = build_publish_inventory(run_dir)
-    total_size = sum(item["size"] for item in inventory)
-    target = context.project_root / "data" / "processed" / scope
-    if any(path.is_symlink() for path in (target, *target.parents) if path.exists()):
-        raise PublishError("publish target path contains a symbolic link")
     if target.exists() and not overwrite:
         raise FileExistsError(f"published scope already exists; use --overwrite: {target}")
-    staging = target.parent / f".{scope}.staging-{manifest['run_id']}-{uuid.uuid4().hex[:8]}"
+    git = _dirty_git(manifest, context.project_root, allow_dirty)
+    inventory = build_publish_inventory(run_dir)
+    _reject_legacy_inventory(run_dir, inventory)
+    total_size = sum(item["size"] for item in inventory)
     transaction = {
         "mode": "overwrite" if target.exists() else "create",
         "target": target.as_posix(),
@@ -293,7 +414,7 @@ def publish_scope(
         "target": target.as_posix(),
         "file_count": len(inventory),
         "total_size": total_size,
-        "free_space": _disk_free(target.parent),
+        "free_space": _disk_free(processed_root),
         "transaction": transaction,
         "git": git,
         "baseline_decision": decision,
@@ -319,7 +440,8 @@ def publish_scope(
             _step_hook(step)
 
     transactional_scope_swap(
-        target, staging, validate=validate_and_hook, overwrite=overwrite, _step_hook=transaction_hook,
+        target, staging, allowed_parent=processed_root, validate=validate_and_hook,
+        overwrite=overwrite, _step_hook=transaction_hook,
     )
     manifest = load_manifest(run_dir)
     manifest["publish_history"].append({

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import io
 from pathlib import Path
-import pickle
 import shutil
 import subprocess
 
@@ -14,8 +14,12 @@ import pandas as pd
 import pytest
 import yaml
 
+from roadnet_partition.config import ConfigError
+from roadnet_partition.downstream.supply import load_orders
 from roadnet_partition.io.manifests import SUCCESS_MARKER, load_manifest, sha256_file
+from roadnet_partition.io import manifests as manifests_module
 from roadnet_partition.io.manifests import MANIFEST_FILENAME, atomic_write_json, validate_manifest
+from roadnet_partition.io.safe_graph import ARTIFACT_SUFFIX, write_safe_graph
 from roadnet_partition.pipeline import runner as runner_module
 from roadnet_partition.pipeline import stages as stages_module
 from roadnet_partition.pipeline.runner import resolve_pipeline_config, run_pipeline
@@ -37,6 +41,11 @@ from test_phase6a_cli_e2e import (
 def write_full_fixture(project: Path) -> Path:
     write_dataset(project)
     demand_path = write_demand_fixture(project)
+    raw_orders_path = project / "inputs/demand/orders.csv"
+    raw_orders = pd.read_csv(raw_orders_path)
+    raw_orders["order_id"] = pd.Series(["o-1", "000123", pd.NA], dtype="string")
+    raw_orders["driver_id"] = pd.Series(["driver-A", "driver-A", "司机甲"], dtype="string")
+    raw_orders.to_csv(raw_orders_path, index=False)
     write_supply_fixture(project)
     tte_path = write_tte_fixture(project)
 
@@ -45,8 +54,7 @@ def write_full_fixture(project: Path) -> Path:
     root.mkdir(parents=True)
     graph = nx.Graph()
     graph.add_edge("s1", "s2", weight=1.0, continuity_weight=1.0, connector_weight=1.0)
-    with (root / "graph.gpickle").open("wb") as handle:
-        pickle.dump(graph, handle)
+    write_safe_graph(graph, root / f"graph{ARTIFACT_SUFFIX}")
     demand_partition.to_file(root / "segments.gpkg", driver="GPKG")
     demand_partition.to_file(root / "baseline.gpkg", driver="GPKG")
     pd.DataFrame({"seg_id": ["s1", "s2"], "order_total": [1, 1]}).to_csv(root / "orders.csv", index=False)
@@ -62,7 +70,7 @@ def write_full_fixture(project: Path) -> Path:
             "regularized": {
                 "initialization": "leiden",
                 "inputs": {
-                    "graph": "../../inputs/partition/graph.gpickle",
+                    "graph": f"../../inputs/partition/graph{ARTIFACT_SUFFIX}",
                     "relation_edges": "../../inputs/partition/relations.csv",
                     "classified_edges": "../../inputs/partition/segments.gpkg",
                     "boundary": "../../inputs/partition/segments.gpkg",
@@ -133,6 +141,38 @@ def test_pipeline_resolver_and_ranges(tmp_path: Path) -> None:
         run_pipeline(config, run_dir=config.project_root / "data/processed/tiny/run")
 
 
+@pytest.mark.parametrize("value", ["", "../victim", r"C:\victim", r"\\server\share"])
+def test_pipeline_scope_is_validated_before_stage_resolution(tmp_path: Path, value: str) -> None:
+    path = write_full_fixture(tmp_path / "project")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["scope"] = value
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="pipeline scope"):
+        resolve_pipeline_config(path)
+
+
+def test_pipeline_scope_mismatch_fails_during_resolution(tmp_path: Path) -> None:
+    path = write_full_fixture(tmp_path / "project")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["scope"] = "other"
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="pipeline scope conflicts with partition scope"):
+        resolve_pipeline_config(path)
+
+
+def test_pipeline_accepts_matching_unicode_dataset_and_stage_scope(tmp_path: Path) -> None:
+    path = write_full_fixture(tmp_path / "project")
+    for config_path in (tmp_path / "project/configs").rglob("*.yaml"):
+        values = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        if "scope" in values:
+            values["scope"] = "北京五环"
+            config_path.write_text(yaml.safe_dump(values, allow_unicode=True), encoding="utf-8")
+
+    assert resolve_pipeline_config(path).scope == "北京五环"
+
+
 def test_direct_and_isolated_full_pipeline_are_contract_equivalent(tmp_path: Path) -> None:
     config = resolve_pipeline_config(write_full_fixture(tmp_path / "project"))
     direct = run_pipeline(config, run_dir=tmp_path / "direct", isolate_stages=False)
@@ -151,6 +191,9 @@ def test_direct_and_isolated_full_pipeline_are_contract_equivalent(tmp_path: Pat
         assert supply_snapshot["pipeline_invocation"]["requested_to"] == "tte"
         assert manifest["stages"]["supply"]["runtime_bindings"] == supply_snapshot["runtime_bindings"]
         assert manifest["stages"]["supply"]["input_records"]["assigned_orders"]["producer_stage"] == "demand"
+        assigned = load_orders(result.run_dir / "demand/orders_region_assigned.csv.gz")
+        assert assigned["order_id"].tolist() == ["o-1", "000123", pd.NA]
+        assert assigned["driver_id"].tolist() == ["driver-A", "driver-A", "司机甲"]
     direct_manifest = load_manifest(direct.run_dir)
     isolated_manifest = load_manifest(isolated.run_dir)
     for stage in STAGE_ORDER:
@@ -417,6 +460,8 @@ def test_supply_child_nonzero_exit_is_recorded(tmp_path: Path, monkeypatch: pyte
         def kill(self):
             return None
 
+    stored_git = load_manifest(run_dir)["git"]
+    monkeypatch.setattr(runner_module, "collect_git_info", lambda _root: stored_git)
     monkeypatch.setattr(runner_module.subprocess, "Popen", lambda *_args, **_kwargs: FailedChild())
     with pytest.raises(RunConflictError, match="supply worker exited with code 7"):
         run_pipeline(
@@ -426,3 +471,33 @@ def test_supply_child_nonzero_exit_is_recorded(tmp_path: Path, monkeypatch: pyte
     record = load_manifest(run_dir)["stages"]["supply"]
     assert record["status"] == "failed"
     assert record["execution"]["exit_code"] == 7
+
+
+@pytest.mark.parametrize("isolate", [False, True])
+def test_runtime_provenance_change_invalidates_from_partition_before_resume(
+    isolate: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = resolve_pipeline_config(write_full_fixture(tmp_path / "project"))
+    run_dir = tmp_path / "run"
+    run_pipeline(config, run_dir=run_dir, isolate_stages=isolate)
+    capsys.readouterr()
+    stored = load_manifest(run_dir)
+    changed_runtime = deepcopy(stored["runtime"])
+    numpy_record = next(record for record in changed_runtime["distributions"] if record["normalized_name"] == "numpy")
+    numpy_record["version"] = f"{numpy_record['version']}-synthetic"
+    changed_runtime["digest"] = manifests_module._canonical_digest(changed_runtime)
+    monkeypatch.setattr(runner_module, "collect_runtime_info", lambda: changed_runtime)
+    monkeypatch.setattr(runner_module, "collect_git_info", lambda _root: stored["git"])
+
+    run_pipeline(
+        config, run_dir=run_dir, from_stage="supply", to_stage="supply",
+        resume=True, isolate_stages=isolate,
+    )
+    output = capsys.readouterr().out
+    manifest = load_manifest(run_dir)
+    assert "partition: reused" not in output
+    assert "demand: reused" not in output
+    assert manifest["pipeline"]["last_provenance_decision"]["runtime"] == ["runtime_dependency_changed"]
+    assert [manifest["stages"][stage]["status"] for stage in STAGE_ORDER] == [
+        "complete", "complete", "complete", "not_started",
+    ]

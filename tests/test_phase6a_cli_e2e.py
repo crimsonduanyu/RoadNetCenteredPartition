@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import pickle
 import shutil
 import subprocess
 
@@ -20,6 +19,7 @@ from roadnet_partition.io.manifests import (
     load_manifest,
     sha256_file,
 )
+from roadnet_partition.io.safe_graph import ARTIFACT_SUFFIX, write_safe_graph
 
 
 DEMAND_FILES = {
@@ -80,9 +80,8 @@ def write_partition_fixture(project: Path) -> Path:
     graph = nx.Graph()
     for left, right, weight in (("a", "b", 5.0), ("b", "c", 1.0), ("c", "d", 5.0)):
         graph.add_edge(left, right, weight=weight, continuity_weight=weight, connector_weight=weight)
-    graph_path = root / "graph.gpickle"
-    with graph_path.open("wb") as handle:
-        pickle.dump(graph, handle)
+    graph_path = root / f"graph{ARTIFACT_SUFFIX}"
+    write_safe_graph(graph, graph_path)
     segments = gpd.GeoDataFrame(
         {"seg_id": ["a", "b", "c", "d"], "length": [1.0] * 4},
         geometry=[
@@ -114,7 +113,7 @@ def write_partition_fixture(project: Path) -> Path:
             "regularized": {
                 "initialization": "leiden",
                 "inputs": {
-                    "graph": "../../inputs/partition/graph.gpickle",
+                    "graph": f"../../inputs/partition/graph{ARTIFACT_SUFFIX}",
                     "relation_edges": "../../inputs/partition/relations.csv",
                     "classified_edges": "../../inputs/partition/segments.gpkg",
                     "boundary": "../../inputs/partition/segments.gpkg",

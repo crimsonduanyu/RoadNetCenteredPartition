@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pickle
 from typing import Any
 
 import geopandas as gpd
@@ -12,6 +11,7 @@ import pandas as pd
 import yaml
 
 from roadnet_partition.io.geospatial import PROJECT_ROOT
+from roadnet_partition.io.safe_graph import read_safe_graph, reject_legacy_graph_path
 from roadnet_partition.zoning.metrics import MetricThresholds, compute_benchmark_metrics
 from roadnet_partition.zoning.regularized.selection import baseline_for_algorithm
 
@@ -36,8 +36,7 @@ def load_optional_csv(path_value: str | Path | None) -> pd.DataFrame | None:
 
 
 def load_graph(path: Path) -> nx.Graph:
-    with path.open("rb") as handle:
-        graph = pickle.load(handle)
+    graph = read_safe_graph(path)
     if any(not isinstance(node, str) for node in graph.nodes):
         graph = nx.relabel_nodes(graph, {node: str(node) for node in graph.nodes})
     return graph
@@ -347,11 +346,14 @@ def build_candidate_selection(metrics: pd.DataFrame, config: dict[str, Any]) -> 
 
 def run_regularized_evaluation(config_path: Path) -> None:
     config = load_evaluation_config(config_path)
+    graph_path = project_path(config["inputs"]["graph"])
+    # Refuse a legacy graph before the stage creates its output tree.
+    reject_legacy_graph_path(graph_path)
     output_root = project_path(config["outputs"]["root"])
     tables_dir = output_root / "tables"
     tables_dir.mkdir(parents=True, exist_ok=True)
     graph_variant = str(config["scope"]["graph_variant"])
-    graph = load_graph(project_path(config["inputs"]["graph"]))
+    graph = load_graph(graph_path)
     relation_edges = pd.read_csv(project_path(config["inputs"]["relation_edges"]))
     poi_features = load_optional_csv(config["inputs"].get("poi_features"))
     order_features = load_optional_csv(config["inputs"].get("order_features"))

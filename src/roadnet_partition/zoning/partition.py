@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import pickle
 from typing import Any
 
 import geopandas as gpd
@@ -12,6 +11,7 @@ import yaml
 
 from roadnet_partition.config import ResolvedStageConfig, stable_value
 from roadnet_partition.io.geospatial import PROJECT_ROOT, display_path, project_path
+from roadnet_partition.io.safe_graph import read_safe_graph, reject_legacy_graph_path
 from roadnet_partition.pipeline.results import RunContext, StageResult, StageStatus
 from roadnet_partition.zoning.contracts import save_partition
 from roadnet_partition.zoning.regularized.objective import EPS, ObjectiveParams, build_context
@@ -83,8 +83,7 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("search.grid.merge_split_enabled must be a non-empty list when provided.")
 
 def load_graph(path: Path) -> nx.Graph:
-    with path.open("rb") as handle:
-        graph = pickle.load(handle)
+    graph = read_safe_graph(path)
     if any(not isinstance(node, str) for node in graph.nodes):
         graph = nx.relabel_nodes(graph, {node: str(node) for node in graph.nodes})
     return graph
@@ -131,6 +130,11 @@ def append_rows(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def run_from_config(config: dict[str, Any], config_path: Path) -> None:
     """Run the regularized search grid for an already-loaded, validated config."""
+    graph_path = project_path(config["inputs"]["graph"])
+    # Refuse a legacy graph before the stage creates anything. Discovering it
+    # at load time would already have left an output tree behind for a run that
+    # can never complete.
+    reject_legacy_graph_path(graph_path)
     output_root = project_path(config["outputs"]["root"])
     clusters_dir = output_root / "clusters"
     tables_dir = output_root / "tables"
@@ -152,7 +156,7 @@ def run_from_config(config: dict[str, Any], config_path: Path) -> None:
                 for _, row in existing_manifest.iterrows()
             }
 
-    graph = load_graph(project_path(config["inputs"]["graph"]))
+    graph = load_graph(graph_path)
     graph_nodes = sorted(str(node) for node in graph.nodes)
     demand = load_demand(project_path(config["inputs"]["order_features"]), graph_nodes)
     base_segments = gpd.read_file(project_path(config["inputs"]["segment_nodes"]))

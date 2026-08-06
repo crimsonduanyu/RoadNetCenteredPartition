@@ -72,6 +72,35 @@ NULLABLE_POLICY = {
 _SETTING_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?\s*(?:B|KB|MB|GB|TB)$", re.IGNORECASE)
 
 
+def identifier_csv_options(order_column: str = "order_id", driver_column: str = "driver_id") -> dict[str, Any]:
+    """Return the shared Demand/Supply CSV policy for textual identifiers.
+
+    Empty fields are handled explicitly after parsing; pandas' default NA token
+    set is disabled so legitimate identifiers such as ``NA`` and ``null`` keep
+    their exact text.
+    """
+    return {
+        "dtype": {order_column: "string", driver_column: "string"},
+        "keep_default_na": False,
+    }
+
+
+def normalize_order_identifiers(values: pd.Series) -> pd.Series:
+    """Preserve textual order IDs exactly, mapping only empty CSV fields to null."""
+    identifiers = values.astype("string")
+    return identifiers.mask(identifiers.eq(""), pd.NA)
+
+
+def normalize_driver_identifiers(values: pd.Series) -> pd.Series:
+    """Apply Demand's established outer-whitespace normalization to driver IDs."""
+    return values.astype("string").str.strip()
+
+
+def invalid_driver_identifiers(values: pd.Series) -> pd.Series:
+    identifiers = normalize_driver_identifiers(values)
+    return identifiers.isna() | identifiers.eq("")
+
+
 def checkpoint_columns(kind: str) -> tuple[str, ...]:
     if kind == MATCHED_ORDER_CHECKPOINT:
         return MATCHED_COLUMNS
@@ -151,6 +180,11 @@ def _validate_frame(frame: pd.DataFrame, kind: str) -> None:
     for name in SORT_KEY:
         if bool(frame[name].isna().any()):
             raise ValueError(f"{kind}.{name} is part of the non-null sort key")
+    drivers = normalize_driver_identifiers(frame["driver_id"])
+    if invalid_driver_identifiers(drivers).any() or not drivers.equals(frame["driver_id"].astype("string")):
+        raise ValueError(f"{kind}.driver_id must be normalized, non-null, and non-blank")
+    if frame["order_id"].astype("string").eq("").any():
+        raise ValueError(f"{kind}.order_id must use null rather than an empty string")
 
 
 def _table_from_frame(frame: pd.DataFrame, kind: str) -> pa.Table:
@@ -733,8 +767,12 @@ __all__ = [
     "checkpoint_schema_fingerprint",
     "deterministic_shard_id",
     "iter_checkpoint_batches",
+    "identifier_csv_options",
+    "invalid_driver_identifiers",
     "load_checkpoint_manifest",
     "runtime_fingerprint",
+    "normalize_driver_identifiers",
+    "normalize_order_identifiers",
     "schema_fingerprint",
     "sorted_checkpoint_batches",
     "sorted_labeled_checkpoint_batches",

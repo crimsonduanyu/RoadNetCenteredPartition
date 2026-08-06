@@ -4,9 +4,10 @@ from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import json
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 from typing import Any, Mapping
+import unicodedata
 
 import yaml
 
@@ -77,7 +78,6 @@ def validate_order_staging(
 
 _ANY = object()
 _OPEN_MAPPING = object()
-_OUTPUT_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _TTE_FILENAMES = {
     ("outputs", "count_filename"): "TTE_count.parquet",
     ("outputs", "hops_filename"): "TTE_hops.parquet",
@@ -459,9 +459,30 @@ def _value_at(values: Mapping[str, Any], field: str, *, source: Path) -> Any:
     return current
 
 
-def _validate_output_identifier(value: Any, *, source: Path, field: str) -> None:
-    if not isinstance(value, str) or value in {".", ".."} or not _OUTPUT_IDENTIFIER.fullmatch(value):
-        raise ConfigError(f"{source}: {field} must be a safe filename identifier")
+def validate_output_identifier(value: Any, *, source: Path, field: str) -> str:
+    """Validate one NFC filename component made from letters, numbers, ``._-``."""
+    valid = isinstance(value, str) and bool(value) and value == value.strip()
+    if valid:
+        posix = PurePosixPath(value)
+        windows = PureWindowsPath(value)
+        valid = (
+            value not in {".", ".."}
+            and unicodedata.normalize("NFC", value) == value
+            and "/" not in value
+            and "\\" not in value
+            and not posix.is_absolute()
+            and not windows.is_absolute()
+            and not windows.drive
+            and not windows.root
+            and posix.name == value
+            and windows.name == value
+            and value[0].isalnum()
+            and not value.endswith(".")
+            and all(character.isalnum() or character in "._-" for character in value)
+        )
+    if not valid:
+        raise ConfigError(f"{source}: {field} must be a safe single-component identifier")
+    return value
 
 
 def _validate_output_filename(value: Any, *, source: Path, field: str) -> None:
@@ -552,7 +573,7 @@ def _load_dataset(stage_source: Path, stage_values: Mapping[str, Any]) -> tuple[
     dataset["project_root"] = str(project_root)
     if "paths" in dataset:
         _resolve_path_mapping(dataset, "paths", source=dataset_source)
-    scope = str(dataset["scope"])
+    scope = validate_output_identifier(dataset["scope"], source=dataset_source, field="dataset scope")
     return dataset_source, dataset, project_root, scope
 
 
@@ -569,11 +590,10 @@ def _base_resolved(
     if int(stage_values["schema_version"]) != 1:
         raise ConfigError(f"{source}: unsupported schema_version {stage_values['schema_version']!r}")
     dataset_source, dataset, project_root, dataset_scope = _load_dataset(source, stage_values)
-    stage_scope = str(stage_values["scope"])
+    stage_scope = validate_output_identifier(stage_values["scope"], source=source, field="stage scope")
     if stage_scope != dataset_scope:
         raise ConfigError(
-            f"{source}: scope={stage_scope!r} conflicts with "
-            f"{dataset_source}: scope={dataset_scope!r}"
+            f"{source}: stage scope conflicts with {dataset_source}: dataset scope"
         )
     metadata = {
         "schema_version": 1,
@@ -638,10 +658,10 @@ def resolve_partition_config(path: str | Path) -> ResolvedStageConfig:
         _resolve_pattern(raw, field, source=source)
     stage = raw["stage1_partition"]
     regularized = stage["regularized"]
-    _validate_output_identifier(
+    validate_output_identifier(
         stage["graph_variant"], source=source, field="stage1_partition.graph_variant",
     )
-    _validate_output_identifier(
+    validate_output_identifier(
         regularized["initialization"],
         source=source,
         field="stage1_partition.regularized.initialization",
@@ -683,7 +703,7 @@ def _dataset_study_area(dataset: Mapping[str, Any], scope: str) -> dict[str, Any
     study_area = deepcopy(dict(dataset["study_area"]))
     configured = study_area.get("active")
     if configured is not None and str(configured) != scope:
-        raise ConfigError(f"dataset study_area.active={configured!r} conflicts with scope={scope!r}")
+        raise ConfigError("dataset study_area.active conflicts with dataset scope")
     study_area["active"] = scope
     return study_area
 

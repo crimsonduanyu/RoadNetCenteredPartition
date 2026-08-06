@@ -11,6 +11,12 @@ conda run --prefix ./.conda/dydl python -m pytest
 git diff --check
 ```
 
+Use `--allow-dirty` only when the dirty bytes are intentional. The manifest
+hashes the binary tracked diff and every Git-visible untracked regular file;
+ignored files are excluded by Git, without a repository filesystem walk. Keep
+the single dependency mapping and canonical collectors in `io/manifests.py` in
+sync with their provenance tests.
+
 Do not write canonical data from ordinary stage code. Runs own their directories,
 validation is read-only with respect to algorithms and canonical products, and
 only the publish transaction may replace `data/processed/<scope>/`.

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pickle
 
 import geopandas as gpd
 import networkx as nx
@@ -10,6 +9,7 @@ import pytest
 from shapely.geometry import LineString
 
 from roadnet_partition.config import ResolvedStageConfig
+from roadnet_partition.io.safe_graph import ARTIFACT_SUFFIX, write_safe_graph
 from roadnet_partition.pipeline.results import RunContext, StageStatus
 from roadnet_partition.zoning import partition
 from roadnet_partition.zoning.contracts import (
@@ -76,9 +76,8 @@ def test_run_partition_new_stage_api_writes_only_formal_files_outside_project(tm
             left, right, weight=weight,
             continuity_weight=weight, connector_weight=weight,
         )
-    graph_path = inputs / "graph.gpickle"
-    with graph_path.open("wb") as handle:
-        pickle.dump(graph, handle)
+    graph_path = inputs / f"graph{ARTIFACT_SUFFIX}"
+    write_safe_graph(graph, graph_path)
 
     segments = gpd.GeoDataFrame(
         {

@@ -89,6 +89,9 @@ def test_full_benchmark_fixture_preserves_schema_order_and_values() -> None:
     assert row["connected_cluster_ratio"] == 1.0
     assert row["continuity_edge_cut_ratio"] == 0.5
     assert row["connector_edge_cut_ratio"] == 1.0
+    assert row["network_diameter_metric_version"] == 2
+    assert row["network_diameter_algorithm"] == "exact_weighted_all_pairs_dijkstra"
+    assert row["network_diameter_weight_semantics"] == "max((length_u + length_v) / 2, 1e-9)"
     assert list(connector.columns) == [
         "graph_variant", "algorithm", "connector_type", "total_edges",
         "cut_edges", "cut_ratio", "cut_weight_ratio",

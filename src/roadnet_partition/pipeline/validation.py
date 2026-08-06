@@ -18,6 +18,7 @@ from roadnet_partition.io.manifests import (
     file_record,
     input_fingerprint,
     load_manifest,
+    manifest_provenance_complete,
     utc_now,
     verify_run_ownership,
 )
@@ -317,6 +318,8 @@ def validate_run(
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
         run_id = str(marker["run_id"])
         manifest = load_manifest(run_dir)
+        if not manifest_provenance_complete(manifest):
+            warnings.append("run lacks complete RuntimeProvenanceV1/GitProvenanceV2 and cannot be published/exported")
         project_root = Path(manifest["config"]["resolved"]["project_root"]).resolve()
         context = RunContext(run_id, run_dir, project_root, log_dir=run_dir / "logs")
         verify_run_ownership(context)
