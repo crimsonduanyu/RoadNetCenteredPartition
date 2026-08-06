@@ -342,9 +342,10 @@ def test_a_boundary_replaced_after_the_run_is_detected_by_its_record(tmp_path: P
 
 
 def test_an_unreadable_boundary_fails_without_producing_a_frame(tmp_path: Path) -> None:
+    """B: an unreadable artifact is a contract refusal, not a driver traceback."""
     corrupt = tmp_path / "corrupt.gpkg"
     corrupt.write_bytes(b"this is not a geopackage")
-    with pytest.raises(Exception):
+    with pytest.raises(BoundaryContractError, match="could not be read"):
         resolve_figure_boundary(boundary_path=corrupt, partition=partition_frame())
 
 

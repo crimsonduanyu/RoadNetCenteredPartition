@@ -13,7 +13,7 @@ an explicit input fails. If the named artifact does not satisfy
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, TypeVar
 
 from roadnet_partition.io import environment as _environment  # noqa: F401
 import geopandas as gpd
@@ -32,6 +32,69 @@ from roadnet_partition.reporting.boundary_contract import (
     check_suffix,
     supports_layers,
 )
+
+_T = TypeVar("_T")
+
+
+def _read_error_types() -> tuple[type[BaseException], ...]:
+    """The exception types the installed geospatial readers raise on bad input.
+
+    Both engines are looked up defensively: GeoPandas may dispatch to pyogrio or
+    Fiona depending on installation and options, and neither is guaranteed to be
+    importable. ``OSError`` and ``UnicodeDecodeError`` cover the cases a reader
+    lets through unwrapped, such as a permission failure or an undecodable byte
+    in a text-based format.
+    """
+
+    types: list[type[BaseException]] = [OSError, UnicodeDecodeError]
+    try:  # pragma: no cover - import guard, both engines present in this env
+        from pyogrio.errors import DataLayerError, DataSourceError
+
+        types.extend([DataSourceError, DataLayerError])
+    except ImportError:  # pragma: no cover
+        pass
+    try:  # pragma: no cover - import guard
+        from fiona.errors import FionaError
+
+        types.append(FionaError)
+    except ImportError:  # pragma: no cover
+        pass
+    return tuple(types)
+
+
+#: Read failures that mean "these bytes are not a readable dataset", as opposed
+#: to a contract violation. Computed once so the narrow ``except`` below names
+#: concrete driver exceptions instead of catching everything.
+READ_ERROR_TYPES = _read_error_types()
+
+
+def _safe_reason(error: BaseException) -> str:
+    """Summarize a driver failure without echoing what the driver saw.
+
+    GDAL error text routinely embeds absolute paths and, for database-backed
+    sources, connection strings. Only the exception class name is reported, so a
+    refusal never widens the caller's view of the filesystem or of any
+    credentials the driver was handed.
+    """
+
+    return type(error).__name__
+
+
+def _read_step(action: Callable[[], _T], *, source: Any) -> _T:
+    """Run one external geospatial read, converting a read failure.
+
+    The ``try`` covers a single reader call and nothing else, so a
+    ``BoundaryContractError`` raised by the contract checks around it can never
+    be re-wrapped into this vaguer message.
+    """
+
+    try:
+        return action()
+    except READ_ERROR_TYPES as error:
+        raise BoundaryContractError(
+            f"{source}: boundary artifact could not be read as a supported "
+            f"geospatial dataset: {_safe_reason(error)}"
+        ) from error
 
 
 def boundary_path_from_manifest(manifest: Mapping[str, Any], *, run_dir: Path) -> Path:
@@ -62,19 +125,27 @@ def _verify_record(path: Path, record: Mapping[str, Any]) -> None:
     """Refuse a boundary whose bytes differ from the ones the run recorded."""
 
     expected_size = record.get("size")
-    if expected_size is not None and path.stat().st_size != expected_size:
-        raise BoundaryContractError(
-            f"{path}: boundary size {path.stat().st_size} does not match the "
-            f"{expected_size} recorded for {MANIFEST_LOGICAL_NAME}"
-        )
+    if expected_size is not None:
+        actual_size = _read_step(lambda: path.stat().st_size, source=path)
+        if actual_size != expected_size:
+            raise BoundaryContractError(
+                f"{path}: boundary size {actual_size} does not match the "
+                f"{expected_size} recorded for {MANIFEST_LOGICAL_NAME}"
+            )
     expected_digest = record.get("sha256")
     if expected_digest is not None:
-        actual = sha256_file(path)
+        actual = _read_step(lambda: sha256_file(path), source=path)
         if actual != expected_digest:
             raise BoundaryContractError(
                 f"{path}: boundary sha256 {actual} does not match the "
                 f"{expected_digest} recorded for {MANIFEST_LOGICAL_NAME}"
             )
+
+
+def _list_layers(path: Path) -> Any:
+    """Read the layer catalog, refusing a container that cannot be catalogued."""
+
+    return _read_step(lambda: gpd.list_layers(path), source=path)
 
 
 def _polygonal_layers(path: Path) -> list[str]:
@@ -84,7 +155,7 @@ def _polygonal_layers(path: Path) -> list[str]:
     does not depend on the order layers sit in the container.
     """
 
-    listed = gpd.list_layers(path)
+    listed = _list_layers(path)
     return [
         str(name)
         for name, geometry_type in zip(listed["name"], listed["geometry_type"])
@@ -102,7 +173,7 @@ def _select_layer(path: Path, requested: str | None) -> str | None:
             )
         return None
 
-    listed = gpd.list_layers(path)
+    listed = _list_layers(path)
     all_names = [str(name) for name in listed["name"]]
     eligible = _polygonal_layers(path)
 
@@ -195,7 +266,14 @@ def resolve_figure_boundary(
     selected = _select_layer(path, layer)
     source = path if selected is None else f"{path}[{selected}]"
 
-    boundary = gpd.read_file(path) if selected is None else gpd.read_file(path, layer=selected)
+    # The selected dataset is read behind the same refusal boundary: a container
+    # whose catalog is readable may still fail on the layer itself.
+    boundary = _read_step(
+        (lambda: gpd.read_file(path))
+        if selected is None
+        else (lambda: gpd.read_file(path, layer=selected)),
+        source=source,
+    )
 
     # Content: CRS, then geometry type, then non-empty/validity.
     check_crs(boundary, source=source)
